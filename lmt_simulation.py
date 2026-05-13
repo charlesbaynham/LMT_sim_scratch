@@ -47,16 +47,34 @@ np.random.seed(42)
 ######
 
 
-def make_atom_states(position_z=0.0, initial_velocity_z=0.0, c0=1, c1=0):
+def make_atom_states(
+    position_x=0.0,
+    position_y=0.0,
+    position_z=0.0,
+    velocity_x=0.0,
+    velocity_y=0.0,
+    initial_velocity_z=0.0,
+    c0=1,
+    c1=0,
+):
     """Make the initial state for an atom with the given parameters.
 
     Parameters
     ----------
+    position_x : float
+        Initial x-position of the atom in metres.
+    position_y : float
+        Initial y-position of the atom in metres.
     position_z : float
         Initial z-position of the atom in metres.
+    velocity_x : float
+        Transverse x-velocity in m/s. Constant -- never changed by pulses.
+    velocity_y : float
+        Transverse y-velocity in m/s. Constant -- never changed by pulses.
     initial_velocity_z : float
         Initial z-velocity of the atom in m/s.  This is the "lab frame"
-        velocity v_0; the total velocity of branch m is v_0 + m * v_recoil.
+        velocity v_0; the total z-velocity of branch m is v_0 + m * v_recoil.
+        vz is updated by recoil kicks during pulses.
     c0 : complex
         Initial ground-state amplitude.
     c1 : complex
@@ -66,29 +84,35 @@ def make_atom_states(position_z=0.0, initial_velocity_z=0.0, c0=1, c1=0):
     -------
     m_values : ndarray, shape (2,), int
         Momentum quantum numbers.  m=0 for both initial rows.
-    positions : ndarray, shape (2,), float
-        z-positions of each state row.
+    positions : ndarray, shape (2, 3), float
+        [x, y, z] positions of each state row.
+    velocities : ndarray, shape (2, 3), float
+        [vx, vy, vz] velocities of each state row.
     internal_amplitude : ndarray, shape (2,), complex128
         Complex amplitudes for each state row.
     internal_is_ground : ndarray, shape (2,), bool
         True for ground-state rows.
     """
-    # Initial velocity_z sets the frame reference. m=0 has zero velocity in this frame.
-    # Phase calculation doesn't use velocity yet (separate TODO in transform_state_vector).
-
-    # Initial positions must also be the same for now. I'll use this position as
-    # the reference for the Bordé unitary transformation, but also keep track of
-    # wavepacket centres classically. I think this is equivalent to solving for
-    # a plane-wave momentum state (i.e. a Dirac delta in position), then
-    # convolving with the true distribution at the end.
-
     m_values = np.array([0, 0], dtype=int)
-    positions = np.array([position_z, position_z], dtype=np.float64)
+    positions = np.array(
+        [
+            [position_x, position_y, position_z],
+            [position_x, position_y, position_z],
+        ],
+        dtype=np.float64,
+    )
+    velocities = np.array(
+        [
+            [velocity_x, velocity_y, initial_velocity_z],
+            [velocity_x, velocity_y, initial_velocity_z],
+        ],
+        dtype=np.float64,
+    )
 
     internal_amplitude = np.array([c0, c1], dtype=np.complex128)
     internal_is_ground = np.array([True, False], dtype=bool)
 
-    return m_values, positions, internal_amplitude, internal_is_ground
+    return m_values, positions, velocities, internal_amplitude, internal_is_ground
 
 
 def _are_states_normalized(
@@ -319,6 +343,7 @@ def propagate_states_in_borde_representation(
     squiggly_amplitudes: np.ndarray,
     state_is_ground: np.ndarray,
     positions: np.ndarray,
+    velocities: np.ndarray,
     time_of_propegation: float,
     omega_laser: float,
     vz: float,
@@ -328,26 +353,30 @@ def propagate_states_in_borde_representation(
     """
     Accumulate phase during free fall
 
-    Following equation 5 of Bordé's paper, which is broken down nicely in eq 14.
+    Following equation 5 of Borde's paper, which is broken down nicely in eq 14.
 
-    We can ignore the velocity and spatial dependence - this was already taken care of by the unitary transformation to the Bordé frame.
+    We can ignore the velocity and spatial dependence - this was already taken
+    care of by the unitary transformation to the Borde frame.
 
     Parameters
     ----------
     m_values : np.ndarray
         Momentum quantum numbers for each state row
     squiggly_amplitudes : np.ndarray
-        Amplitudes in Bordé representation
+        Amplitudes in Borde representation
     state_is_ground : np.ndarray
         Boolean array indicating ground (True) or excited (False) state
-    positions : np.ndarray
-        Current positions of each state row (classical tracking)
+    positions : np.ndarray, shape (N, 3)
+        [x, y, z] positions of each state row (classical tracking)
+    velocities : np.ndarray, shape (N, 3)
+        [vx, vy, vz] velocities of each state row. vx and vy are constant.
+        vz includes accumulated recoil kicks.
     time_of_propegation : float
         Time to propagate
     omega_laser : float
         Laser angular frequency
     vz : float
-        Initial velocity
+        Reference z-velocity (v_0) used for Borde phase calculations
     k_sign : int, optional
         Direction of laser, by default +1
     k_wavevector : float, optional
@@ -356,8 +385,9 @@ def propagate_states_in_borde_representation(
     Returns
     -------
     tuple
-        (m_values, squiggly_amplitudes_out, state_is_ground, positions_out)
-        Positions are updated classically based on velocity = vz + m * RECOIL_VELOCITY
+        (m_values, squiggly_amplitudes_out, state_is_ground, positions_out, velocities)
+        Positions are updated ballistically from velocities.
+        Velocities are returned unchanged.
     """
 
     squiggly_amplitudes_out = np.empty_like(squiggly_amplitudes)
@@ -384,12 +414,12 @@ def propagate_states_in_borde_representation(
         else:
             squiggly_amplitudes_out[idx] = squiggly_amplitudes[idx] * np.conj(phase)
 
-        # Update position classically: position += velocity * time
-        # velocity = initial_velocity + m * recoil_velocity
-        velocity = vz + m_values[idx] * RECOIL_VELOCITY
-        positions_out[idx] = positions[idx] + velocity * time_of_propegation
+        # Update position ballistically for all three dimensions.
+        # velocities[idx, 2] already encodes v_0 + m * v_recoil accumulated from
+        # recoil kicks during previous pulses, so no separate m-term is needed here.
+        positions_out[idx] = positions[idx] + velocities[idx] * time_of_propegation
 
-    return m_values, squiggly_amplitudes_out, state_is_ground, positions_out
+    return m_values, squiggly_amplitudes_out, state_is_ground, positions_out, velocities
 
 
 def pulse_interaction_in_borde_representation(
@@ -397,19 +427,20 @@ def pulse_interaction_in_borde_representation(
     squiggly_amplitudes: np.ndarray,
     internal_is_ground: np.ndarray,
     positions: np.ndarray,
+    velocities: np.ndarray,
     pulse_detuning: float,
     t_pulse: float,
-    pulse_rabi_freq: float,
+    pulse_rabi_freq,
     pulse_phase=0.0,
     k_sign=+1,
     k_wavevector=K_WAVEVECTOR,
     vz: float = 0.0,
 ):
     """
-    Apply a laser pulse in the Bordé representation
+    Apply a laser pulse in the Borde representation
 
-    Each pulse couples |a, m⟩ (ground, momentum m) to |b, m+1⟩ (excited,
-    momentum m+1) for a +k laser, or |b, m-1⟩ for a -k laser.
+    Each pulse couples |a, m> (ground, momentum m) to |b, m+1> (excited,
+    momentum m+1) for a +k laser, or |b, m-1> for a -k laser.
 
     Since we track each state independently (so that we can consider spatial
     overlap) this doubles the size of the state vector each pulse.
@@ -419,42 +450,51 @@ def pulse_interaction_in_borde_representation(
     m_values : np.ndarray
         Momentum quantum numbers for each state row
     squiggly_amplitudes : np.ndarray
-        Amplitudes in Bordé representation
+        Amplitudes in Borde representation
     internal_is_ground : np.ndarray
         Boolean array indicating ground (True) or excited (False) state
-    positions : np.ndarray
-        Current positions of each state row (classical tracking)
+    positions : np.ndarray, shape (N, 3)
+        [x, y, z] positions of each state row (classical tracking)
+    velocities : np.ndarray, shape (N, 3)
+        [vx, vy, vz] velocities of each state row. vx and vy are constant.
+        vz includes accumulated recoil kicks from previous pulses.
     pulse_detuning : float
-        Laser detuning from resonance
+        Laser detuning from resonance in Hz
     t_pulse : float
         Pulse duration in seconds
-    pulse_rabi_freq : float
-        Rabi frequency in Hz
+    pulse_rabi_freq : float or array-like, shape (N,)
+        Rabi frequency in Hz. Scalar is broadcast to all rows; an (N,) array
+        gives a per-row Rabi frequency.
     pulse_phase : float, optional
-        Pulse phase, by default 0.0
+        Pulse phase in radians, by default 0.0
     k_sign : int, optional
-        Direction of laser, by default +1
+        Direction of laser (+1 for +k, -1 for -k), by default +1
     k_wavevector : float, optional
         Wavevector magnitude, by default K_WAVEVECTOR
     vz : float, optional
-        Initial velocity in m/s, by default 0.0
+        Reference z-velocity (v_0) used for Borde phase calculations, by default 0.0
 
     Returns
     -------
     tuple
-        (new_m_values, new_squiggly_amplitudes, new_is_ground, new_positions)
-        Positions are updated classically with midpoint approximation for m-changing branches
+        (new_m_values, new_squiggly_amplitudes, new_is_ground, new_positions, new_velocities)
+        Positions are updated with midpoint approximation for m-changing branches.
+        Velocities: vx and vy unchanged, vz updated by recoil kick for m-changing branches.
     """
 
     # Implement equation 13 / 14 / 15
 
-    # Prepare output arrays — each row branches into two
+    # Prepare output arrays -- each row branches into two
     N = squiggly_amplitudes.shape[0]
     new_num_rows = N * 2
 
+    # Broadcast pulse_rabi_freq to a per-row array
+    rabi_arr = np.broadcast_to(np.asarray(pulse_rabi_freq, dtype=float), (N,)).copy()
+
     new_squiggly_amplitudes = np.empty(new_num_rows, dtype=squiggly_amplitudes.dtype)
     new_m_values = np.empty(new_num_rows, dtype=m_values.dtype)
-    new_positions = np.empty(new_num_rows, dtype=positions.dtype)
+    new_positions = np.empty((new_num_rows, 3), dtype=positions.dtype)
+    new_velocities = np.empty((new_num_rows, 3), dtype=velocities.dtype)
     new_is_ground = np.empty(new_num_rows, dtype=internal_is_ground.dtype)
 
     # Ground-output rows first, excited-output rows second
@@ -464,7 +504,7 @@ def pulse_interaction_in_borde_representation(
 
     for idx in range(N):
         # Build input state vector for propagate_pulse
-        # Bordé notation: state = [excited_amp, ground_amp] (b, a)
+        # Borde notation: state = [excited_amp, ground_amp] (b, a)
         if internal_is_ground[idx]:
             # The ground state has m = m_a, so the relevant excited state for
             # the pulse is m = m_a +- 1
@@ -479,7 +519,7 @@ def pulse_interaction_in_borde_representation(
             state = np.array([squiggly_amplitudes[idx], 0], dtype=complex)
 
         # Borde uses omega_ab = pi * RABI_FREQ, angular frequencies in rad/s
-        omega_ab = np.pi * pulse_rabi_freq
+        omega_ab = np.pi * rabi_arr[idx]
         omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_detuning)
 
         A, B, C, D = _calculate_interaction_constants(
@@ -498,29 +538,136 @@ def pulse_interaction_in_borde_representation(
 
         amplitude_vector_out = prop_matrix @ state
 
-        # Ground-output branch (same m as input)
-        new_squiggly_amplitudes[idx] = amplitude_vector_out[1]
-        new_m_values[idx] = m_ground
-        # Position update: velocity at m_ground for full pulse duration
-        velocity_ground = vz + m_ground * RECOIL_VELOCITY
-        new_positions[idx] = positions[idx] + velocity_ground * t_pulse
+        # Build 3D velocity vectors for the two output branches.
+        # vz for each branch is computed from the reference velocity plus
+        # m * RECOIL_VELOCITY, consistent with the invariant
+        # velocities[idx, 2] == vz + m_values[idx] * RECOIL_VELOCITY.
+        # vx and vy are taken from the input velocities (unchanged).
+        vz_ground = vz + m_ground * RECOIL_VELOCITY
+        vz_excited = vz + m_excited * RECOIL_VELOCITY
 
-        # Excited-output branch (m changes by k_sign)
-        new_squiggly_amplitudes[ind_excited + idx] = amplitude_vector_out[0]
-        new_m_values[ind_excited + idx] = m_excited
-        # Position update: midpoint approximation  # FIXME this is not quite right
-        # First half at m_ground velocity, second half at m_excited velocity
-        velocity_excited = vz + m_excited * RECOIL_VELOCITY
-        new_positions[ind_excited + idx] = (
-            positions[idx]
-            + velocity_ground * (t_pulse / 2)
-            + velocity_excited * (t_pulse / 2)
+        vel_ground_3d = np.array(
+            [velocities[idx, 0], velocities[idx, 1], vz_ground]
+        )
+        vel_excited_3d = np.array(
+            [velocities[idx, 0], velocities[idx, 1], vz_excited]
         )
 
-    return new_m_values, new_squiggly_amplitudes, new_is_ground, new_positions
+        # Ground-output branch: m = m_ground, velocity = vel_ground_3d
+        new_squiggly_amplitudes[idx] = amplitude_vector_out[1]
+        new_m_values[idx] = m_ground
+        new_positions[idx] = positions[idx] + vel_ground_3d * t_pulse
+        new_velocities[idx] = vel_ground_3d
+
+        # Excited-output branch: m = m_excited, velocity = vel_excited_3d
+        # Position: midpoint approximation (first half at ground vel, second at excited vel)
+        new_squiggly_amplitudes[ind_excited + idx] = amplitude_vector_out[0]
+        new_m_values[ind_excited + idx] = m_excited
+        new_positions[ind_excited + idx] = (
+            positions[idx]
+            + vel_ground_3d * (t_pulse / 2)
+            + vel_excited_3d * (t_pulse / 2)
+        )
+        new_velocities[ind_excited + idx] = vel_excited_3d
+
+    return new_m_values, new_squiggly_amplitudes, new_is_ground, new_positions, new_velocities
 
 
-# def propagate_states_pulse(
+def gaussian_rabi(positions, on_axis_rabi, beam_waist):
+    """Per-row Rabi frequency from TEM00 transverse intensity profile.
+
+    Omega(x, y) = Omega_0 * exp(-(x^2 + y^2) / w^2)
+
+    Parameters
+    ----------
+    positions : np.ndarray, shape (N, 3)
+        [x, y, z] positions of each state row.
+    on_axis_rabi : float
+        On-axis Rabi frequency in Hz.
+    beam_waist : float
+        Beam waist (1/e field radius) in metres.
+
+    Returns
+    -------
+    np.ndarray, shape (N,)
+        Per-row Rabi frequency in Hz.
+    """
+    r2 = positions[:, 0] ** 2 + positions[:, 1] ** 2
+    return on_axis_rabi * np.exp(-r2 / beam_waist ** 2)
+
+
+def do_gaussian_pulse(
+    m_values,
+    squiggly_amplitudes,
+    internal_is_ground,
+    positions,
+    velocities,
+    pulse_detuning,
+    t_pulse,
+    on_axis_rabi_freq,
+    beam_waist,
+    pulse_phase=0.0,
+    k_sign=+1,
+    k_wavevector=K_WAVEVECTOR,
+    vz=0.0,
+):
+    """Apply a laser pulse with a Gaussian transverse intensity profile.
+
+    Computes the per-row Rabi frequency at the pulse midpoint using the
+    TEM00 Gaussian profile, then calls
+    pulse_interaction_in_borde_representation with those per-row frequencies.
+
+    Parameters
+    ----------
+    m_values : np.ndarray
+        Momentum quantum numbers for each state row.
+    squiggly_amplitudes : np.ndarray
+        Amplitudes in Borde representation.
+    internal_is_ground : np.ndarray
+        Boolean array, True for ground-state rows.
+    positions : np.ndarray, shape (N, 3)
+        [x, y, z] positions of each state row.
+    velocities : np.ndarray, shape (N, 3)
+        [vx, vy, vz] velocities of each state row.
+    pulse_detuning : float
+        Laser detuning from resonance in Hz.
+    t_pulse : float
+        Pulse duration in seconds.
+    on_axis_rabi_freq : float
+        On-axis (peak) Rabi frequency in Hz.
+    beam_waist : float
+        Beam waist (1/e field radius) in metres. Required -- no default.
+    pulse_phase : float, optional
+        Pulse phase in radians, by default 0.0.
+    k_sign : int, optional
+        Laser direction (+1 or -1), by default +1.
+    k_wavevector : float, optional
+        Wavevector magnitude, by default K_WAVEVECTOR.
+    vz : float, optional
+        Reference z-velocity for Borde phase calculations, by default 0.0.
+
+    Returns
+    -------
+    tuple
+        (new_m_values, new_squiggly_amplitudes, new_is_ground, new_positions, new_velocities)
+    """
+    # Compute transverse position at pulse midpoint for Gaussian Rabi calculation
+    positions_mid = positions + velocities * (t_pulse / 2)
+    rabi_per_row = gaussian_rabi(positions_mid, on_axis_rabi_freq, beam_waist)
+    return pulse_interaction_in_borde_representation(
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
+        pulse_detuning=pulse_detuning,
+        t_pulse=t_pulse,
+        pulse_rabi_freq=rabi_per_row,
+        pulse_phase=pulse_phase,
+        k_sign=k_sign,
+        k_wavevector=k_wavevector,
+        vz=vz,
+    )
 #     m_values: np.ndarray,
 #     positions: np.ndarray,
 #     internal_amplitude: np.ndarray,
@@ -738,7 +885,7 @@ def do_rabi_pulse(pulse_detuning, pulse_duration=T_PI, initial_velocity_z=0.0):
         Excitation fraction (probability of being in excited state)
     """
 
-    m_values, positions, internal_amplitude, internal_is_ground = make_atom_states(
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = make_atom_states(
         initial_velocity_z=initial_velocity_z
     )
 
@@ -755,12 +902,13 @@ def do_rabi_pulse(pulse_detuning, pulse_duration=T_PI, initial_velocity_z=0.0):
         inverse=False,
     )
 
-    m_values, squiggly_amplitudes, internal_is_ground, positions = (
+    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
         pulse_interaction_in_borde_representation(
             m_values,
             squiggly_amplitudes,
             internal_is_ground,
             positions,
+            velocities,
             pulse_detuning=pulse_detuning,
             t_pulse=pulse_duration,
             pulse_rabi_freq=RABI_FREQ,
@@ -770,7 +918,6 @@ def do_rabi_pulse(pulse_detuning, pulse_duration=T_PI, initial_velocity_z=0.0):
             vz=initial_velocity_z,
         )
     )
-
     internal_amplitude_after_pulse = transform_state_vector(
         m_values,
         squiggly_amplitudes,
@@ -825,7 +972,7 @@ def calc_mz_excitation(
         Excitation fraction after full sequence
     """
 
-    m_values, positions, internal_amplitude, internal_is_ground = make_atom_states(
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = make_atom_states(
         initial_velocity_z=initial_velocity_z
     )
 
@@ -844,12 +991,13 @@ def calc_mz_excitation(
     )
 
     # First pi/2 pulse, phase 0
-    m_values, squiggly_amplitudes, internal_is_ground, positions = (
+    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
         pulse_interaction_in_borde_representation(
             m_values,
             squiggly_amplitudes,
             internal_is_ground,
             positions,
+            velocities,
             pulse_detuning=detuning_hz,
             t_pulse=T_PI / 2,
             pulse_rabi_freq=RABI_FREQ,
@@ -863,12 +1011,13 @@ def calc_mz_excitation(
 
     # Free evolution and second pi pulse, phase phi
     if time_between_pulses > 0.0:
-        m_values, squiggly_amplitudes, internal_is_ground, positions = (
+        m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             propagate_states_in_borde_representation(
                 m_values,
                 squiggly_amplitudes,
                 internal_is_ground,
                 positions,
+                velocities,
                 time_of_propegation=time_between_pulses,
                 omega_laser=omega_laser,
                 vz=initial_velocity_z,
@@ -878,12 +1027,13 @@ def calc_mz_excitation(
         )
         current_time += time_between_pulses
 
-    m_values, squiggly_amplitudes, internal_is_ground, positions = (
+    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
         pulse_interaction_in_borde_representation(
             m_values,
             squiggly_amplitudes,
             internal_is_ground,
             positions,
+            velocities,
             pulse_detuning=detuning_hz,
             t_pulse=T_PI,
             pulse_rabi_freq=RABI_FREQ,
@@ -897,12 +1047,13 @@ def calc_mz_excitation(
 
     # Free evolution and final pi/2 pulse, phase 4*phi
     if time_between_pulses > 0.0:
-        m_values, squiggly_amplitudes, internal_is_ground, positions = (
+        m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             propagate_states_in_borde_representation(
                 m_values,
                 squiggly_amplitudes,
                 internal_is_ground,
                 positions,
+                velocities,
                 time_of_propegation=time_between_pulses,
                 omega_laser=omega_laser,
                 vz=initial_velocity_z,
@@ -912,12 +1063,13 @@ def calc_mz_excitation(
         )
         current_time += time_between_pulses
 
-    m_values, squiggly_amplitudes, internal_is_ground, positions = (
+    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
         pulse_interaction_in_borde_representation(
             m_values,
             squiggly_amplitudes,
             internal_is_ground,
             positions,
+            velocities,
             pulse_detuning=detuning_hz,
             t_pulse=T_PI / 2,
             pulse_rabi_freq=RABI_FREQ,
@@ -961,7 +1113,7 @@ if __name__ == "__main__":
     # Demo: single pulse on a stationary atom
     initial_velocity_z = 0.0
     t_propagate = 1e-3
-    m_values, positions, internal_amplitude, internal_is_ground = make_atom_states(
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = make_atom_states(
         initial_velocity_z=initial_velocity_z
     )
 
@@ -976,24 +1128,26 @@ if __name__ == "__main__":
         inverse=False,
     )
 
-    m_values, squiggly_amplitudes, internal_is_ground, positions = (
+    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
         propagate_states_in_borde_representation(
             m_values,
             squiggly_amplitudes,
             internal_is_ground,
             positions,
+            velocities,
             vz=initial_velocity_z,
             time_of_propegation=t_propagate,
             omega_laser=2 * np.pi * TRANSITION_FREQUENCY,
         )
     )
 
-    m_values, squiggly_amplitudes, internal_is_ground, positions = (
+    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
         pulse_interaction_in_borde_representation(
             m_values,
             squiggly_amplitudes,
             internal_is_ground,
             positions,
+            velocities,
             pulse_detuning=0.0,
             t_pulse=T_PI,
             pulse_rabi_freq=RABI_FREQ,
