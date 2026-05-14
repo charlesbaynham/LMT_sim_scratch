@@ -546,12 +546,8 @@ def pulse_interaction_in_borde_representation(
         vz_ground = vz + m_ground * RECOIL_VELOCITY
         vz_excited = vz + m_excited * RECOIL_VELOCITY
 
-        vel_ground_3d = np.array(
-            [velocities[idx, 0], velocities[idx, 1], vz_ground]
-        )
-        vel_excited_3d = np.array(
-            [velocities[idx, 0], velocities[idx, 1], vz_excited]
-        )
+        vel_ground_3d = np.array([velocities[idx, 0], velocities[idx, 1], vz_ground])
+        vel_excited_3d = np.array([velocities[idx, 0], velocities[idx, 1], vz_excited])
 
         # Ground-output branch: m = m_ground, velocity = vel_ground_3d
         new_squiggly_amplitudes[idx] = amplitude_vector_out[1]
@@ -570,7 +566,13 @@ def pulse_interaction_in_borde_representation(
         )
         new_velocities[ind_excited + idx] = vel_excited_3d
 
-    return new_m_values, new_squiggly_amplitudes, new_is_ground, new_positions, new_velocities
+    return (
+        new_m_values,
+        new_squiggly_amplitudes,
+        new_is_ground,
+        new_positions,
+        new_velocities,
+    )
 
 
 def gaussian_rabi(positions, on_axis_rabi, beam_waist):
@@ -593,7 +595,7 @@ def gaussian_rabi(positions, on_axis_rabi, beam_waist):
         Per-row Rabi frequency in Hz.
     """
     r2 = positions[:, 0] ** 2 + positions[:, 1] ** 2
-    return on_axis_rabi * np.exp(-r2 / beam_waist ** 2)
+    return on_axis_rabi * np.exp(-r2 / beam_waist**2)
 
 
 def do_gaussian_pulse(
@@ -668,6 +670,8 @@ def do_gaussian_pulse(
         k_wavevector=k_wavevector,
         vz=vz,
     )
+
+
 #     m_values: np.ndarray,
 #     positions: np.ndarray,
 #     internal_amplitude: np.ndarray,
@@ -885,8 +889,8 @@ def do_rabi_pulse(pulse_detuning, pulse_duration=T_PI, initial_velocity_z=0.0):
         Excitation fraction (probability of being in excited state)
     """
 
-    m_values, positions, velocities, internal_amplitude, internal_is_ground = make_atom_states(
-        initial_velocity_z=initial_velocity_z
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
+        make_atom_states(initial_velocity_z=initial_velocity_z)
     )
 
     omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_detuning)
@@ -972,8 +976,8 @@ def calc_mz_excitation(
         Excitation fraction after full sequence
     """
 
-    m_values, positions, velocities, internal_amplitude, internal_is_ground = make_atom_states(
-        initial_velocity_z=initial_velocity_z
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
+        make_atom_states(initial_velocity_z=initial_velocity_z)
     )
 
     omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
@@ -1113,8 +1117,8 @@ if __name__ == "__main__":
     # Demo: single pulse on a stationary atom
     initial_velocity_z = 0.0
     t_propagate = 1e-3
-    m_values, positions, velocities, internal_amplitude, internal_is_ground = make_atom_states(
-        initial_velocity_z=initial_velocity_z
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
+        make_atom_states(initial_velocity_z=initial_velocity_z)
     )
 
     squiggly_amplitudes = transform_state_vector(
