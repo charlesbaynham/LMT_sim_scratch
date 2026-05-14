@@ -888,6 +888,130 @@ def calculate_ground_and_excited_probabilities(
     return ground_prob, excited_prob
 
 
+def do_clearout(
+    m_values,
+    squiggly_amplitudes,
+    internal_is_ground,
+    positions,
+    velocities,
+    rng=None,
+):
+    """Projective measurement in the {ground, excited} basis.
+
+    Per-atom Monte Carlo: samples one outcome from the current
+    P(ground):P(excited) ratio.
+
+    The projection is performed directly in the Bordé frame.  The per-row
+    phase from :func:`transform_state_vector` is the same for all rows
+    sharing the same ``(m, is_ground)``, so projecting in the Bordé frame
+    is identical to projecting in the lab frame.  No frame transform is
+    needed inside this function.
+
+    Parameters
+    ----------
+    m_values : np.ndarray
+        Momentum quantum numbers for each state row.
+    squiggly_amplitudes : np.ndarray
+        Amplitudes in the Bordé representation.
+    internal_is_ground : np.ndarray
+        Boolean array, True for ground-state rows.
+    positions : np.ndarray, shape (N, 3)
+        [x, y, z] positions of each state row.
+    velocities : np.ndarray, shape (N, 3)
+        [vx, vy, vz] velocities of each state row.
+    rng : np.random.Generator, optional
+        Random-number generator.  If ``None``, ``np.random.default_rng()``
+        is used (avoids the legacy global random state).
+
+    Returns
+    -------
+    None
+        If the atom is projected to ground (discarded).
+    tuple
+        ``(m_values, squiggly_amplitudes, internal_is_ground, positions,
+        velocities)`` with ground rows removed and excited amplitudes
+        renormalised so the wavefunction has unit norm.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    p_g, p_e = calculate_ground_and_excited_probabilities(
+        m_values, squiggly_amplitudes, internal_is_ground
+    )
+
+    total_prob = p_g + p_e
+    if total_prob == 0:
+        # Empty state from a prior clearout -- treat as already discarded
+        return None
+
+    u = rng.uniform()
+    if u < p_g / total_prob:
+        # Projected to ground -- discard
+        return None
+
+    # Survived -- keep only excited rows and renormalise
+    keep = ~internal_is_ground
+    return (
+        m_values[keep],
+        squiggly_amplitudes[keep] * (1.0 / np.sqrt(p_e)),
+        internal_is_ground[keep],
+        positions[keep],
+        velocities[keep],
+    )
+
+
+def run_clearout_trials(sequence_fn, n_trials, rng=None):
+    """Run ``sequence_fn(rng)`` ``n_trials`` times.
+
+    The closure must return either ``None`` (atom discarded mid-sequence)
+    or the final state tuple.
+
+    For surviving runs, each contributes its quantum-mechanical
+    :math:`P_\\text{g}` and :math:`P_\\text{e}` weighted by
+    :math:`1/n_\\text{trials}` (so the result equals the deterministic
+    population breakdown in the limit :math:`n_\\text{trials} \\to \\infty`).
+
+    Parameters
+    ----------
+    sequence_fn : callable
+        ``sequence_fn(rng)`` -> ``None`` or state tuple.
+    n_trials : int
+        Number of Monte-Carlo trials to run.
+    rng : np.random.Generator, optional
+        Random-number generator.  If ``None``, ``np.random.default_rng()``
+        is used.
+
+    Returns
+    -------
+    tuple
+        ``(p_ground, p_excited, p_discarded)`` -- population fractions.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    ground_tally = 0.0
+    excited_tally = 0.0
+    discard_tally = 0.0
+
+    for _ in range(n_trials):
+        result = sequence_fn(rng)
+        if result is None:
+            discard_tally += 1.0
+        else:
+            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = result
+            p_g, p_e = calculate_ground_and_excited_probabilities(
+                m_values, squiggly_amplitudes, internal_is_ground
+            )
+            ground_tally += p_g
+            excited_tally += p_e
+
+    return (
+        ground_tally / n_trials,
+        excited_tally / n_trials,
+        discard_tally / n_trials,
+    )
+
+
 def do_rabi_pulse(pulse_detuning, pulse_duration=T_PI, initial_velocity_z=0.0):
     """Compute excitation fraction for a single pulse.
 
