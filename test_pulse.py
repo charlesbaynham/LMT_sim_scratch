@@ -13,11 +13,11 @@ from lmt_simulation import (
 )
 
 
-def run_pulse_sequence(c0, c1, pulse_durations):
+def run_pulse_sequence(c0, c1, pulse_durations, pulse_detuning_hz=RECOIL_FREQUENCY_HZ):
     m, pos, vel, amp, isg = make_atom_states(
         position_z=0.0, initial_velocity_z=0.0, c0=c0, c1=c1
     )
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + RECOIL_FREQUENCY_HZ)
+    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_detuning_hz)
     sq_amp = transform_state_vector(
         m,
         amp,
@@ -35,7 +35,7 @@ def run_pulse_sequence(c0, c1, pulse_durations):
             isg,
             pos,
             vel,
-            pulse_detuning=RECOIL_FREQUENCY_HZ,
+            pulse_detuning=pulse_detuning_hz,
             t_pulse=pulse_duration,
             pulse_rabi_freq=RABI_FREQ,
             pulse_phase=0.0,
@@ -61,7 +61,7 @@ def test_pi_pulse():
     ), "Population should be conserved"
 
 
-def test_pulse_series():
+def test_two_pi_pulses_return_to_ground():
     p_ground, p_excited = run_pulse_sequence(
         c0=1.0, c1=0.0, pulse_durations=[T_PI, T_PI]
     )
