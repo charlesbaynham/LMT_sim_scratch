@@ -940,7 +940,7 @@ def do_clearout(
     )
 
     total_prob = p_g + p_e
-    if total_prob == 0:
+    if np.isclose(total_prob, 0.0):
         # Empty state from a prior clearout -- treat as already discarded
         return None
 
@@ -988,6 +988,9 @@ def run_clearout_trials(sequence_fn, n_trials, rng=None):
     """
     if rng is None:
         rng = np.random.default_rng()
+
+    if n_trials <= 0:
+        raise ValueError("n_trials must be positive")
 
     ground_tally = 0.0
     excited_tally = 0.0
