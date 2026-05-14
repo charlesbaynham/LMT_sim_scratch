@@ -14,5 +14,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "nbclient>=0.10.4",
+    "nbformat>=5.10.4",
     "pytest",
 ]
