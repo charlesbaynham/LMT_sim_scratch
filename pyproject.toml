@@ -1,0 +1,18 @@
+[project]
+name = "lmt-sim-scratch"
+version = "0.1.0"
+description = "Simulation notebooks and scripts for LMT interferometry"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "tqdm",
+    "structlog",
+    "ipykernel>=7.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
