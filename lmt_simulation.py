@@ -575,27 +575,38 @@ def pulse_interaction_in_borde_representation(
     )
 
 
-def gaussian_rabi(positions, on_axis_rabi, beam_waist):
-    """Per-row Rabi frequency from TEM00 transverse intensity profile.
+def gaussian_rabi(positions, on_axis_rabi, beam_waist, wavelength=TRANSITION_WAVELENGTH):
+    """Per-row Rabi frequency from a TEM00 Gaussian beam profile.
 
-    Omega(x, y) = Omega_0 * exp(-(x^2 + y^2) / w^2)
+    Includes both the transverse intensity variation and the z-dependent beam
+    expansion due to the Rayleigh range.  The beam waist is assumed to be at
+    z = 0 (the atom's initial position).
+
+    Rayleigh range:   z_R = pi * w0^2 / lambda
+    Beam radius:      w(z) = w0 * sqrt(1 + (z / z_R)^2)
+    Rabi frequency:   Omega(x, y, z) = Omega_0 * (w0/w(z)) * exp(-(x^2+y^2) / w(z)^2)
 
     Parameters
     ----------
     positions : np.ndarray, shape (N, 3)
         [x, y, z] positions of each state row.
     on_axis_rabi : float
-        On-axis Rabi frequency in Hz.
+        On-axis Rabi frequency at the beam waist in Hz.
     beam_waist : float
-        Beam waist (1/e field radius) in metres.
+        Beam waist radius w0 (1/e field radius) in metres.
+    wavelength : float, optional
+        Laser wavelength in metres, by default TRANSITION_WAVELENGTH.
+        Used to compute the Rayleigh range.
 
     Returns
     -------
     np.ndarray, shape (N,)
         Per-row Rabi frequency in Hz.
     """
+    z_R = np.pi * beam_waist**2 / wavelength
+    w_z = beam_waist * np.sqrt(1 + (positions[:, 2] / z_R) ** 2)
     r2 = positions[:, 0] ** 2 + positions[:, 1] ** 2
-    return on_axis_rabi * np.exp(-r2 / beam_waist**2)
+    return on_axis_rabi * (beam_waist / w_z) * np.exp(-r2 / w_z**2)
 
 
 def do_gaussian_pulse(
@@ -612,12 +623,15 @@ def do_gaussian_pulse(
     k_sign=+1,
     k_wavevector=K_WAVEVECTOR,
     vz=0.0,
+    wavelength=TRANSITION_WAVELENGTH,
 ):
-    """Apply a laser pulse with a Gaussian transverse intensity profile.
+    """Apply a laser pulse with a full 3-D Gaussian (TEM00) intensity profile.
 
     Computes the per-row Rabi frequency at the pulse midpoint using the
-    TEM00 Gaussian profile, then calls
-    pulse_interaction_in_borde_representation with those per-row frequencies.
+    TEM00 Gaussian profile — including the Rayleigh-range z-dependence — then
+    calls pulse_interaction_in_borde_representation with those per-row
+    frequencies.  The beam waist is assumed to be located at z = 0 (the
+    atom's initial position).
 
     Parameters
     ----------
@@ -636,9 +650,9 @@ def do_gaussian_pulse(
     t_pulse : float
         Pulse duration in seconds.
     on_axis_rabi_freq : float
-        On-axis (peak) Rabi frequency in Hz.
+        On-axis (peak) Rabi frequency at the beam waist in Hz.
     beam_waist : float
-        Beam waist (1/e field radius) in metres. Required -- no default.
+        Beam waist w0 (1/e field radius) in metres. Required -- no default.
     pulse_phase : float, optional
         Pulse phase in radians, by default 0.0.
     k_sign : int, optional
@@ -647,15 +661,18 @@ def do_gaussian_pulse(
         Wavevector magnitude, by default K_WAVEVECTOR.
     vz : float, optional
         Reference z-velocity for Borde phase calculations, by default 0.0.
+    wavelength : float, optional
+        Laser wavelength in metres, by default TRANSITION_WAVELENGTH.
+        Used to compute the Rayleigh range z_R = pi * w0^2 / wavelength.
 
     Returns
     -------
     tuple
         (new_m_values, new_squiggly_amplitudes, new_is_ground, new_positions, new_velocities)
     """
-    # Compute transverse position at pulse midpoint for Gaussian Rabi calculation
+    # Compute 3-D position at pulse midpoint for Gaussian Rabi calculation
     positions_mid = positions + velocities * (t_pulse / 2)
-    rabi_per_row = gaussian_rabi(positions_mid, on_axis_rabi_freq, beam_waist)
+    rabi_per_row = gaussian_rabi(positions_mid, on_axis_rabi_freq, beam_waist, wavelength)
     return pulse_interaction_in_borde_representation(
         m_values,
         squiggly_amplitudes,
