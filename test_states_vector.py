@@ -680,7 +680,8 @@ def test_clearout_empty_state_returns_none():
 
 
 def test_clearout_mc_matches_deterministic_dropground():
-    """Mach-Zehnder with clearout: MC results match deterministic baseline."""
+    """MC population fractions (including discard channel) match deterministic
+    drop-ground-no-renormalise baseline."""
     phi = 0.3
     detuning_hz = sim.RECOIL_FREQUENCY_HZ
     time_between = 200e-6
@@ -752,8 +753,6 @@ def test_clearout_mc_matches_deterministic_dropground():
         if result is None:
             return None
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = result
-        current_time += 0.0  # clearout is instantaneous
-
         # Propagate
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             sim.propagate_states_in_borde_representation(
@@ -930,12 +929,17 @@ def test_clearout_frame_independence():
     c0 /= norm
     c1 /= norm
 
+    # Use non-zero t, z, vz so the Bordé transform is non-trivial.
+    t_ref = 1e-6
+    z_ref = 1e-6
+    vz_ref = 1.0
+
     # --- Bordé frame test ---
     m_b, pos_b, vel_b, amp_b, isg_b = sim.make_atom_states(c0=c0, c1=c1)
     omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
     squiggly_b = sim.transform_state_vector(
         m_b, amp_b, isg_b,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=False,
+        omega_laser=omega_laser, t=t_ref, z=z_ref, vz=vz_ref, inverse=False,
     )
 
     rng_borde = np.random.default_rng(42)
@@ -943,14 +947,14 @@ def test_clearout_frame_independence():
 
     # --- Lab frame test ---
     m_l, pos_l, vel_l, amp_l, isg_l = sim.make_atom_states(c0=c0, c1=c1)
-    # Transform to Bordé, then back to lab
+    # Transform to Bordé, then back to lab (non-trivial parameters)
     squiggly_tmp = sim.transform_state_vector(
         m_l, amp_l, isg_l,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=False,
+        omega_laser=omega_laser, t=t_ref, z=z_ref, vz=vz_ref, inverse=False,
     )
     amp_lab = sim.transform_state_vector(
         m_l, squiggly_tmp, isg_l,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=True,
+        omega_laser=omega_laser, t=t_ref, z=z_ref, vz=vz_ref, inverse=True,
     )
 
     rng_lab = np.random.default_rng(42)
