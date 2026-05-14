@@ -1,6 +1,7 @@
 ######
 
 import logging
+from dataclasses import dataclass
 
 # import logging
 
@@ -45,6 +46,75 @@ np.random.seed(42)
 
 
 ######
+
+
+@dataclass(frozen=True)
+class Pulse:
+    time: float
+    k: int
+    detuning_hz: float
+    label: str
+    rabi_frequency: float
+    pulse_area: float
+
+    def __post_init__(self):
+        if self.time < 0.0:
+            raise ValueError("Pulse time must be non-negative")
+        if self.k not in (-1, +1):
+            raise ValueError("Pulse k must be either +1 or -1")
+        if self.rabi_frequency <= 0.0:
+            raise ValueError("Pulse rabi_frequency must be positive")
+        if self.pulse_area < 0.0:
+            raise ValueError("Pulse pulse_area must be non-negative")
+
+    @property
+    def duration(self):
+        return self.pulse_area / (2 * np.pi * self.rabi_frequency)
+
+
+def build_mach_zehnder_pulse_sequence(
+    detuning_hz=RECOIL_FREQUENCY_HZ,
+    time_between_pulses=200e-6,
+    rabi_frequency=RABI_FREQ,
+    pulse_area_multiplier=1.0,
+    k=+1,
+):
+    first_pulse = Pulse(
+        time=0.0,
+        k=k,
+        detuning_hz=detuning_hz,
+        label="beam_splitter_1",
+        rabi_frequency=rabi_frequency,
+        pulse_area=(np.pi / 2) * pulse_area_multiplier,
+    )
+    second_pulse = Pulse(
+        time=first_pulse.time + first_pulse.duration + time_between_pulses,
+        k=k,
+        detuning_hz=detuning_hz,
+        label="mirror",
+        rabi_frequency=rabi_frequency,
+        pulse_area=np.pi * pulse_area_multiplier,
+    )
+    third_pulse = Pulse(
+        time=second_pulse.time + second_pulse.duration + time_between_pulses,
+        k=k,
+        detuning_hz=detuning_hz,
+        label="beam_splitter_2",
+        rabi_frequency=rabi_frequency,
+        pulse_area=(np.pi / 2) * pulse_area_multiplier,
+    )
+
+    return [first_pulse, second_pulse, third_pulse]
+
+
+def mach_zehnder_pulse_phase(pulse, phi):
+    if pulse.label == "beam_splitter_1":
+        return 0.0
+    if pulse.label == "mirror":
+        return phi
+    if pulse.label == "beam_splitter_2":
+        return 4 * phi
+    raise ValueError(f"Unknown Mach-Zehnder pulse label: {pulse.label}")
 
 
 def make_atom_states(
@@ -888,6 +958,146 @@ def calculate_ground_and_excited_probabilities(
     return ground_prob, excited_prob
 
 
+def run_pulse_sequence_in_borde_representation(
+    m_values,
+    positions,
+    velocities,
+    internal_amplitude,
+    internal_is_ground,
+    pulse_sequence,
+    initial_velocity_z=0.0,
+    pulse_phase_fn=None,
+):
+    if not pulse_sequence:
+        raise ValueError("pulse_sequence must contain at least one pulse")
+
+    detunings_hz = {pulse.detuning_hz for pulse in pulse_sequence}
+    if len(detunings_hz) != 1:
+        raise ValueError(
+            "All pulses must currently use the same detuning for Bordé-frame propagation"
+        )
+
+    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_sequence[0].detuning_hz)
+    current_time = 0.0
+
+    squiggly_amplitudes = transform_state_vector(
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=current_time,
+        z=0.0,
+        vz=initial_velocity_z,
+        inverse=False,
+    )
+
+    for pulse in pulse_sequence:
+        if pulse.time < current_time:
+            raise ValueError("Pulse times must be non-decreasing and non-overlapping")
+
+        free_evolution_time = pulse.time - current_time
+        if free_evolution_time > 0.0:
+            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+                propagate_states_in_borde_representation(
+                    m_values,
+                    squiggly_amplitudes,
+                    internal_is_ground,
+                    positions,
+                    velocities,
+                    time_of_propegation=free_evolution_time,
+                    omega_laser=omega_laser,
+                    vz=initial_velocity_z,
+                    k_sign=pulse.k,
+                    k_wavevector=K_WAVEVECTOR,
+                )
+            )
+            current_time += free_evolution_time
+
+        pulse_phase = 0.0 if pulse_phase_fn is None else pulse_phase_fn(pulse)
+        m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+            pulse_interaction_in_borde_representation(
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
+                pulse_detuning=pulse.detuning_hz,
+                t_pulse=pulse.duration,
+                pulse_rabi_freq=pulse.rabi_frequency,
+                pulse_phase=pulse_phase,
+                k_sign=pulse.k,
+                k_wavevector=K_WAVEVECTOR,
+                vz=initial_velocity_z,
+            )
+        )
+        current_time += pulse.duration
+
+    return (
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
+        omega_laser,
+        current_time,
+    )
+
+
+def calculate_excited_fraction_for_pulse_sequence(
+    pulse_sequence,
+    initial_velocity_z=0.0,
+    pulse_phase_fn=None,
+):
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
+        make_atom_states(initial_velocity_z=initial_velocity_z)
+    )
+
+    (
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
+        omega_laser,
+        current_time,
+    ) = run_pulse_sequence_in_borde_representation(
+        m_values,
+        positions,
+        velocities,
+        internal_amplitude,
+        internal_is_ground,
+        pulse_sequence,
+        initial_velocity_z=initial_velocity_z,
+        pulse_phase_fn=pulse_phase_fn,
+    )
+
+    internal_amplitude_final = transform_state_vector(
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=current_time,
+        z=0.0,
+        vz=initial_velocity_z,
+        inverse=True,
+    )
+
+    ground_prob, excited_prob = calculate_ground_and_excited_probabilities(
+        m_values,
+        internal_amplitude_final,
+        internal_is_ground,
+    )
+
+    total_prob = ground_prob + excited_prob
+    if not np.isclose(total_prob, 1.0, rtol=1e-6):
+        logger.warning(
+            "State is not normalized after pulse sequence",
+            total_prob=total_prob,
+        )
+
+    return excited_prob / total_prob
+
+
 def do_clearout(
     m_values,
     squiggly_amplitudes,
@@ -1033,63 +1243,21 @@ def do_rabi_pulse(pulse_detuning, pulse_duration=T_PI, initial_velocity_z=0.0):
         Excitation fraction (probability of being in excited state)
     """
 
-    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
-        make_atom_states(initial_velocity_z=initial_velocity_z)
-    )
-
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_detuning)
-
-    squiggly_amplitudes = transform_state_vector(
-        m_values,
-        internal_amplitude,
-        internal_is_ground,
-        omega_laser=omega_laser,
-        t=0.0,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=False,
-    )
-
-    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-        pulse_interaction_in_borde_representation(
-            m_values,
-            squiggly_amplitudes,
-            internal_is_ground,
-            positions,
-            velocities,
-            pulse_detuning=pulse_detuning,
-            t_pulse=pulse_duration,
-            pulse_rabi_freq=RABI_FREQ,
-            pulse_phase=0.0,
-            k_sign=+1,
-            k_wavevector=K_WAVEVECTOR,
-            vz=initial_velocity_z,
+    pulse_sequence = [
+        Pulse(
+            time=0.0,
+            k=+1,
+            detuning_hz=pulse_detuning,
+            label="rabi_pulse",
+            rabi_frequency=RABI_FREQ,
+            pulse_area=2 * np.pi * RABI_FREQ * pulse_duration,
         )
-    )
-    internal_amplitude_after_pulse = transform_state_vector(
-        m_values,
-        squiggly_amplitudes,
-        internal_is_ground,
-        omega_laser=omega_laser,
-        t=pulse_duration,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=True,
-    )
+    ]
 
-    ground_prob, excited_prob = calculate_ground_and_excited_probabilities(
-        m_values,
-        internal_amplitude_after_pulse,
-        internal_is_ground,
+    return calculate_excited_fraction_for_pulse_sequence(
+        pulse_sequence,
+        initial_velocity_z=initial_velocity_z,
     )
-
-    total_prob = ground_prob + excited_prob
-    if not np.isclose(total_prob, 1.0, rtol=1e-6):
-        logger.warning(
-            "State is not normalized after Rabi pulse", total_prob=total_prob
-        )
-
-    return excited_prob / total_prob
 
 
 def calc_mz_excitation(
@@ -1120,140 +1288,19 @@ def calc_mz_excitation(
         Excitation fraction after full sequence
     """
 
-    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
-        make_atom_states(initial_velocity_z=initial_velocity_z)
+    pulse_sequence = build_mach_zehnder_pulse_sequence(
+        detuning_hz=detuning_hz,
+        time_between_pulses=time_between_pulses,
+        rabi_frequency=RABI_FREQ,
+        pulse_area_multiplier=1.0,
+        k=+1,
     )
 
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
-    current_time = 0.0
-
-    squiggly_amplitudes = transform_state_vector(
-        m_values,
-        internal_amplitude,
-        internal_is_ground,
-        omega_laser=omega_laser,
-        t=current_time,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=False,
+    return calculate_excited_fraction_for_pulse_sequence(
+        pulse_sequence,
+        initial_velocity_z=initial_velocity_z,
+        pulse_phase_fn=lambda pulse: mach_zehnder_pulse_phase(pulse, phi),
     )
-
-    # First pi/2 pulse, phase 0
-    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-        pulse_interaction_in_borde_representation(
-            m_values,
-            squiggly_amplitudes,
-            internal_is_ground,
-            positions,
-            velocities,
-            pulse_detuning=detuning_hz,
-            t_pulse=T_PI / 2,
-            pulse_rabi_freq=RABI_FREQ,
-            pulse_phase=0.0,
-            k_sign=+1,
-            k_wavevector=K_WAVEVECTOR,
-            vz=initial_velocity_z,
-        )
-    )
-    current_time += T_PI / 2
-
-    # Free evolution and second pi pulse, phase phi
-    if time_between_pulses > 0.0:
-        m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-            propagate_states_in_borde_representation(
-                m_values,
-                squiggly_amplitudes,
-                internal_is_ground,
-                positions,
-                velocities,
-                time_of_propegation=time_between_pulses,
-                omega_laser=omega_laser,
-                vz=initial_velocity_z,
-                k_sign=+1,
-                k_wavevector=K_WAVEVECTOR,
-            )
-        )
-        current_time += time_between_pulses
-
-    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-        pulse_interaction_in_borde_representation(
-            m_values,
-            squiggly_amplitudes,
-            internal_is_ground,
-            positions,
-            velocities,
-            pulse_detuning=detuning_hz,
-            t_pulse=T_PI,
-            pulse_rabi_freq=RABI_FREQ,
-            pulse_phase=phi,
-            k_sign=+1,
-            k_wavevector=K_WAVEVECTOR,
-            vz=initial_velocity_z,
-        )
-    )
-    current_time += T_PI
-
-    # Free evolution and final pi/2 pulse, phase 4*phi
-    if time_between_pulses > 0.0:
-        m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-            propagate_states_in_borde_representation(
-                m_values,
-                squiggly_amplitudes,
-                internal_is_ground,
-                positions,
-                velocities,
-                time_of_propegation=time_between_pulses,
-                omega_laser=omega_laser,
-                vz=initial_velocity_z,
-                k_sign=+1,
-                k_wavevector=K_WAVEVECTOR,
-            )
-        )
-        current_time += time_between_pulses
-
-    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-        pulse_interaction_in_borde_representation(
-            m_values,
-            squiggly_amplitudes,
-            internal_is_ground,
-            positions,
-            velocities,
-            pulse_detuning=detuning_hz,
-            t_pulse=T_PI / 2,
-            pulse_rabi_freq=RABI_FREQ,
-            pulse_phase=4 * phi,
-            k_sign=+1,
-            k_wavevector=K_WAVEVECTOR,
-            vz=initial_velocity_z,
-        )
-    )
-    current_time += T_PI / 2
-
-    internal_amplitude_final = transform_state_vector(
-        m_values,
-        squiggly_amplitudes,
-        internal_is_ground,
-        omega_laser=omega_laser,
-        t=current_time,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=True,
-    )
-
-    ground_prob, excited_prob = calculate_ground_and_excited_probabilities(
-        m_values,
-        internal_amplitude_final,
-        internal_is_ground,
-    )
-
-    total_prob = ground_prob + excited_prob
-    if not np.isclose(total_prob, 1.0, rtol=1e-6):
-        logger.warning(
-            "State is not normalized after Mach-Zehnder sequence",
-            total_prob=total_prob,
-        )
-
-    return excited_prob / total_prob
 
 
 if __name__ == "__main__":
