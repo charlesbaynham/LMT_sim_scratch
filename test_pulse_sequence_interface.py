@@ -12,7 +12,6 @@ from lmt_simulation import (
     calc_mz_excitation,
     calculate_excited_fraction_for_pulse_sequence,
     calculate_ground_and_excited_probabilities,
-    mach_zehnder_pulse_phase,
     make_atom_states,
     propagate_states_in_borde_representation,
     pulse_interaction_in_borde_representation,
@@ -163,6 +162,7 @@ def test_build_mach_zehnder_pulse_sequence_returns_pulse_objects():
         "mirror",
         "beam_splitter_2",
     ]
+    assert [pulse.phi for pulse in pulse_sequence] == [0.0, 0.0, 0.0]
     assert [pulse.k for pulse in pulse_sequence] == [+1, +1, +1]
     assert np.isclose(pulse_sequence[0].time, 0.0)
     assert np.isclose(pulse_sequence[0].duration, T_PI / 2)
@@ -188,6 +188,7 @@ def test_pulse_sequence_interface_matches_legacy_results(
     time_between_pulses,
 ):
     pulse_sequence = build_mach_zehnder_pulse_sequence(
+        phi=phi,
         detuning_hz=detuning_hz,
         time_between_pulses=time_between_pulses,
     )
@@ -195,7 +196,6 @@ def test_pulse_sequence_interface_matches_legacy_results(
     new_result = calculate_excited_fraction_for_pulse_sequence(
         pulse_sequence,
         initial_velocity_z=initial_velocity_z,
-        pulse_phase_fn=lambda pulse: mach_zehnder_pulse_phase(pulse, phi),
     )
     legacy_result = legacy_calc_mz_excitation(
         phi=phi,
@@ -214,3 +214,12 @@ def test_pulse_sequence_interface_matches_legacy_results(
         ),
         legacy_result,
     )
+
+
+def test_build_mach_zehnder_pulse_sequence_stores_phase_on_pulses():
+    phi = 0.37 * np.pi
+    pulse_sequence = build_mach_zehnder_pulse_sequence(phi=phi)
+
+    assert np.isclose(pulse_sequence[0].phi, 0.0)
+    assert np.isclose(pulse_sequence[1].phi, phi)
+    assert np.isclose(pulse_sequence[2].phi, 4 * phi)

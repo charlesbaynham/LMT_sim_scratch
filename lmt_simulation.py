@@ -53,6 +53,7 @@ class Pulse:
     time: float
     k: int
     detuning_hz: float
+    phi: float
     label: str
     rabi_frequency: float
     pulse_area: float
@@ -73,6 +74,7 @@ class Pulse:
 
 
 def build_mach_zehnder_pulse_sequence(
+    phi=0.0,
     detuning_hz=RECOIL_FREQUENCY_HZ,
     time_between_pulses=200e-6,
     rabi_frequency=RABI_FREQ,
@@ -83,6 +85,7 @@ def build_mach_zehnder_pulse_sequence(
         time=0.0,
         k=k,
         detuning_hz=detuning_hz,
+        phi=0.0,
         label="beam_splitter_1",
         rabi_frequency=rabi_frequency,
         pulse_area=(np.pi / 2) * pulse_area_multiplier,
@@ -91,6 +94,7 @@ def build_mach_zehnder_pulse_sequence(
         time=first_pulse.time + first_pulse.duration + time_between_pulses,
         k=k,
         detuning_hz=detuning_hz,
+        phi=phi,
         label="mirror",
         rabi_frequency=rabi_frequency,
         pulse_area=np.pi * pulse_area_multiplier,
@@ -99,22 +103,13 @@ def build_mach_zehnder_pulse_sequence(
         time=second_pulse.time + second_pulse.duration + time_between_pulses,
         k=k,
         detuning_hz=detuning_hz,
+        phi=4 * phi,
         label="beam_splitter_2",
         rabi_frequency=rabi_frequency,
         pulse_area=(np.pi / 2) * pulse_area_multiplier,
     )
 
     return [first_pulse, second_pulse, third_pulse]
-
-
-def mach_zehnder_pulse_phase(pulse, phi):
-    if pulse.label == "beam_splitter_1":
-        return 0.0
-    if pulse.label == "mirror":
-        return phi
-    if pulse.label == "beam_splitter_2":
-        return 4 * phi
-    raise ValueError(f"Unknown Mach-Zehnder pulse label: {pulse.label}")
 
 
 def make_atom_states(
@@ -966,7 +961,6 @@ def run_pulse_sequence_in_borde_representation(
     internal_is_ground,
     pulse_sequence,
     initial_velocity_z=0.0,
-    pulse_phase_fn=None,
 ):
     if not pulse_sequence:
         raise ValueError("pulse_sequence must contain at least one pulse")
@@ -1013,7 +1007,6 @@ def run_pulse_sequence_in_borde_representation(
             )
             current_time += free_evolution_time
 
-        pulse_phase = 0.0 if pulse_phase_fn is None else pulse_phase_fn(pulse)
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             pulse_interaction_in_borde_representation(
                 m_values,
@@ -1024,7 +1017,7 @@ def run_pulse_sequence_in_borde_representation(
                 pulse_detuning=pulse.detuning_hz,
                 t_pulse=pulse.duration,
                 pulse_rabi_freq=pulse.rabi_frequency,
-                pulse_phase=pulse_phase,
+                pulse_phase=pulse.phi,
                 k_sign=pulse.k,
                 k_wavevector=K_WAVEVECTOR,
                 vz=initial_velocity_z,
@@ -1046,7 +1039,6 @@ def run_pulse_sequence_in_borde_representation(
 def calculate_excited_fraction_for_pulse_sequence(
     pulse_sequence,
     initial_velocity_z=0.0,
-    pulse_phase_fn=None,
 ):
     m_values, positions, velocities, internal_amplitude, internal_is_ground = (
         make_atom_states(initial_velocity_z=initial_velocity_z)
@@ -1068,7 +1060,6 @@ def calculate_excited_fraction_for_pulse_sequence(
         internal_is_ground,
         pulse_sequence,
         initial_velocity_z=initial_velocity_z,
-        pulse_phase_fn=pulse_phase_fn,
     )
 
     internal_amplitude_final = transform_state_vector(
@@ -1248,6 +1239,7 @@ def do_rabi_pulse(pulse_detuning, pulse_duration=T_PI, initial_velocity_z=0.0):
             time=0.0,
             k=+1,
             detuning_hz=pulse_detuning,
+            phi=0.0,
             label="rabi_pulse",
             rabi_frequency=RABI_FREQ,
             pulse_area=2 * np.pi * RABI_FREQ * pulse_duration,
@@ -1289,6 +1281,7 @@ def calc_mz_excitation(
     """
 
     pulse_sequence = build_mach_zehnder_pulse_sequence(
+        phi=phi,
         detuning_hz=detuning_hz,
         time_between_pulses=time_between_pulses,
         rabi_frequency=RABI_FREQ,
@@ -1299,7 +1292,6 @@ def calc_mz_excitation(
     return calculate_excited_fraction_for_pulse_sequence(
         pulse_sequence,
         initial_velocity_z=initial_velocity_z,
-        pulse_phase_fn=lambda pulse: mach_zehnder_pulse_phase(pulse, phi),
     )
 
 
