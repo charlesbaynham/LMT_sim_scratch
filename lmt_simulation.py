@@ -73,6 +73,19 @@ class Pulse:
         return self.pulse_area / (2 * np.pi * self.rabi_frequency)
 
 
+@dataclass(frozen=True)
+class Clearout:
+    time: float
+    duration: float
+    label: str = "clearout"
+
+    def __post_init__(self):
+        if self.time < 0.0:
+            raise ValueError("Clearout time must be non-negative")
+        if self.duration < 0.0:
+            raise ValueError("Clearout duration must be non-negative")
+
+
 def build_mach_zehnder_pulse_sequence(
     phi=0.0,
     detuning_hz=RECOIL_FREQUENCY_HZ,
@@ -110,6 +123,26 @@ def build_mach_zehnder_pulse_sequence(
     )
 
     return [first_pulse, second_pulse, third_pulse]
+
+
+def _sequence_clock_pulses(sequence):
+    return [event for event in sequence if isinstance(event, Pulse)]
+
+
+def _sequence_event_k_sign(sequence, event_index):
+    event = sequence[event_index]
+    if isinstance(event, Pulse):
+        return event.k
+
+    for prior_event in reversed(sequence[:event_index]):
+        if isinstance(prior_event, Pulse):
+            return prior_event.k
+
+    for later_event in sequence[event_index + 1 :]:
+        if isinstance(later_event, Pulse):
+            return later_event.k
+
+    return +1
 
 
 def make_atom_states(
@@ -961,26 +994,34 @@ def run_pulse_sequence_in_borde_representation(
     internal_is_ground,
     pulse_sequence,
     initial_velocity_z=0.0,
+    rng=None,
 ):
     """Run a pulse sequence on amplitudes already expressed in the Bordé frame."""
     if not pulse_sequence:
         raise ValueError("pulse_sequence must contain at least one pulse")
 
-    detunings_hz = {pulse.detuning_hz for pulse in pulse_sequence}
+    clock_pulses = _sequence_clock_pulses(pulse_sequence)
+    if not clock_pulses:
+        raise ValueError("pulse_sequence must contain at least one clock Pulse")
+
+    detunings_hz = {pulse.detuning_hz for pulse in clock_pulses}
     if len(detunings_hz) != 1:
         raise ValueError(
             "All pulses must currently use the same detuning for Bordé-frame propagation"
         )
 
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_sequence[0].detuning_hz)
+    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + clock_pulses[0].detuning_hz)
     current_time = 0.0
 
-    for pulse in pulse_sequence:
-        if pulse.time < current_time:
-            raise ValueError("Pulse times must be non-decreasing and non-overlapping")
+    for event_index, event in enumerate(pulse_sequence):
+        if event.time < current_time:
+            raise ValueError(
+                "Sequence event times must be non-decreasing and pulses must not overlap"
+            )
 
-        free_evolution_time = pulse.time - current_time
+        free_evolution_time = event.time - current_time
         if free_evolution_time > 0.0:
+            k_sign = _sequence_event_k_sign(pulse_sequence, event_index)
             m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
                 propagate_states_in_borde_representation(
                     m_values,
@@ -991,29 +1032,49 @@ def run_pulse_sequence_in_borde_representation(
                     time_of_propegation=free_evolution_time,
                     omega_laser=omega_laser,
                     vz=initial_velocity_z,
-                    k_sign=pulse.k,
+                    k_sign=k_sign,
                     k_wavevector=K_WAVEVECTOR,
                 )
             )
             current_time += free_evolution_time
 
-        m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-            pulse_interaction_in_borde_representation(
+        if isinstance(event, Pulse):
+            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+                pulse_interaction_in_borde_representation(
+                    m_values,
+                    squiggly_amplitudes,
+                    internal_is_ground,
+                    positions,
+                    velocities,
+                    pulse_detuning=event.detuning_hz,
+                    t_pulse=event.duration,
+                    pulse_rabi_freq=event.rabi_frequency,
+                    pulse_phase=event.phi,
+                    k_sign=event.k,
+                    k_wavevector=K_WAVEVECTOR,
+                    vz=initial_velocity_z,
+                )
+            )
+            current_time += event.duration
+            continue
+
+        if isinstance(event, Clearout):
+            result = do_clearout(
                 m_values,
                 squiggly_amplitudes,
                 internal_is_ground,
                 positions,
                 velocities,
-                pulse_detuning=pulse.detuning_hz,
-                t_pulse=pulse.duration,
-                pulse_rabi_freq=pulse.rabi_frequency,
-                pulse_phase=pulse.phi,
-                k_sign=pulse.k,
-                k_wavevector=K_WAVEVECTOR,
-                vz=initial_velocity_z,
+                rng=rng,
             )
-        )
-        current_time += pulse.duration
+            if result is None:
+                return None
+            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+                result
+            )
+            continue
+
+        raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
 
     return (
         m_values,
@@ -1033,11 +1094,16 @@ def calculate_excited_fraction_for_pulse_sequence(
     """Run a lab-frame pulse sequence and return the final excited-state fraction."""
     if not pulse_sequence:
         raise ValueError("pulse_sequence must contain at least one pulse")
+    if any(isinstance(event, Clearout) for event in pulse_sequence):
+        raise ValueError(
+            "calculate_excited_fraction_for_pulse_sequence does not support Clearout events"
+        )
 
     m_values, positions, velocities, internal_amplitude, internal_is_ground = (
         make_atom_states(initial_velocity_z=initial_velocity_z)
     )
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_sequence[0].detuning_hz)
+    clock_pulses = _sequence_clock_pulses(pulse_sequence)
+    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + clock_pulses[0].detuning_hz)
     squiggly_amplitudes = transform_state_vector(
         m_values,
         internal_amplitude,

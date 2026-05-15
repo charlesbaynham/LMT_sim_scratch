@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from lmt_simulation import (
+    Clearout,
     K_WAVEVECTOR,
     Pulse,
     RABI_FREQ,
@@ -12,6 +13,7 @@ from lmt_simulation import (
     calc_mz_excitation,
     calculate_excited_fraction_for_pulse_sequence,
     calculate_ground_and_excited_probabilities,
+    do_clearout,
     make_atom_states,
     propagate_states_in_borde_representation,
     pulse_interaction_in_borde_representation,
@@ -227,6 +229,140 @@ def legacy_run_mz_sequence_in_borde_representation(
     )
 
 
+def legacy_run_mz_sequence_with_clearout_in_borde_representation(
+    phi,
+    rng,
+    detuning_hz=RECOIL_FREQUENCY_HZ,
+    initial_velocity_z=0.0,
+    time_between_pulses=200e-6,
+):
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
+        make_atom_states(initial_velocity_z=initial_velocity_z)
+    )
+    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
+    squiggly_amplitudes = transform_state_vector(
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=initial_velocity_z,
+        inverse=False,
+    )
+    current_time = 0.0
+
+    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+        pulse_interaction_in_borde_representation(
+            m_values,
+            squiggly_amplitudes,
+            internal_is_ground,
+            positions,
+            velocities,
+            pulse_detuning=detuning_hz,
+            t_pulse=T_PI / 2,
+            pulse_rabi_freq=RABI_FREQ,
+            pulse_phase=0.0,
+            k_sign=+1,
+            k_wavevector=K_WAVEVECTOR,
+            vz=initial_velocity_z,
+        )
+    )
+    current_time += T_PI / 2
+
+    if time_between_pulses > 0.0:
+        m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+            propagate_states_in_borde_representation(
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
+                time_of_propegation=time_between_pulses,
+                omega_laser=omega_laser,
+                vz=initial_velocity_z,
+                k_sign=+1,
+                k_wavevector=K_WAVEVECTOR,
+            )
+        )
+        current_time += time_between_pulses
+
+    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+        pulse_interaction_in_borde_representation(
+            m_values,
+            squiggly_amplitudes,
+            internal_is_ground,
+            positions,
+            velocities,
+            pulse_detuning=detuning_hz,
+            t_pulse=T_PI,
+            pulse_rabi_freq=RABI_FREQ,
+            pulse_phase=phi,
+            k_sign=+1,
+            k_wavevector=K_WAVEVECTOR,
+            vz=initial_velocity_z,
+        )
+    )
+    current_time += T_PI
+
+    result = do_clearout(
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
+        rng=rng,
+    )
+    if result is None:
+        return None
+    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = result
+
+    if time_between_pulses > 0.0:
+        m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+            propagate_states_in_borde_representation(
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
+                time_of_propegation=time_between_pulses,
+                omega_laser=omega_laser,
+                vz=initial_velocity_z,
+                k_sign=+1,
+                k_wavevector=K_WAVEVECTOR,
+            )
+        )
+        current_time += time_between_pulses
+
+    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+        pulse_interaction_in_borde_representation(
+            m_values,
+            squiggly_amplitudes,
+            internal_is_ground,
+            positions,
+            velocities,
+            pulse_detuning=detuning_hz,
+            t_pulse=T_PI / 2,
+            pulse_rabi_freq=RABI_FREQ,
+            pulse_phase=4 * phi,
+            k_sign=+1,
+            k_wavevector=K_WAVEVECTOR,
+            vz=initial_velocity_z,
+        )
+    )
+    current_time += T_PI / 2
+
+    return (
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
+        omega_laser,
+        current_time,
+    )
+
+
 def test_build_mach_zehnder_pulse_sequence_returns_pulse_objects():
     pulse_sequence = build_mach_zehnder_pulse_sequence(
         detuning_hz=RECOIL_FREQUENCY_HZ,
@@ -357,3 +493,204 @@ def test_run_pulse_sequence_in_borde_representation_preserves_representation(
             assert np.allclose(actual_value, expected_value)
         else:
             assert np.isclose(actual_value, expected_value)
+
+
+@pytest.mark.parametrize("seed", [0, 1, 4, 7])
+def test_run_pulse_sequence_in_borde_representation_handles_clearout(seed):
+    phi = 0.37 * np.pi
+    detuning_hz = RECOIL_FREQUENCY_HZ
+    time_between_pulses = 200e-6
+    initial_velocity_z = 0.0
+    clearout_duration = 37e-6
+    pulse_sequence = [
+        Pulse(
+            time=0.0,
+            k=+1,
+            detuning_hz=detuning_hz,
+            phi=0.0,
+            label="beam_splitter_1",
+            rabi_frequency=RABI_FREQ,
+            pulse_area=np.pi / 2,
+        ),
+        Pulse(
+            time=T_PI / 2 + time_between_pulses,
+            k=+1,
+            detuning_hz=detuning_hz,
+            phi=phi,
+            label="mirror",
+            rabi_frequency=RABI_FREQ,
+            pulse_area=np.pi,
+        ),
+        Clearout(
+            time=T_PI / 2 + time_between_pulses + T_PI,
+            duration=clearout_duration,
+            label="mid_sequence_clearout",
+        ),
+        Pulse(
+            time=T_PI / 2 + time_between_pulses + T_PI + time_between_pulses,
+            k=+1,
+            detuning_hz=detuning_hz,
+            phi=4 * phi,
+            label="beam_splitter_2",
+            rabi_frequency=RABI_FREQ,
+            pulse_area=np.pi / 2,
+        ),
+    ]
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
+        make_atom_states(initial_velocity_z=initial_velocity_z)
+    )
+    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
+    squiggly_amplitudes = transform_state_vector(
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=initial_velocity_z,
+        inverse=False,
+    )
+
+    actual_rng = np.random.default_rng(seed)
+    actual = run_pulse_sequence_in_borde_representation(
+        m_values,
+        positions,
+        velocities,
+        squiggly_amplitudes,
+        internal_is_ground,
+        pulse_sequence,
+        initial_velocity_z=initial_velocity_z,
+        rng=actual_rng,
+    )
+    expected_rng = np.random.default_rng(seed)
+    expected = legacy_run_mz_sequence_with_clearout_in_borde_representation(
+        phi=phi,
+        rng=expected_rng,
+        detuning_hz=detuning_hz,
+        initial_velocity_z=initial_velocity_z,
+        time_between_pulses=time_between_pulses,
+    )
+
+    if expected is None:
+        assert actual is None
+        return
+
+    assert actual is not None
+    for actual_value, expected_value in zip(actual, expected):
+        if isinstance(actual_value, np.ndarray):
+            assert np.allclose(actual_value, expected_value)
+        else:
+            assert np.isclose(actual_value, expected_value)
+
+
+def test_clearout_duration_is_metadata_only_in_pulse_sequence_runner():
+    detuning_hz = RECOIL_FREQUENCY_HZ
+    phi = 0.37 * np.pi
+    time_between_pulses = 200e-6
+    base_sequence = [
+        Pulse(
+            time=0.0,
+            k=+1,
+            detuning_hz=detuning_hz,
+            phi=0.0,
+            label="beam_splitter_1",
+            rabi_frequency=RABI_FREQ,
+            pulse_area=np.pi / 2,
+        ),
+        Pulse(
+            time=T_PI / 2 + time_between_pulses,
+            k=+1,
+            detuning_hz=detuning_hz,
+            phi=phi,
+            label="mirror",
+            rabi_frequency=RABI_FREQ,
+            pulse_area=np.pi,
+        ),
+        Pulse(
+            time=T_PI / 2 + time_between_pulses + T_PI + time_between_pulses,
+            k=+1,
+            detuning_hz=detuning_hz,
+            phi=4 * phi,
+            label="beam_splitter_2",
+            rabi_frequency=RABI_FREQ,
+            pulse_area=np.pi / 2,
+        ),
+    ]
+    sequences = [
+        [
+            base_sequence[0],
+            base_sequence[1],
+            Clearout(
+                time=T_PI / 2 + time_between_pulses + T_PI,
+                duration=0.0,
+                label="mid_sequence_clearout",
+            ),
+            base_sequence[2],
+        ],
+        [
+            base_sequence[0],
+            base_sequence[1],
+            Clearout(
+                time=T_PI / 2 + time_between_pulses + T_PI,
+                duration=123e-6,
+                label="mid_sequence_clearout",
+            ),
+            base_sequence[2],
+        ],
+    ]
+    state = make_atom_states()
+    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
+    squiggly = transform_state_vector(
+        state[0],
+        state[3],
+        state[4],
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=0.0,
+        inverse=False,
+    )
+
+    results = []
+    for sequence in sequences:
+        rng = np.random.default_rng(7)
+        result = run_pulse_sequence_in_borde_representation(
+            state[0].copy(),
+            state[1].copy(),
+            state[2].copy(),
+            squiggly.copy(),
+            state[4].copy(),
+            sequence,
+            initial_velocity_z=0.0,
+            rng=rng,
+        )
+        results.append(result)
+
+    if results[0] is None:
+        assert results[1] is None
+        return
+
+    assert results[1] is not None
+    for actual_value, expected_value in zip(results[0], results[1]):
+        if isinstance(actual_value, np.ndarray):
+            assert np.allclose(actual_value, expected_value)
+        else:
+            assert np.isclose(actual_value, expected_value)
+
+
+def test_calculate_excited_fraction_for_pulse_sequence_rejects_clearout_events():
+    pulse_sequence = [
+        Pulse(
+            time=0.0,
+            k=+1,
+            detuning_hz=RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="beam_splitter_1",
+            rabi_frequency=RABI_FREQ,
+            pulse_area=np.pi / 2,
+        ),
+        Clearout(time=T_PI / 2, duration=10e-6),
+    ]
+
+    with pytest.raises(ValueError, match="does not support Clearout"):
+        calculate_excited_fraction_for_pulse_sequence(pulse_sequence)
