@@ -54,7 +54,9 @@ DELAY_BETWEEN_INTERFEROMETRY_PULSES = 50e-6
 # Timing structure inside the ARTIQ kernel functions.  These reproduce the
 # implicit gaps from `fire_lmt_pulse`, `lmt_series`, `do_selective_lmt_pulse`,
 # and `do_clock_interferometry`.
-LMT_PRE_DELAY = 50e-6  # `t_start = now_mu() + 50us` at the top of each lmt_series iteration
+LMT_PRE_DELAY = (
+    50e-6  # `t_start = now_mu() + 50us` at the top of each lmt_series iteration
+)
 LMT_POST_DELAY = 10e-6  # `delay(10e-6)` at the end of fire_lmt_pulse
 SELECTIVE_PRE_DELAY = 50e-6  # `t_pulse = now_mu() + 50us` inside do_selective_lmt_pulse
 POST_BS1_DELAY = 100e-6  # `delay(100e-6)` after BS1
@@ -65,15 +67,6 @@ PRE_BS2_DELAY = 100e-6  # `t_start_last_pulse_mu = now_mu() + 100us` before BS2
 # experiment this is a long chain of post-dipole-trap hooks; left as a
 # parameter so consumers can tune it for their model of the atom's free fall.
 DEFAULT_VS_TO_BS1_GAP = 1e-3
-
-
-def _res_detuning(m_ground: int, k: int) -> float:
-    """On-resonance laser detuning for ``|g, m_ground⟩ ↔ |e, m_ground + k⟩``.
-
-    Derived from Bordé's effective detuning ``δ_eff(m) = Δ - v(m)/λ - (2m + k) δ_rec``
-    with ``v_0 = 0``: setting ``δ_eff = 0`` yields ``Δ = (4 m_g + k) δ_rec``.
-    """
-    return (4 * m_ground + k) * RECOIL_FREQUENCY_HZ
 
 
 def build_lmt_real_sequence(
@@ -105,258 +98,333 @@ def build_lmt_real_sequence(
         Time-ordered list of laser pulses and clearouts that, applied in
         order, reproduces the experimental sequence.
     """
+
     if N < 3:
         raise ValueError("N must be >= 3 to run the full LMT sequence")
 
     sequence: list = []
-
     rabi_vs = 1.0 / (2 * CLOCK_SHELVING_PULSE_TIME)
     rabi_down = 1.0 / (2 * DOWN_CLOCK_BEAM_PI_TIME)
     rabi_up_high = 1.0 / (2 * CLOCK_PI_TIME)
     rabi_selective = 1.0 / (2 * LMT_SELECTIVE_PI_TIME)
 
-    def add_pulse(t, k, m_ground, phi, label, rabi, area):
-        p = Pulse(
-            time=t,
-            k=k,
-            detuning_hz=_res_detuning(m_ground, k),
-            phi=phi,
-            label=label,
-            rabi_frequency=rabi,
-            pulse_area=area,
-        )
-        sequence.append(p)
-        return t + p.duration
-
-    def add_clearout(t, label, duration):
-        sequence.append(Clearout(time=t, duration=duration, label=label))
-        return t + duration
-
-    def add_lmt_series(t, pulses_spec, *, label_prefix):
-        """Append an LMT series matching `lmt_series` / `lmt_series_start_down_launch_down`.
-
-        Each spec is a tuple ``(pulse_type, m_ground, phi)`` where pulse_type
-        is "down" or "up" and m_ground is the ground-state m of the
-        target transition.
-
-        Replicates the 50 us pre-delay before the first pulse and a
-        50+10 us gap between consecutive pulses (10 us at the tail of
-        ``fire_lmt_pulse`` plus the 50 us pre-delay of the next iteration).
-        """
-        for i, (pulse_type, m_g, phi) in enumerate(pulses_spec):
-            t += LMT_PRE_DELAY
-            if pulse_type == "down":
-                k = -1
-                rabi = rabi_down
-            else:
-                k = +1
-                rabi = rabi_up_high
-            t = add_pulse(
-                t,
-                k=k,
-                m_ground=m_g,
-                phi=phi,
-                label=f"{label_prefix}_{pulse_type}_{i}",
-                rabi=rabi,
-                area=np.pi,
-            )
-            t += LMT_POST_DELAY
-        return t
-
-    def lmt_walk_forward(initial_m, initial_is_excited, K, phi_for_down):
-        """Spec for ``K`` LMT pulses, each adding +1 to m.
-
-        Pattern alternates DOWN (i=0,2,...) and UP (i=1,3,...), matching
-        ``lmt_series`` which is "use if we start in the excited state".
-
-        ``phi_for_down`` is the laser phase on down pulses (the down DDS
-        keeps whatever phase was last set on it).  Up pulses always carry
-        the up DDS's "phase_constant", i.e. effective phase 0 here.
-        """
-        m, is_excited = initial_m, initial_is_excited
-        out = []
-        for i in range(K):
-            if i % 2 == 0:
-                # DOWN: forward requires |e, m⟩ → |g, m+1⟩ (m_g = m + 1).
-                assert is_excited
-                out.append(("down", m + 1, phi_for_down))
-                m += 1
-                is_excited = False
-            else:
-                # UP: forward requires |g, m⟩ → |e, m+1⟩ (m_g = m).
-                assert not is_excited
-                out.append(("up", m, 0.0))
-                m += 1
-                is_excited = True
-        return out, m, is_excited
-
-    def lmt_walk_reverse(initial_m, initial_is_excited, K, phi_for_down):
-        """Spec for ``K`` LMT pulses, each subtracting 1 from m.
-
-        Same alternating pattern (DOWN first), but the entry condition is
-        |g, m⟩ — matching ``lmt_series_start_down_launch_down`` which runs
-        after the forward sweep has parked the upper (or lower) arm in
-        ground state at high m.
-        """
-        m, is_excited = initial_m, initial_is_excited
-        out = []
-        for i in range(K):
-            if i % 2 == 0:
-                # DOWN: reverse requires |g, m⟩ → |e, m-1⟩ (m_g = m).
-                assert not is_excited
-                out.append(("down", m, phi_for_down))
-                m -= 1
-                is_excited = True
-            else:
-                # UP: reverse requires |e, m⟩ → |g, m-1⟩ (m_g = m - 1).
-                assert is_excited
-                out.append(("up", m - 1, 0.0))
-                m -= 1
-                is_excited = False
-        return out, m, is_excited
-
-    # ------------------------------------------------------------------
-    # VELOCITY SELECTION
-    # ------------------------------------------------------------------
-    # `ClockShelvingAndClearoutBase.clock_shelving` fires one up-beam pi pulse
-    # of duration CLOCK_SHELVING_PULSE_TIME (narrow bandwidth -> velocity
-    # selective) on resonance with |g, 0⟩ → |e, +1⟩, then does a long
-    # fluorescence clearout to discard residual ground-state atoms.
+    # --- VELOCITY SELECTION ---
     t = 0.0
-    t = add_pulse(
-        t,
-        k=+1,
-        m_ground=0,
-        phi=0.0,
-        label="velocity_selection",
-        rabi=rabi_vs,
-        area=np.pi,
+    sequence.append(
+        Pulse(
+            time=t,
+            k=+1,
+            detuning_hz=(4 * 0 + 1) * RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="velocity_selection",
+            rabi_frequency=rabi_vs,
+            pulse_area=np.pi,
+        )
     )
-    t = add_clearout(t, "velocity_selection_clearout", SHELVING_PULSE_CLEAROUT_DURATION)
-
-    # Atoms are now in |e, +1⟩.  Free fall / setup happens before BS1.
+    t += sequence[-1].duration
+    sequence.append(
+        Clearout(
+            time=t,
+            duration=SHELVING_PULSE_CLEAROUT_DURATION,
+            label="velocity_selection_clearout",
+        )
+    )
+    t += SHELVING_PULSE_CLEAROUT_DURATION
     t += vs_to_bs1_gap
 
-    # ------------------------------------------------------------------
-    # BS1: DOWN π/2
-    # ------------------------------------------------------------------
-    # Splits |e, +1⟩ into |e, +1⟩ (lower arm) + |g, +2⟩ (upper arm).
-    # Target transition: |g, +2⟩ ↔ |e, +1⟩ (m_g=+2, k=-1).
-    t = add_pulse(
-        t, k=-1, m_ground=2, phi=0.0, label="BS1",
-        rabi=rabi_down, area=np.pi / 2,
+    # --- BS1: DOWN π/2 ---
+    sequence.append(
+        Pulse(
+            time=t,
+            k=-1,
+            detuning_hz=(4 * 2 - 1) * RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="BS1",
+            rabi_frequency=rabi_down,
+            pulse_area=np.pi / 2,
+        )
     )
+    t += sequence[-1].duration
     t += POST_BS1_DELAY
 
-    # ------------------------------------------------------------------
-    # First selective UP π (addresses upper arm |g, +2⟩ → |e, +3⟩)
-    # ------------------------------------------------------------------
+    # --- First selective UP π (upper arm) ---
     t += SELECTIVE_PRE_DELAY
-    t = add_pulse(
-        t, k=+1, m_ground=2, phi=0.0, label="first_selective_upper",
-        rabi=rabi_selective, area=np.pi,
+    sequence.append(
+        Pulse(
+            time=t,
+            k=+1,
+            detuning_hz=(4 * 2 + 1) * RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="first_selective_upper",
+            rabi_frequency=rabi_selective,
+            pulse_area=np.pi,
+        )
     )
-    t = add_clearout(t, "clearout_after_first_selective_upper", LMT_PULSE_CLEAROUT_DURATION)
-
-    # ------------------------------------------------------------------
-    # Forward LMT on upper arm: N-2 pulses, pattern down/up/down/...
-    # ------------------------------------------------------------------
-    # State at entry: upper |e, +3⟩.  Each pulse advances m by +1.
-    upper_forward, m_after_upper_fw, _ = lmt_walk_forward(
-        initial_m=3, initial_is_excited=True, K=N - 2, phi_for_down=0.0,
+    t += sequence[-1].duration
+    sequence.append(
+        Clearout(
+            time=t,
+            duration=LMT_PULSE_CLEAROUT_DURATION,
+            label="clearout_after_first_selective_upper",
+        )
     )
-    t = add_lmt_series(t, upper_forward, label_prefix="upper_fw")
+    t += LMT_PULSE_CLEAROUT_DURATION
 
-    # ------------------------------------------------------------------
-    # Dark time between forward and reverse LMT on upper arm
-    # ------------------------------------------------------------------
-    # `t_start_lmt_mirror_mu = t_end_bs_mu + delay_between_interferometry_pulses`.
-    # `t_end_bs_mu` ≈ end of last forward pulse + 10us (LMT_POST_DELAY already added).
+    # --- Forward LMT on upper arm: N-2 pulses ---
+    m = 3
+    is_excited = True
+    for i in range(N - 2):
+        t += LMT_PRE_DELAY
+        if i % 2 == 0:
+            # DOWN: |e, m⟩ → |g, m+1⟩
+            k = -1
+            rabi = rabi_down
+            m_g = m + 1
+            phi = 0.0
+            label = f"upper_fw_down_{i}"
+            is_excited = False
+            m += 1
+        else:
+            # UP: |g, m⟩ → |e, m+1⟩
+            k = +1
+            rabi = rabi_up_high
+            m_g = m
+            phi = 0.0
+            label = f"upper_fw_up_{i}"
+            is_excited = True
+            m += 1
+        sequence.append(
+            Pulse(
+                time=t,
+                k=k,
+                detuning_hz=(4 * m_g + k) * RECOIL_FREQUENCY_HZ,
+                phi=phi,
+                label=label,
+                rabi_frequency=rabi,
+                pulse_area=np.pi,
+            )
+        )
+        t += sequence[-1].duration
+        t += LMT_POST_DELAY
+    m_after_upper_fw = m
+
+    # --- Dark time upper arm ---
     t += delay_between_interferometry_pulses
 
-    # ------------------------------------------------------------------
-    # Reverse LMT on upper arm: N-2 pulses, walks m back down
-    # ------------------------------------------------------------------
-    # State at entry: upper |g, m_after_upper_fw⟩.  Each pulse subtracts 1 from m.
-    upper_reverse, _, _ = lmt_walk_reverse(
-        initial_m=m_after_upper_fw, initial_is_excited=False,
-        K=N - 2, phi_for_down=0.0,
-    )
-    t = add_lmt_series(t, upper_reverse, label_prefix="upper_rv")
+    # --- Reverse LMT on upper arm: N-2 pulses ---
+    m = m_after_upper_fw
+    is_excited = False
+    for i in range(N - 2):
+        t += LMT_PRE_DELAY
+        if i % 2 == 0:
+            # DOWN: |g, m⟩ → |e, m-1⟩
+            k = -1
+            rabi = rabi_down
+            m_g = m
+            phi = 0.0
+            label = f"upper_rv_down_{i}"
+            is_excited = True
+            m -= 1
+        else:
+            # UP: |e, m⟩ → |g, m-1⟩
+            k = +1
+            rabi = rabi_up_high
+            m_g = m - 1
+            phi = 0.0
+            label = f"upper_rv_up_{i}"
+            is_excited = False
+            m -= 1
+        sequence.append(
+            Pulse(
+                time=t,
+                k=k,
+                detuning_hz=(4 * m_g + k) * RECOIL_FREQUENCY_HZ,
+                phi=phi,
+                label=label,
+                rabi_frequency=rabi,
+                pulse_area=np.pi,
+            )
+        )
+        t += sequence[-1].duration
+        t += LMT_POST_DELAY
 
-    # ------------------------------------------------------------------
-    # Clearout, then last upper selective UP π (|e, +3⟩ → |g, +2⟩)
-    # ------------------------------------------------------------------
-    t = add_clearout(t, "clearout_before_last_selective_upper", LMT_PULSE_CLEAROUT_DURATION)
+    # --- Clearout, then last upper selective UP π ---
+    sequence.append(
+        Clearout(
+            time=t,
+            duration=LMT_PULSE_CLEAROUT_DURATION,
+            label="clearout_before_last_selective_upper",
+        )
+    )
+    t += LMT_PULSE_CLEAROUT_DURATION
     t += SELECTIVE_PRE_DELAY
-    t = add_pulse(
-        t, k=+1, m_ground=2, phi=0.0, label="last_selective_upper",
-        rabi=rabi_selective, area=np.pi,
+    sequence.append(
+        Pulse(
+            time=t,
+            k=+1,
+            detuning_hz=(4 * 2 + 1) * RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="last_selective_upper",
+            rabi_frequency=rabi_selective,
+            pulse_area=np.pi,
+        )
     )
+    t += sequence[-1].duration
 
-    # ------------------------------------------------------------------
-    # MIRROR DOWN π (swaps the two arms)
-    # ------------------------------------------------------------------
-    # Target |g, +2⟩ ↔ |e, +1⟩.  Upper |g, +2⟩ → |e, +1⟩; lower |e, +1⟩ → |g, +2⟩.
+    # --- MIRROR DOWN π ---
     t += POST_MIRROR_DELAY
-    t = add_pulse(
-        t, k=-1, m_ground=2, phi=phase_step, label="mirror",
-        rabi=rabi_down, area=np.pi,
+    sequence.append(
+        Pulse(
+            time=t,
+            k=-1,
+            detuning_hz=(4 * 2 - 1) * RECOIL_FREQUENCY_HZ,
+            phi=phase_step,
+            label="mirror",
+            rabi_frequency=rabi_down,
+            pulse_area=np.pi,
+        )
     )
+    t += sequence[-1].duration
     t += POST_MIRROR_DELAY
 
-    # ------------------------------------------------------------------
-    # First lower selective UP π (lower arm now |g, +2⟩ → |e, +3⟩)
-    # ------------------------------------------------------------------
+    # --- First lower selective UP π ---
     t += SELECTIVE_PRE_DELAY
-    t = add_pulse(
-        t, k=+1, m_ground=2, phi=0.0, label="first_selective_lower",
-        rabi=rabi_selective, area=np.pi,
+    sequence.append(
+        Pulse(
+            time=t,
+            k=+1,
+            detuning_hz=(4 * 2 + 1) * RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="first_selective_lower",
+            rabi_frequency=rabi_selective,
+            pulse_area=np.pi,
+        )
     )
-    t = add_clearout(t, "clearout_after_first_selective_lower", LMT_PULSE_CLEAROUT_DURATION)
-
-    # ------------------------------------------------------------------
-    # Forward LMT on lower arm: same structure as upper forward
-    # ------------------------------------------------------------------
-    # After the mirror the down DDS phase is `phase_constant + phase_step`,
-    # so every down pulse in the lower-arm LMT carries phase ``phase_step``.
-    lower_forward, m_after_lower_fw, _ = lmt_walk_forward(
-        initial_m=3, initial_is_excited=True, K=N - 2, phi_for_down=phase_step,
+    t += sequence[-1].duration
+    sequence.append(
+        Clearout(
+            time=t,
+            duration=LMT_PULSE_CLEAROUT_DURATION,
+            label="clearout_after_first_selective_lower",
+        )
     )
-    t = add_lmt_series(t, lower_forward, label_prefix="lower_fw")
+    t += LMT_PULSE_CLEAROUT_DURATION
 
-    # Dark time on lower arm.  In the experiment this is an explicit
-    # `delay(self.delay_between_interferometry_pulses.get())` between the
-    # forward and reverse lower LMT series.
+    # --- Forward LMT on lower arm: N-2 pulses ---
+    m = 3
+    is_excited = True
+    for i in range(N - 2):
+        t += LMT_PRE_DELAY
+        if i % 2 == 0:
+            # DOWN: |e, m⟩ → |g, m+1⟩, phase=phase_step
+            k = -1
+            rabi = rabi_down
+            m_g = m + 1
+            phi = phase_step
+            label = f"lower_fw_down_{i}"
+            is_excited = False
+            m += 1
+        else:
+            # UP: |g, m⟩ → |e, m+1⟩
+            k = +1
+            rabi = rabi_up_high
+            m_g = m
+            phi = 0.0
+            label = f"lower_fw_up_{i}"
+            is_excited = True
+            m += 1
+        sequence.append(
+            Pulse(
+                time=t,
+                k=k,
+                detuning_hz=(4 * m_g + k) * RECOIL_FREQUENCY_HZ,
+                phi=phi,
+                label=label,
+                rabi_frequency=rabi,
+                pulse_area=np.pi,
+            )
+        )
+        t += sequence[-1].duration
+        t += LMT_POST_DELAY
+    m_after_lower_fw = m
+
+    # --- Dark time lower arm ---
     t += delay_between_interferometry_pulses
 
-    # ------------------------------------------------------------------
-    # Reverse LMT on lower arm
-    # ------------------------------------------------------------------
-    lower_reverse, _, _ = lmt_walk_reverse(
-        initial_m=m_after_lower_fw, initial_is_excited=False,
-        K=N - 2, phi_for_down=phase_step,
-    )
-    t = add_lmt_series(t, lower_reverse, label_prefix="lower_rv")
+    # --- Reverse LMT on lower arm: N-2 pulses ---
+    m = m_after_lower_fw
+    is_excited = False
+    for i in range(N - 2):
+        t += LMT_PRE_DELAY
+        if i % 2 == 0:
+            # DOWN: |g, m⟩ → |e, m-1⟩, phase=phase_step
+            k = -1
+            rabi = rabi_down
+            m_g = m
+            phi = phase_step
+            label = f"lower_rv_down_{i}"
+            is_excited = True
+            m -= 1
+        else:
+            # UP: |e, m⟩ → |g, m-1⟩
+            k = +1
+            rabi = rabi_up_high
+            m_g = m - 1
+            phi = 0.0
+            label = f"lower_rv_up_{i}"
+            is_excited = False
+            m -= 1
+        sequence.append(
+            Pulse(
+                time=t,
+                k=k,
+                detuning_hz=(4 * m_g + k) * RECOIL_FREQUENCY_HZ,
+                phi=phi,
+                label=label,
+                rabi_frequency=rabi,
+                pulse_area=np.pi,
+            )
+        )
+        t += sequence[-1].duration
+        t += LMT_POST_DELAY
 
-    # ------------------------------------------------------------------
-    # Clearout, then last lower selective UP π (|e, +3⟩ → |g, +2⟩)
-    # ------------------------------------------------------------------
-    t = add_clearout(t, "clearout_before_last_selective_lower", LMT_PULSE_CLEAROUT_DURATION)
+    # --- Clearout, then last lower selective UP π ---
+    sequence.append(
+        Clearout(
+            time=t,
+            duration=LMT_PULSE_CLEAROUT_DURATION,
+            label="clearout_before_last_selective_lower",
+        )
+    )
+    t += LMT_PULSE_CLEAROUT_DURATION
     t += SELECTIVE_PRE_DELAY
-    t = add_pulse(
-        t, k=+1, m_ground=2, phi=0.0, label="last_selective_lower",
-        rabi=rabi_selective, area=np.pi,
+    sequence.append(
+        Pulse(
+            time=t,
+            k=+1,
+            detuning_hz=(4 * 2 + 1) * RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="last_selective_lower",
+            rabi_frequency=rabi_selective,
+            pulse_area=np.pi,
+        )
     )
+    t += sequence[-1].duration
 
-    # ------------------------------------------------------------------
-    # BS2 DOWN π/2
-    # ------------------------------------------------------------------
+    # --- BS2 DOWN π/2 ---
     t += PRE_BS2_DELAY
-    t = add_pulse(
-        t, k=-1, m_ground=2, phi=4 * phase_step, label="BS2",
-        rabi=rabi_down, area=np.pi / 2,
+    sequence.append(
+        Pulse(
+            time=t,
+            k=-1,
+            detuning_hz=(4 * 2 - 1) * RECOIL_FREQUENCY_HZ,
+            phi=4 * phase_step,
+            label="BS2",
+            rabi_frequency=rabi_down,
+            pulse_area=np.pi / 2,
+        )
     )
+    t += sequence[-1].duration
 
     return sequence
 
