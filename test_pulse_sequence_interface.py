@@ -15,6 +15,7 @@ from lmt_simulation import (
     make_atom_states,
     propagate_states_in_borde_representation,
     pulse_interaction_in_borde_representation,
+    run_pulse_sequence_in_borde_representation,
     transform_state_vector,
 )
 
@@ -150,6 +151,82 @@ def legacy_calc_mz_excitation(
     return excited_prob / (ground_prob + excited_prob)
 
 
+def legacy_run_mz_sequence_in_borde_representation(
+    phi,
+    detuning_hz=RECOIL_FREQUENCY_HZ,
+    initial_velocity_z=0.0,
+    time_between_pulses=200e-6,
+):
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
+        make_atom_states(initial_velocity_z=initial_velocity_z)
+    )
+    pulse_sequence = build_mach_zehnder_pulse_sequence(
+        phi=phi,
+        detuning_hz=detuning_hz,
+        time_between_pulses=time_between_pulses,
+    )
+
+    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
+    squiggly_amplitudes = transform_state_vector(
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=initial_velocity_z,
+        inverse=False,
+    )
+    current_time = 0.0
+
+    for pulse in pulse_sequence:
+        free_evolution_time = pulse.time - current_time
+        if free_evolution_time > 0.0:
+            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+                propagate_states_in_borde_representation(
+                    m_values,
+                    squiggly_amplitudes,
+                    internal_is_ground,
+                    positions,
+                    velocities,
+                    time_of_propegation=free_evolution_time,
+                    omega_laser=omega_laser,
+                    vz=initial_velocity_z,
+                    k_sign=pulse.k,
+                    k_wavevector=K_WAVEVECTOR,
+                )
+            )
+            current_time += free_evolution_time
+
+        m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+            pulse_interaction_in_borde_representation(
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
+                pulse_detuning=pulse.detuning_hz,
+                t_pulse=pulse.duration,
+                pulse_rabi_freq=pulse.rabi_frequency,
+                pulse_phase=pulse.phi,
+                k_sign=pulse.k,
+                k_wavevector=K_WAVEVECTOR,
+                vz=initial_velocity_z,
+            )
+        )
+        current_time += pulse.duration
+
+    return (
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
+        omega_laser,
+        current_time,
+    )
+
+
 def test_build_mach_zehnder_pulse_sequence_returns_pulse_objects():
     pulse_sequence = build_mach_zehnder_pulse_sequence(
         detuning_hz=RECOIL_FREQUENCY_HZ,
@@ -223,3 +300,60 @@ def test_build_mach_zehnder_pulse_sequence_stores_phase_on_pulses():
     assert np.isclose(pulse_sequence[0].phi, 0.0)
     assert np.isclose(pulse_sequence[1].phi, phi)
     assert np.isclose(pulse_sequence[2].phi, 4 * phi)
+
+
+@pytest.mark.parametrize(
+    ("phi", "detuning_hz", "initial_velocity_z", "time_between_pulses"),
+    [
+        (0.0, RECOIL_FREQUENCY_HZ, 0.0, 200e-6),
+        (0.37 * np.pi, RECOIL_FREQUENCY_HZ, 0.0, 0.0),
+        (1.5 * np.pi, 1.3 * RECOIL_FREQUENCY_HZ, -8.0e-4, 350e-6),
+    ],
+)
+def test_run_pulse_sequence_in_borde_representation_preserves_representation(
+    phi,
+    detuning_hz,
+    initial_velocity_z,
+    time_between_pulses,
+):
+    pulse_sequence = build_mach_zehnder_pulse_sequence(
+        phi=phi,
+        detuning_hz=detuning_hz,
+        time_between_pulses=time_between_pulses,
+    )
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
+        make_atom_states(initial_velocity_z=initial_velocity_z)
+    )
+    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
+    squiggly_amplitudes = transform_state_vector(
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=initial_velocity_z,
+        inverse=False,
+    )
+
+    actual = run_pulse_sequence_in_borde_representation(
+        m_values,
+        positions,
+        velocities,
+        squiggly_amplitudes,
+        internal_is_ground,
+        pulse_sequence,
+        initial_velocity_z=initial_velocity_z,
+    )
+    expected = legacy_run_mz_sequence_in_borde_representation(
+        phi=phi,
+        detuning_hz=detuning_hz,
+        initial_velocity_z=initial_velocity_z,
+        time_between_pulses=time_between_pulses,
+    )
+
+    for actual_value, expected_value in zip(actual, expected):
+        if isinstance(actual_value, np.ndarray):
+            assert np.allclose(actual_value, expected_value)
+        else:
+            assert np.isclose(actual_value, expected_value)

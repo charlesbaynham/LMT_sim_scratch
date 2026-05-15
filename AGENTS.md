@@ -46,3 +46,4 @@ with $d = \pm 1$ being the laser direction and $\delta_\text{rec} = \hbar k^2/(2
 - `RECOIL_FREQUENCY_HZ = hbar * k^2 / (2M) / (2*pi)` is the recoil frequency in Hz.
 - Detuning sign convention: `delta = laser_freq - atom_freq`, so a positive-velocity atom sees a **negative** Doppler shift contribution (`-v/lambda`).
 - `laser_direction = +1` means a +k photon kick (ground→excited gives +1 recoil); `-1` for the opposite.
+- User-facing state-vector functions must preserve representation: functions named as Bordé-frame operations take and return Bordé-frame amplitudes, while lab-frame APIs must take and return lab-frame amplitudes. Only explicit transform helpers should change representation.

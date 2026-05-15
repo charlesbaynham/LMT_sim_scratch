@@ -957,11 +957,12 @@ def run_pulse_sequence_in_borde_representation(
     m_values,
     positions,
     velocities,
-    internal_amplitude,
+    squiggly_amplitudes,
     internal_is_ground,
     pulse_sequence,
     initial_velocity_z=0.0,
 ):
+    """Run a pulse sequence on amplitudes already expressed in the Bordé frame."""
     if not pulse_sequence:
         raise ValueError("pulse_sequence must contain at least one pulse")
 
@@ -973,17 +974,6 @@ def run_pulse_sequence_in_borde_representation(
 
     omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_sequence[0].detuning_hz)
     current_time = 0.0
-
-    squiggly_amplitudes = transform_state_vector(
-        m_values,
-        internal_amplitude,
-        internal_is_ground,
-        omega_laser=omega_laser,
-        t=current_time,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=False,
-    )
 
     for pulse in pulse_sequence:
         if pulse.time < current_time:
@@ -1040,8 +1030,23 @@ def calculate_excited_fraction_for_pulse_sequence(
     pulse_sequence,
     initial_velocity_z=0.0,
 ):
+    """Run a lab-frame pulse sequence and return the final excited-state fraction."""
+    if not pulse_sequence:
+        raise ValueError("pulse_sequence must contain at least one pulse")
+
     m_values, positions, velocities, internal_amplitude, internal_is_ground = (
         make_atom_states(initial_velocity_z=initial_velocity_z)
+    )
+    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_sequence[0].detuning_hz)
+    squiggly_amplitudes = transform_state_vector(
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=initial_velocity_z,
+        inverse=False,
     )
 
     (
@@ -1050,13 +1055,13 @@ def calculate_excited_fraction_for_pulse_sequence(
         internal_is_ground,
         positions,
         velocities,
-        omega_laser,
+        _omega_laser,
         current_time,
     ) = run_pulse_sequence_in_borde_representation(
         m_values,
         positions,
         velocities,
-        internal_amplitude,
+        squiggly_amplitudes,
         internal_is_ground,
         pulse_sequence,
         initial_velocity_z=initial_velocity_z,
