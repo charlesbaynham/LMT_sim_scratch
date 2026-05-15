@@ -1,4 +1,5 @@
 # Project outputs
+*.log
 *.svg
 *.pdf
 *.gif
