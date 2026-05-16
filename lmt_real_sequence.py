@@ -91,10 +91,6 @@ def build_lmt_real_sequence(
 
     if N < 3:
         raise ValueError("N must be >= 3 to run the full LMT sequence")
-    if delay_between_interferometry_pulses < 0.0:
-        raise ValueError("delay_between_interferometry_pulses must be non-negative")
-    if vs_to_bs1_gap < 0.0:
-        raise ValueError("vs_to_bs1_gap must be non-negative")
 
     rabi_vs = 1.0 / (2 * CLOCK_SHELVING_PULSE_TIME)
     rabi_dn = 1.0 / (2 * DOWN_CLOCK_BEAM_PI_TIME)

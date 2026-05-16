@@ -713,10 +713,10 @@ def test_calculate_excited_fraction_for_pulse_sequence_rejects_clearout_events()
         calculate_excited_fraction_for_pulse_sequence(pulse_sequence)
 
 
-def test_build_lmt_real_sequence_rejects_negative_gap_inputs():
-    with pytest.raises(ValueError, match="delay_between_interferometry_pulses"):
+def test_build_lmt_real_sequence_negative_gap_validation_comes_from_steps():
+    with pytest.raises(ValueError, match="duration must be non-negative"):
         build_lmt_real_sequence(delay_between_interferometry_pulses=-1e-6)
-    with pytest.raises(ValueError, match="vs_to_bs1_gap"):
+    with pytest.raises(ValueError, match="duration must be non-negative"):
         build_lmt_real_sequence(vs_to_bs1_gap=-1e-6)
 
 
