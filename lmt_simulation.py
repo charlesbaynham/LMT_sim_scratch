@@ -86,6 +86,19 @@ class Clearout:
             raise ValueError("Clearout duration must be non-negative")
 
 
+@dataclass(frozen=True)
+class Freefall:
+    time: float
+    duration: float
+    label: str = "freefall"
+
+    def __post_init__(self):
+        if self.time < 0.0:
+            raise ValueError("Freefall time must be non-negative")
+        if self.duration < 0.0:
+            raise ValueError("Freefall duration must be non-negative")
+
+
 def build_mach_zehnder_pulse_sequence(
     phi=0.0,
     detuning_hz=RECOIL_FREQUENCY_HZ,

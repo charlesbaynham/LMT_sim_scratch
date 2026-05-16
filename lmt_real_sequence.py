@@ -26,29 +26,9 @@ pulse list.  A consumer can iterate the list and dispatch to
 ``pulse_interaction_in_borde_representation`` or ``do_clearout`` accordingly.
 """
 
-from dataclasses import dataclass
-
 import numpy as np
 
-from lmt_simulation import Pulse, RECOIL_FREQUENCY_HZ
-
-
-@dataclass(frozen=True)
-class Clearout:
-    """A fluorescence clearout: discards ground-state amplitude, renormalises."""
-
-    time: float
-    duration: float
-    label: str
-
-
-@dataclass(frozen=True)
-class Freefall:
-    """Free-fall gap between pulses / clearouts."""
-
-    time: float
-    duration: float
-    label: str
+from lmt_simulation import Clearout, Freefall, Pulse, RECOIL_FREQUENCY_HZ
 
 
 # Experiment defaults, copied verbatim from icl_experiments/repository/lib/constants.py
