@@ -3,6 +3,7 @@ import pytest
 
 from lmt_simulation import (
     Clearout,
+    Freefall,
     K_WAVEVECTOR,
     Pulse,
     RABI_FREQ,
@@ -20,6 +21,7 @@ from lmt_simulation import (
     run_pulse_sequence_in_borde_representation,
     transform_state_vector,
 )
+from lmt_real_sequence import build_lmt_real_sequence
 
 
 def legacy_calc_mz_excitation(
@@ -181,9 +183,8 @@ def legacy_run_mz_sequence_in_borde_representation(
     )
     current_time = 0.0
 
-    for pulse in pulse_sequence:
-        free_evolution_time = pulse.time - current_time
-        if free_evolution_time > 0.0:
+    for event in pulse_sequence:
+        if isinstance(event, Freefall):
             m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
                 propagate_states_in_borde_representation(
                     m_values,
@@ -191,14 +192,15 @@ def legacy_run_mz_sequence_in_borde_representation(
                     internal_is_ground,
                     positions,
                     velocities,
-                    time_of_propegation=free_evolution_time,
+                    time_of_propegation=event.duration,
                     omega_laser=omega_laser,
                     vz=initial_velocity_z,
-                    k_sign=pulse.k,
+                    k_sign=+1,
                     k_wavevector=K_WAVEVECTOR,
                 )
             )
-            current_time += free_evolution_time
+            current_time += event.duration
+            continue
 
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             pulse_interaction_in_borde_representation(
@@ -207,16 +209,16 @@ def legacy_run_mz_sequence_in_borde_representation(
                 internal_is_ground,
                 positions,
                 velocities,
-                pulse_detuning=pulse.detuning_hz,
-                t_pulse=pulse.duration,
-                pulse_rabi_freq=pulse.rabi_frequency,
-                pulse_phase=pulse.phi,
-                k_sign=pulse.k,
+                pulse_detuning=event.detuning_hz,
+                t_pulse=event.duration,
+                pulse_rabi_freq=event.rabi_frequency,
+                pulse_phase=event.phi,
+                k_sign=event.k,
                 k_wavevector=K_WAVEVECTOR,
                 vz=initial_velocity_z,
             )
         )
-        current_time += pulse.duration
+        current_time += event.duration
 
     return (
         m_values,
@@ -369,20 +371,28 @@ def test_build_mach_zehnder_pulse_sequence_returns_pulse_objects():
         time_between_pulses=200e-6,
     )
 
-    assert all(isinstance(pulse, Pulse) for pulse in pulse_sequence)
-    assert [pulse.label for pulse in pulse_sequence] == [
+    assert [type(event) for event in pulse_sequence] == [
+        Pulse,
+        Freefall,
+        Pulse,
+        Freefall,
+        Pulse,
+    ]
+    pulses = [event for event in pulse_sequence if isinstance(event, Pulse)]
+    assert [pulse.label for pulse in pulses] == [
         "beam_splitter_1",
         "mirror",
         "beam_splitter_2",
     ]
-    assert [pulse.phi for pulse in pulse_sequence] == [0.0, 0.0, 0.0]
-    assert [pulse.k for pulse in pulse_sequence] == [+1, +1, +1]
-    assert np.isclose(pulse_sequence[0].time, 0.0)
-    assert np.isclose(pulse_sequence[0].duration, T_PI / 2)
-    assert np.isclose(pulse_sequence[1].time, T_PI / 2 + 200e-6)
-    assert np.isclose(pulse_sequence[1].duration, T_PI)
-    assert np.isclose(pulse_sequence[2].time, T_PI / 2 + 200e-6 + T_PI + 200e-6)
-    assert np.isclose(pulse_sequence[2].duration, T_PI / 2)
+    assert [pulse.phi for pulse in pulses] == [0.0, 0.0, 0.0]
+    assert [pulse.k for pulse in pulses] == [+1, +1, +1]
+    assert np.isclose(pulses[0].duration, T_PI / 2)
+    assert np.isclose(pulses[1].duration, T_PI)
+    assert np.isclose(pulses[2].duration, T_PI / 2)
+    freefalls = [event for event in pulse_sequence if isinstance(event, Freefall)]
+    assert len(freefalls) == 2
+    assert np.isclose(freefalls[0].duration, 200e-6)
+    assert np.isclose(freefalls[1].duration, 200e-6)
 
 
 @pytest.mark.parametrize(
@@ -432,6 +442,7 @@ def test_pulse_sequence_interface_matches_legacy_results(
 def test_build_mach_zehnder_pulse_sequence_stores_phase_on_pulses():
     phi = 0.37 * np.pi
     pulse_sequence = build_mach_zehnder_pulse_sequence(phi=phi)
+    pulse_sequence = [event for event in pulse_sequence if isinstance(event, Pulse)]
 
     assert np.isclose(pulse_sequence[0].phi, 0.0)
     assert np.isclose(pulse_sequence[1].phi, phi)
@@ -501,39 +512,43 @@ def test_run_pulse_sequence_in_borde_representation_handles_clearout(seed):
     detuning_hz = RECOIL_FREQUENCY_HZ
     time_between_pulses = 200e-6
     initial_velocity_z = 0.0
-    clearout_duration = 37e-6
+    clearout_duration = 0.0
     pulse_sequence = [
         Pulse(
-            time=0.0,
             k=+1,
             detuning_hz=detuning_hz,
             phi=0.0,
             label="beam_splitter_1",
             rabi_frequency=RABI_FREQ,
-            pulse_area=np.pi / 2,
+            duration=T_PI / 2,
+        ),
+        Freefall(
+            duration=time_between_pulses,
+            label="dark_time_1",
         ),
         Pulse(
-            time=T_PI / 2 + time_between_pulses,
             k=+1,
             detuning_hz=detuning_hz,
             phi=phi,
             label="mirror",
             rabi_frequency=RABI_FREQ,
-            pulse_area=np.pi,
+            duration=T_PI,
         ),
         Clearout(
-            time=T_PI / 2 + time_between_pulses + T_PI,
             duration=clearout_duration,
             label="mid_sequence_clearout",
         ),
+        Freefall(
+            duration=time_between_pulses,
+            label="dark_time_2",
+        ),
         Pulse(
-            time=T_PI / 2 + time_between_pulses + T_PI + time_between_pulses,
             k=+1,
             detuning_hz=detuning_hz,
             phi=4 * phi,
             label="beam_splitter_2",
             rabi_frequency=RABI_FREQ,
-            pulse_area=np.pi / 2,
+            duration=T_PI / 2,
         ),
     ]
     m_values, positions, velocities, internal_amplitude, internal_is_ground = (
@@ -583,37 +598,42 @@ def test_run_pulse_sequence_in_borde_representation_handles_clearout(seed):
             assert np.isclose(actual_value, expected_value)
 
 
-def test_clearout_duration_is_metadata_only_in_pulse_sequence_runner():
+def test_clearout_duration_affects_timeline_in_pulse_sequence_runner():
     detuning_hz = RECOIL_FREQUENCY_HZ
     phi = 0.37 * np.pi
     time_between_pulses = 200e-6
     base_sequence = [
         Pulse(
-            time=0.0,
             k=+1,
             detuning_hz=detuning_hz,
             phi=0.0,
             label="beam_splitter_1",
             rabi_frequency=RABI_FREQ,
-            pulse_area=np.pi / 2,
+            duration=T_PI / 2,
+        ),
+        Freefall(
+            duration=time_between_pulses,
+            label="dark_time_1",
         ),
         Pulse(
-            time=T_PI / 2 + time_between_pulses,
             k=+1,
             detuning_hz=detuning_hz,
             phi=phi,
             label="mirror",
             rabi_frequency=RABI_FREQ,
-            pulse_area=np.pi,
+            duration=T_PI,
+        ),
+        Freefall(
+            duration=time_between_pulses,
+            label="dark_time_2",
         ),
         Pulse(
-            time=T_PI / 2 + time_between_pulses + T_PI + time_between_pulses,
             k=+1,
             detuning_hz=detuning_hz,
             phi=4 * phi,
             label="beam_splitter_2",
             rabi_frequency=RABI_FREQ,
-            pulse_area=np.pi / 2,
+            duration=T_PI / 2,
         ),
     ]
     sequences = [
@@ -621,21 +641,23 @@ def test_clearout_duration_is_metadata_only_in_pulse_sequence_runner():
             base_sequence[0],
             base_sequence[1],
             Clearout(
-                time=T_PI / 2 + time_between_pulses + T_PI,
                 duration=0.0,
                 label="mid_sequence_clearout",
             ),
             base_sequence[2],
+            base_sequence[3],
+            base_sequence[4],
         ],
         [
             base_sequence[0],
             base_sequence[1],
             Clearout(
-                time=T_PI / 2 + time_between_pulses + T_PI,
                 duration=123e-6,
                 label="mid_sequence_clearout",
             ),
             base_sequence[2],
+            base_sequence[3],
+            base_sequence[4],
         ],
     ]
     state = make_atom_states()
@@ -671,26 +693,48 @@ def test_clearout_duration_is_metadata_only_in_pulse_sequence_runner():
         return
 
     assert results[1] is not None
-    for actual_value, expected_value in zip(results[0], results[1]):
-        if isinstance(actual_value, np.ndarray):
-            assert np.allclose(actual_value, expected_value)
-        else:
-            assert np.isclose(actual_value, expected_value)
+    assert not np.isclose(results[0][-1], results[1][-1])
 
 
 def test_calculate_excited_fraction_for_pulse_sequence_rejects_clearout_events():
     pulse_sequence = [
         Pulse(
-            time=0.0,
             k=+1,
             detuning_hz=RECOIL_FREQUENCY_HZ,
             phi=0.0,
             label="beam_splitter_1",
             rabi_frequency=RABI_FREQ,
-            pulse_area=np.pi / 2,
+            duration=T_PI / 2,
         ),
-        Clearout(time=T_PI / 2, duration=10e-6),
+        Clearout(duration=10e-6),
     ]
 
     with pytest.raises(ValueError, match="does not support Clearout"):
         calculate_excited_fraction_for_pulse_sequence(pulse_sequence)
+
+
+def test_build_lmt_real_sequence_rejects_negative_gap_inputs():
+    with pytest.raises(ValueError, match="delay_between_interferometry_pulses"):
+        build_lmt_real_sequence(delay_between_interferometry_pulses=-1e-6)
+    with pytest.raises(ValueError, match="vs_to_bs1_gap"):
+        build_lmt_real_sequence(vs_to_bs1_gap=-1e-6)
+
+
+def test_build_lmt_real_sequence_uses_duration_based_events():
+    sequence = build_lmt_real_sequence(N=7)
+    assert sequence
+    assert all(not hasattr(event, "time") for event in sequence)
+    assert isinstance(sequence[0], Pulse)
+    assert sequence[0].label == "velocity_selection"
+    assert isinstance(sequence[1], Clearout)
+    assert isinstance(sequence[2], Freefall)
+    assert isinstance(sequence[-1], Pulse)
+    assert sequence[-1].label == "BS2"
+
+
+def test_build_lmt_real_sequence_has_positive_total_duration():
+    sequence = build_lmt_real_sequence(N=7)
+    total_duration = sum(event.duration for event in sequence)
+    assert total_duration > 0.0
+    assert any(isinstance(event, Freefall) for event in sequence)
+    assert any(isinstance(event, Clearout) for event in sequence)

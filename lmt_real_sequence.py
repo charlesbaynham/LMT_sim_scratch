@@ -28,7 +28,8 @@ pulse list.  A consumer can iterate the list and dispatch to
 
 import numpy as np
 
-from lmt_simulation import Clearout, Freefall, Pulse, RECOIL_FREQUENCY_HZ
+from lmt_sequence import Clearout, Freefall, Pulse
+from lmt_simulation import RECOIL_FREQUENCY_HZ
 
 
 # Experiment defaults, copied verbatim from icl_experiments/repository/lib/constants.py
@@ -83,13 +84,17 @@ def build_lmt_real_sequence(
 
     Returns
     -------
-    list[Pulse | Clearout]
-        Time-ordered list of laser pulses and clearouts that, applied in
-        order, reproduces the experimental sequence.
+    list[Pulse | Clearout | Freefall]
+        Ordered list of sequence events. Event timeline is defined by
+        cumulative event durations.
     """
 
     if N < 3:
         raise ValueError("N must be >= 3 to run the full LMT sequence")
+    if delay_between_interferometry_pulses < 0.0:
+        raise ValueError("delay_between_interferometry_pulses must be non-negative")
+    if vs_to_bs1_gap < 0.0:
+        raise ValueError("vs_to_bs1_gap must be non-negative")
 
     rabi_vs = 1.0 / (2 * CLOCK_SHELVING_PULSE_TIME)
     rabi_dn = 1.0 / (2 * DOWN_CLOCK_BEAM_PI_TIME)
@@ -207,32 +212,26 @@ def build_lmt_real_sequence(
         ("pulse", "BS2", -1, 2 * 2 * -1 + 1, 4 * phase_step, rabi_dn, np.pi / 2),
     ]
 
-    # Convert spec rows to timed objects, accumulating timestamps.
-    t = 0.0
-    sequence: list = []
+    sequence: list[Pulse | Clearout | Freefall] = []
     for row in spec:
         if row[0] == "pulse":
             _, label, k, det_recoil, phi, rabi, area = row
             sequence.append(
                 Pulse(
-                    time=t,
                     k=k,
                     detuning_hz=det_recoil * RECOIL_FREQUENCY_HZ,
                     phi=phi,
                     label=label,
                     rabi_frequency=rabi,
-                    pulse_area=area,
+                    duration=area / (2 * np.pi * rabi),
                 )
             )
-            t += area / (2 * np.pi * rabi)
         elif row[0] == "clearout":
             _, label, dur = row
-            sequence.append(Clearout(time=t, duration=dur, label=label))
-            t += dur
+            sequence.append(Clearout(duration=dur, label=label))
         elif row[0] == "freefall":
             _, label, dur = row
-            sequence.append(Freefall(time=t, duration=dur, label=label))
-            t += dur
+            sequence.append(Freefall(duration=dur, label=label))
 
     return sequence
 
@@ -240,21 +239,25 @@ def build_lmt_real_sequence(
 if __name__ == "__main__":
     seq = build_lmt_real_sequence(N=7)
     print(f"Built sequence with {len(seq)} events:")
+    t = 0.0
     for ev in seq:
         if isinstance(ev, Pulse):
             print(
-                f"  t={ev.time*1e6:8.2f}us  PULSE    k={ev.k:+d}  "
+                f"  t={t*1e6:8.2f}us  PULSE    k={ev.k:+d}  "
                 f"Δ={ev.detuning_hz/1e3:+7.2f}kHz  "
                 f"area={ev.pulse_area/np.pi:.2f}π  "
                 f"φ={ev.phi:+.3f}  {ev.label}"
             )
+            t += ev.duration
         elif isinstance(ev, Clearout):
             print(
-                f"  t={ev.time*1e6:8.2f}us  CLEAROUT  duration={ev.duration*1e6:.1f}us  "
+                f"  t={t*1e6:8.2f}us  CLEAROUT  duration={ev.duration*1e6:.1f}us  "
                 f"{ev.label}"
             )
+            t += ev.duration
         elif isinstance(ev, Freefall):
             print(
-                f"  t={ev.time*1e6:8.2f}us  FREEFALL  duration={ev.duration*1e6:.1f}us  "
+                f"  t={t*1e6:8.2f}us  FREEFALL  duration={ev.duration*1e6:.1f}us  "
                 f"{ev.label}"
             )
+            t += ev.duration

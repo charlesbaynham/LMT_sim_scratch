@@ -1,7 +1,6 @@
 ######
 
 import logging
-from dataclasses import dataclass
 
 # import logging
 
@@ -11,6 +10,7 @@ import numpy as np
 from scipy import constants
 from scipy.linalg import expm
 import matplotlib.pyplot as plt
+from lmt_sequence import Clearout, Freefall, Pulse
 
 logger = logging.getLogger(__name__)
 
@@ -48,57 +48,6 @@ np.random.seed(42)
 ######
 
 
-@dataclass(frozen=True)
-class Pulse:
-    time: float
-    k: int
-    detuning_hz: float
-    phi: float
-    label: str
-    rabi_frequency: float
-    pulse_area: float
-
-    def __post_init__(self):
-        if self.time < 0.0:
-            raise ValueError("Pulse time must be non-negative")
-        if self.k not in (-1, +1):
-            raise ValueError("Pulse k must be either +1 or -1")
-        if self.rabi_frequency <= 0.0:
-            raise ValueError("Pulse rabi_frequency must be positive")
-        if self.pulse_area < 0.0:
-            raise ValueError("Pulse pulse_area must be non-negative")
-
-    @property
-    def duration(self):
-        return self.pulse_area / (2 * np.pi * self.rabi_frequency)
-
-
-@dataclass(frozen=True)
-class Clearout:
-    time: float
-    duration: float
-    label: str = "clearout"
-
-    def __post_init__(self):
-        if self.time < 0.0:
-            raise ValueError("Clearout time must be non-negative")
-        if self.duration < 0.0:
-            raise ValueError("Clearout duration must be non-negative")
-
-
-@dataclass(frozen=True)
-class Freefall:
-    time: float
-    duration: float
-    label: str = "freefall"
-
-    def __post_init__(self):
-        if self.time < 0.0:
-            raise ValueError("Freefall time must be non-negative")
-        if self.duration < 0.0:
-            raise ValueError("Freefall duration must be non-negative")
-
-
 def build_mach_zehnder_pulse_sequence(
     phi=0.0,
     detuning_hz=RECOIL_FREQUENCY_HZ,
@@ -107,34 +56,40 @@ def build_mach_zehnder_pulse_sequence(
     pulse_area_multiplier=1.0,
     k=+1,
 ):
+    t_pi = 1 / (2 * rabi_frequency)
     first_pulse = Pulse(
-        time=0.0,
         k=k,
         detuning_hz=detuning_hz,
         phi=0.0,
         label="beam_splitter_1",
         rabi_frequency=rabi_frequency,
-        pulse_area=(np.pi / 2) * pulse_area_multiplier,
+        duration=t_pi * pulse_area_multiplier / 2,
     )
     second_pulse = Pulse(
-        time=first_pulse.time + first_pulse.duration + time_between_pulses,
         k=k,
         detuning_hz=detuning_hz,
         phi=phi,
         label="mirror",
         rabi_frequency=rabi_frequency,
-        pulse_area=np.pi * pulse_area_multiplier,
+        duration=t_pi * pulse_area_multiplier,
     )
     third_pulse = Pulse(
-        time=second_pulse.time + second_pulse.duration + time_between_pulses,
         k=k,
         detuning_hz=detuning_hz,
         phi=4 * phi,
         label="beam_splitter_2",
         rabi_frequency=rabi_frequency,
-        pulse_area=(np.pi / 2) * pulse_area_multiplier,
+        duration=t_pi * pulse_area_multiplier / 2,
     )
 
+    if time_between_pulses > 0.0:
+        return [
+            first_pulse,
+            Freefall(duration=time_between_pulses, label="dark_time_1"),
+            second_pulse,
+            Freefall(duration=time_between_pulses, label="dark_time_2"),
+            third_pulse,
+        ]
     return [first_pulse, second_pulse, third_pulse]
 
 
@@ -1017,6 +972,10 @@ def run_pulse_sequence_in_borde_representation(
     if not clock_pulses:
         raise ValueError("pulse_sequence must contain at least one clock Pulse")
 
+    for event in pulse_sequence:
+        if not isinstance(event, (Pulse, Clearout, Freefall)):
+            raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
+
     detunings_hz = {pulse.detuning_hz for pulse in clock_pulses}
     if len(detunings_hz) != 1:
         raise ValueError(
@@ -1027,30 +986,6 @@ def run_pulse_sequence_in_borde_representation(
     current_time = 0.0
 
     for event_index, event in enumerate(pulse_sequence):
-        if event.time < current_time:
-            raise ValueError(
-                "Sequence event times must be non-decreasing and pulses must not overlap"
-            )
-
-        free_evolution_time = event.time - current_time
-        if free_evolution_time > 0.0:
-            k_sign = _sequence_event_k_sign(pulse_sequence, event_index)
-            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-                propagate_states_in_borde_representation(
-                    m_values,
-                    squiggly_amplitudes,
-                    internal_is_ground,
-                    positions,
-                    velocities,
-                    time_of_propegation=free_evolution_time,
-                    omega_laser=omega_laser,
-                    vz=initial_velocity_z,
-                    k_sign=k_sign,
-                    k_wavevector=K_WAVEVECTOR,
-                )
-            )
-            current_time += free_evolution_time
-
         if isinstance(event, Pulse):
             m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
                 pulse_interaction_in_borde_representation(
@@ -1085,9 +1020,42 @@ def run_pulse_sequence_in_borde_representation(
             m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
                 result
             )
+            if event.duration > 0.0:
+                k_sign = _sequence_event_k_sign(pulse_sequence, event_index)
+                m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+                    propagate_states_in_borde_representation(
+                        m_values,
+                        squiggly_amplitudes,
+                        internal_is_ground,
+                        positions,
+                        velocities,
+                        time_of_propegation=event.duration,
+                        omega_laser=omega_laser,
+                        vz=initial_velocity_z,
+                        k_sign=k_sign,
+                        k_wavevector=K_WAVEVECTOR,
+                    )
+                )
+                current_time += event.duration
             continue
 
-        raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
+        if event.duration > 0.0:
+            k_sign = _sequence_event_k_sign(pulse_sequence, event_index)
+            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+                propagate_states_in_borde_representation(
+                    m_values,
+                    squiggly_amplitudes,
+                    internal_is_ground,
+                    positions,
+                    velocities,
+                    time_of_propegation=event.duration,
+                    omega_laser=omega_laser,
+                    vz=initial_velocity_z,
+                    k_sign=k_sign,
+                    k_wavevector=K_WAVEVECTOR,
+                )
+            )
+            current_time += event.duration
 
     return (
         m_values,
@@ -1107,6 +1075,11 @@ def calculate_excited_fraction_for_pulse_sequence(
     """Run a lab-frame pulse sequence and return the final excited-state fraction."""
     if not pulse_sequence:
         raise ValueError("pulse_sequence must contain at least one pulse")
+
+    for event in pulse_sequence:
+        if not isinstance(event, (Pulse, Freefall, Clearout)):
+            raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
+
     if any(isinstance(event, Clearout) for event in pulse_sequence):
         raise ValueError(
             "calculate_excited_fraction_for_pulse_sequence does not support Clearout events"
@@ -1116,6 +1089,8 @@ def calculate_excited_fraction_for_pulse_sequence(
         make_atom_states(initial_velocity_z=initial_velocity_z)
     )
     clock_pulses = _sequence_clock_pulses(pulse_sequence)
+    if not clock_pulses:
+        raise ValueError("pulse_sequence must contain at least one clock Pulse")
     omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + clock_pulses[0].detuning_hz)
     squiggly_amplitudes = transform_state_vector(
         m_values,
@@ -1165,10 +1140,7 @@ def calculate_excited_fraction_for_pulse_sequence(
 
     total_prob = ground_prob + excited_prob
     if not np.isclose(total_prob, 1.0, rtol=1e-6):
-        logger.warning(
-            "State is not normalized after pulse sequence",
-            total_prob=total_prob,
-        )
+        logger.warning("State is not normalized after pulse sequence: total_prob=%s", total_prob)
 
     return excited_prob / total_prob
 
@@ -1320,13 +1292,12 @@ def do_rabi_pulse(pulse_detuning, pulse_duration=T_PI, initial_velocity_z=0.0):
 
     pulse_sequence = [
         Pulse(
-            time=0.0,
             k=+1,
             detuning_hz=pulse_detuning,
             phi=0.0,
             label="rabi_pulse",
             rabi_frequency=RABI_FREQ,
-            pulse_area=2 * np.pi * RABI_FREQ * pulse_duration,
+            duration=pulse_duration,
         )
     ]
 
