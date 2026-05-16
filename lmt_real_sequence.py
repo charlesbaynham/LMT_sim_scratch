@@ -19,7 +19,7 @@ sequence below begins; the OPLL offsets in the experiment are programmed
 relative to that baseline (this is why ``N_launch = 16`` is hardcoded in
 ``do_clock_interferometry``).  Since the simulator is in the atom's rest frame,
 the on-resonance condition for each pulse is just
-``Δ = (4*m_g + k) * δ_recoil`` independent of any launch offset.
+``Δ = (2·m_g·k + 1) * δ_recoil`` (Bordé Eq. 7, vz = 0) independent of any launch offset.
 
 Clearouts are represented by a separate :class:`Clearout` marker mixed into the
 pulse list.  A consumer can iterate the list and dispatch to
@@ -121,20 +121,20 @@ def build_lmt_real_sequence(
     # ("clearout", label, duration)
     # ("freefall", label, duration)
     #
-    # Detuning: det_recoil = 4*m_g + k (integer), so
+    # Detuning: det_recoil = 2*m_g*k + 1  (Bordé Eq.7 resonance, vz=0), so
     #   detuning_hz = det_recoil * RECOIL_FREQUENCY_HZ
 
     spec = [
         # --- VELOCITY SELECTION ---
         #         label                               k   det     phi  rabi      area
-        ("pulse", "velocity_selection", +1, 4 * 0 + 1, 0.0, rabi_vs, np.pi),
+        ("pulse", "velocity_selection", +1, 2 * 0 * 1 + 1, 0.0, rabi_vs, np.pi),
         ("clearout", "vs_clearout", SHELVING_PULSE_CLEAROUT_DURATION),
         ("freefall", "vs_to_bs1", vs_to_bs1_gap),
         # --- BS1: DOWN π/2 ---
-        ("pulse", "BS1", -1, 4 * 2 - 1, 0.0, rabi_dn, np.pi / 2),
+        ("pulse", "BS1", -1, 2 * 2 * -1 + 1, 0.0, rabi_dn, np.pi / 2),
         ("freefall", "post_bs1", POST_BS1_DELAY),
         ("freefall", "pre_first_selective_upper", SELECTIVE_PRE_DELAY),
-        ("pulse", "first_selective_upper", +1, 4 * 2 + 1, 0.0, rabi_sel, np.pi),
+        ("pulse", "first_selective_upper", +1, 2 * 2 * 1 + 1, 0.0, rabi_sel, np.pi),
         ("clearout", "clearout_after_first_sel_upper", LMT_PULSE_CLEAROUT_DURATION),
     ]
 
@@ -148,7 +148,7 @@ def build_lmt_real_sequence(
         m += 1
         spec += [
             ("freefall", "lmt_gap", LMT_PRE_DELAY),
-            ("pulse", f"upper_fw_{i}", k, 4 * m_g + k, 0.0, rabi, np.pi),
+            ("pulse", f"upper_fw_{i}", k, 2 * m_g * k + 1, 0.0, rabi, np.pi),
             ("freefall", "lmt_gap", LMT_POST_DELAY),
         ]
     m_after_upper_fw = m
@@ -167,21 +167,21 @@ def build_lmt_real_sequence(
         m -= 1
         spec += [
             ("freefall", "lmt_gap", LMT_PRE_DELAY),
-            ("pulse", f"upper_rv_{i}", k, 4 * m_g + k, 0.0, rabi, np.pi),
+            ("pulse", f"upper_rv_{i}", k, 2 * m_g * k + 1, 0.0, rabi, np.pi),
             ("freefall", "lmt_gap", LMT_POST_DELAY),
         ]
 
     spec += [
         ("clearout", "clearout_before_last_sel_upper", LMT_PULSE_CLEAROUT_DURATION),
         ("freefall", "pre_last_selective_upper", SELECTIVE_PRE_DELAY),
-        ("pulse", "last_selective_upper", +1, 4 * 2 + 1, 0.0, rabi_sel, np.pi),
+        ("pulse", "last_selective_upper", +1, 2 * 2 * 1 + 1, 0.0, rabi_sel, np.pi),
         # --- MIRROR: DOWN π ---
         ("freefall", "pre_mirror", POST_MIRROR_DELAY),
-        ("pulse", "mirror", -1, 4 * 2 - 1, phase_step, rabi_dn, np.pi),
+        ("pulse", "mirror", -1, 2 * 2 * -1 + 1, phase_step, rabi_dn, np.pi),
         ("freefall", "post_mirror", POST_MIRROR_DELAY),
         # --- Lower arm selective + LMT ---
         ("freefall", "pre_first_selective_lower", SELECTIVE_PRE_DELAY),
-        ("pulse", "first_selective_lower", +1, 4 * 2 + 1, 0.0, rabi_sel, np.pi),
+        ("pulse", "first_selective_lower", +1, 2 * 2 * 1 + 1, 0.0, rabi_sel, np.pi),
         ("clearout", "clearout_after_first_sel_lower", LMT_PULSE_CLEAROUT_DURATION),
     ]
 
@@ -195,7 +195,7 @@ def build_lmt_real_sequence(
         m += 1
         spec += [
             ("freefall", "lmt_gap", LMT_PRE_DELAY),
-            ("pulse", f"lower_fw_{i}", k, 4 * m_g + k, phi, rabi, np.pi),
+            ("pulse", f"lower_fw_{i}", k, 2 * m_g * k + 1, phi, rabi, np.pi),
             ("freefall", "lmt_gap", LMT_POST_DELAY),
         ]
     m_after_lower_fw = m
@@ -214,17 +214,17 @@ def build_lmt_real_sequence(
         m -= 1
         spec += [
             ("freefall", "lmt_gap", LMT_PRE_DELAY),
-            ("pulse", f"lower_rv_{i}", k, 4 * m_g + k, phi, rabi, np.pi),
+            ("pulse", f"lower_rv_{i}", k, 2 * m_g * k + 1, phi, rabi, np.pi),
             ("freefall", "lmt_gap", LMT_POST_DELAY),
         ]
 
     spec += [
         ("clearout", "clearout_before_last_sel_lower", LMT_PULSE_CLEAROUT_DURATION),
         ("freefall", "pre_last_selective_lower", SELECTIVE_PRE_DELAY),
-        ("pulse", "last_selective_lower", +1, 4 * 2 + 1, 0.0, rabi_sel, np.pi),
+        ("pulse", "last_selective_lower", +1, 2 * 2 * 1 + 1, 0.0, rabi_sel, np.pi),
         # --- BS2: DOWN π/2 ---
         ("freefall", "pre_bs2", PRE_BS2_DELAY),
-        ("pulse", "BS2", -1, 4 * 2 - 1, 4 * phase_step, rabi_dn, np.pi / 2),
+        ("pulse", "BS2", -1, 2 * 2 * -1 + 1, 4 * phase_step, rabi_dn, np.pi / 2),
     ]
 
     # Convert spec rows to timed objects, accumulating timestamps.
