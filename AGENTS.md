@@ -1,5 +1,25 @@
 # LMT Atom Interferometer Simulation
 
+## IMPORTANT: Do not bypass intentional guards
+
+This codebase contains deliberate error guards — `ValueError`, `NotImplementedError`, assertion failures, and similar checks — that mark **known physics limitations**. These are tripwires, not bugs to fix.
+
+**When you hit one of these errors, stop and report it.** Do not:
+- Reimplement the failing function's logic outside the guarded path
+- Write a custom loop that skips the check
+- Catch and suppress the exception
+- Find an alternative route that avoids triggering the guard
+
+The guards exist because the underlying physics is not yet correctly handled. Working around them produces **silently wrong results** — numbers that look plausible but are physically incorrect. A loud failure is always better than a silent wrong answer in a physics simulation.
+
+If you encounter a guard while implementing something, your response should be: explain what guard was hit, what physics limitation it protects, and leave it to the human to decide how to proceed. Do not attempt to make the code "work" by circumventing the check.
+
+Examples of guards to respect (not exhaustive):
+- `ValueError: All pulses must currently use the same detuning for Bordé-frame propagation` in `lmt_sequence.py` — changing laser frequency between pulses requires frame corrections not yet implemented
+- `TODO: Convert to the integral of laser phase` in `transform_state_vector` — the frame transformation is not valid for time-varying laser frequency
+
+
+
 Minimal working example of a Large Momentum Transfer (LMT) atom interferometer simulation for Sr-87 on the 698 nm clock transition, using the formalism of Bordé (PhysRevA.30.1836).
 
 ## Architecture
@@ -46,5 +66,3 @@ with $d = \pm 1$ being the laser direction and $\delta_\text{rec} = \hbar k^2/(2
 - `RECOIL_FREQUENCY_HZ = hbar * k^2 / (2M) / (2*pi)` is the recoil frequency in Hz.
 - Detuning sign convention: `delta = laser_freq - atom_freq`, so a positive-velocity atom sees a **negative** Doppler shift contribution (`-v/lambda`).
 - `laser_direction = +1` means a +k photon kick (ground→excited gives +1 recoil); `-1` for the opposite.
-- User-facing state-vector functions must preserve representation: functions named as Bordé-frame operations take and return Bordé-frame amplitudes, while lab-frame APIs must take and return lab-frame amplitudes. Only explicit transform helpers should change representation.
-- Mixed sequence lists should use `Pulse` for clock pulses and `Clearout` for clearout events. `Clearout.duration` is descriptive metadata only; clearout physics should match `do_clearout(...)` without adding extra evolution.
