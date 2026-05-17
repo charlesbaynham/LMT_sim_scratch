@@ -15,7 +15,7 @@ The guards exist because the underlying physics is not yet correctly handled. Wo
 If you encounter a guard while implementing something, your response should be: explain what guard was hit, what physics limitation it protects, and leave it to the human to decide how to proceed. Do not attempt to make the code "work" by circumventing the check.
 
 Examples of guards to respect (not exhaustive):
-- `ValueError: All pulses must currently use the same detuning for Bordé-frame propagation` in `lmt_sequence.py` — changing laser frequency between pulses requires frame corrections not yet implemented
+- `ValueError: All pulses must currently use the same detuning for Bordé-frame propagation` in `lmt_sim/lmt_sequence.py` — changing laser frequency between pulses requires frame corrections not yet implemented
 - `TODO: Convert to the integral of laser phase` in `transform_state_vector` — the frame transformation is not valid for time-varying laser frequency
 
 

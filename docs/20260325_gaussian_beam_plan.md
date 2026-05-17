@@ -44,7 +44,7 @@ where $\Omega_0$ is the on-axis Rabi frequency at the waist.
 
 #### 1.1 Extend State Tracking to 3D
 
-**File:** `lmt_simulation.py`
+**File:** `lmt_sim/lmt_simulation.py`
 
 Currently positions are 1D (z-only). Extend to track $(x, y, z)$ for each state row.
 
@@ -222,7 +222,7 @@ Same additions as above. Thread 3D positions through the pulse sequence.
 
 | File | Changes |
 |------|---------|
-| `lmt_simulation.py` | Core changes: 3D positions, Gaussian beam function, updated pulse/propagation |
+| `lmt_sim/lmt_simulation.py` | Core changes: 3D positions, Gaussian beam function, updated pulse/propagation |
 | `test_states_vector.py` | Update to 3D positions, add Gaussian beam tests |
 | `mach_zehnder_with_temperature.ipynb` | Add transverse position, Gaussian beam option |
 | `rabi_flop_with_temperature.ipynb` | Add transverse position, Gaussian beam option |

@@ -76,7 +76,7 @@ def build_mach_zehnder_pulse_sequence(
     pulse_area_multiplier=1.0,
     k=+1,
 ):
-    import lmt_simulation as sim
+    import lmt_sim.lmt_simulation as sim
 
     if detuning_hz is None:
         detuning_hz = sim.RECOIL_FREQUENCY_HZ
@@ -131,7 +131,7 @@ def run_pulse_sequence_in_borde_representation(
     rng=None,
 ):
     """Run a pulse sequence on amplitudes already expressed in the Bordé frame."""
-    import lmt_simulation as sim
+    import lmt_sim.lmt_simulation as sim
 
     if not pulse_sequence:
         raise ValueError("pulse_sequence must contain at least one pulse")
@@ -241,7 +241,7 @@ def calculate_excited_fraction_for_pulse_sequence(
     initial_velocity_z=0.0,
 ):
     """Run a lab-frame pulse sequence and return the final excited-state fraction."""
-    import lmt_simulation as sim
+    import lmt_sim.lmt_simulation as sim
 
     if not pulse_sequence:
         raise ValueError("pulse_sequence must contain at least one pulse")

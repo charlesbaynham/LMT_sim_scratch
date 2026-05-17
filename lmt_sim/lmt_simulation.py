@@ -4,13 +4,13 @@ import logging
 
 # import logging
 
-import version_info as vs
+import lmt_sim.version_info as vs
 
 import numpy as np
 from scipy import constants
 from scipy.linalg import expm
 import matplotlib.pyplot as plt
-from lmt_sequence import (
+from lmt_sim.lmt_sequence import (
     Clearout,
     Freefall,
     Pulse,

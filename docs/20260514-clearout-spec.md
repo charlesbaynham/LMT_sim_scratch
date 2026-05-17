@@ -12,7 +12,7 @@ Per the design discussion the user chose **Monte-Carlo projection**: a single cl
 
 ### New public function `do_clearout`
 
-Location: `lmt_simulation.py`, near `pulse_interaction_in_borde_representation` and `propagate_states_in_borde_representation`.
+Location: `lmt_sim/lmt_simulation.py`, near `pulse_interaction_in_borde_representation` and `propagate_states_in_borde_representation`.
 
 ```python
 def do_clearout(
@@ -35,7 +35,7 @@ def do_clearout(
 ```
 
 Implementation notes:
-- Reuse `calculate_ground_and_excited_probabilities` (already at `lmt_simulation.py:873`) to compute `p_g, p_e` — this matches the coherent-sum-within-m convention used everywhere else.
+- Reuse `calculate_ground_and_excited_probabilities` (already at `lmt_sim/lmt_simulation.py:873`) to compute `p_g, p_e` — this matches the coherent-sum-within-m convention used everywhere else.
 - `rng` is an optional `np.random.Generator`; default uses `np.random.default_rng()` (avoid the legacy global state).
 - Sample `u = rng.uniform()`; threshold against `p_g / (p_g + p_e)` so the function is robust if amplitudes drift slightly off-norm (e.g. earlier clearouts followed by floating-point pulses).
 - On survive: `keep = ~internal_is_ground`; slice each array; multiply amplitudes by `1/sqrt(p_e)`.
@@ -80,7 +80,7 @@ This is the only new aggregation surface; everything else stays a primitive.
 
 ## Files to modify / add
 
-- `lmt_simulation.py` — add `do_clearout` and `run_clearout_trials`. No changes to existing pulse / propagate / probability functions.
+- `lmt_sim/lmt_simulation.py` — add `do_clearout` and `run_clearout_trials`. No changes to existing pulse / propagate / probability functions.
 - `test_states_vector.py` — append a new section `# Clearout tests` with the tests below.
 - `clearout_sanity_checks.ipynb` (**new** notebook) — sanity plots, see below.
 
@@ -104,7 +104,7 @@ Cells:
 
 1. Imports + constants, reusing `lmt_simulation` (mirrors header of `mach_zehnder_with_temperature.ipynb`).
 2. **Plot 1 — discard rate vs initial excited fraction.** Sweep `|c1|^2` from 0 to 1; for each, run 2000 MC trials of `make_atom_states → do_clearout`; plot empirical `P_discarded` with `4/sqrt(N)` error bars against the analytical line `1 - |c1|^2`. Should overlap.
-3. **Plot 2 — Mach-Zehnder with clearout, fringe contrast.** Run the standard π/2-π-π/2 MZ phase scan (reuse pattern from `calc_mz_excitation`, `lmt_simulation.py:968`) but insert a `do_clearout` between the π and final π/2 pulses. Plot `P_ground`, `P_excited`, `P_discarded` vs interferometer phase φ on the same axes. Expectations: `P_discarded` ≈ constant ≈ 0.5 (atoms in ground after the π are blown away regardless of φ); the surviving fringe in `P_excited` has reduced absolute amplitude but full contrast relative to the surviving population.
+3. **Plot 2 — Mach-Zehnder with clearout, fringe contrast.** Run the standard π/2-π-π/2 MZ phase scan (reuse pattern from `calc_mz_excitation`, `lmt_sim/lmt_simulation.py:968`) but insert a `do_clearout` between the π and final π/2 pulses. Plot `P_ground`, `P_excited`, `P_discarded` vs interferometer phase φ on the same axes. Expectations: `P_discarded` ≈ constant ≈ 0.5 (atoms in ground after the π are blown away regardless of φ); the surviving fringe in `P_excited` has reduced absolute amplitude but full contrast relative to the surviving population.
 4. **Plot 3 — MC convergence.** Pick one φ from plot 2; sweep `n_trials ∈ {50, 200, 1000, 5000, 20000}`; plot `|MC estimate − deterministic baseline|` vs `n_trials` on log-log; overlay `1/sqrt(N)` reference line.
 5. **Plot 4 — clearout commutes with free propagation.** Compare `do_clearout` immediately followed by free propagation vs free propagation followed by `do_clearout` (same rng seed and free-fall duration). Plot both result distributions for a Mach-Zehnder; should overlay within MC noise. Demonstrates the documented frame/time independence of the projection.
 

@@ -3,7 +3,7 @@ import nbclient
 import os
 import pytest
 
-NOTEBOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+NOTEBOOK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "notebooks")
 
 
 def get_all_notebooks():

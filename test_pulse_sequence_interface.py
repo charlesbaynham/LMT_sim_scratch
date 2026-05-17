@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from lmt_simulation import (
+from lmt_sim.lmt_simulation import (
     Clearout,
     Freefall,
     K_WAVEVECTOR,
@@ -21,7 +21,7 @@ from lmt_simulation import (
     run_pulse_sequence_in_borde_representation,
     transform_state_vector,
 )
-from lmt_real_sequence import build_lmt_real_sequence
+from lmt_sim.lmt_real_sequence import build_lmt_real_sequence
 
 
 def legacy_calc_mz_excitation(

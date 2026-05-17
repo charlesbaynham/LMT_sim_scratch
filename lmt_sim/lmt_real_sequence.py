@@ -28,8 +28,8 @@ pulse list.  A consumer can iterate the list and dispatch to
 
 import numpy as np
 
-from lmt_sequence import Clearout, Freefall, Pulse
-from lmt_simulation import RECOIL_FREQUENCY_HZ
+from lmt_sim.lmt_sequence import Clearout, Freefall, Pulse
+from lmt_sim.lmt_simulation import RECOIL_FREQUENCY_HZ
 
 
 # Experiment defaults, copied verbatim from icl_experiments/repository/lib/constants.py

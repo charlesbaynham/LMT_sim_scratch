@@ -6,7 +6,7 @@ Add classical position tracking to the LMT simulation. Positions are threaded th
 
 ## Steps
 
-### Phase 1: Core library changes in `lmt_simulation.py`
+### Phase 1: Core library changes in `lmt_sim/lmt_simulation.py`
 
 1. **`propagate_states_in_borde_representation`** — Add `positions` parameter and return it
    - New parameter: `positions: np.ndarray` 
@@ -23,7 +23,7 @@ Add classical position tracking to the LMT simulation. Positions are threaded th
 
 3. **`make_atom_states`** — Already returns `positions`, no change needed. Callers just need to stop discarding it.
 
-### Phase 2: Update internal callers in `lmt_simulation.py`
+### Phase 2: Update internal callers in `lmt_sim/lmt_simulation.py`
 
 4. **`do_rabi_pulse`** — Thread `positions` through `pulse_interaction_in_borde_representation` (currently doesn't call propagate). Positions not used for result, but API must match.
 

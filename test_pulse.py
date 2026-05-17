@@ -1,6 +1,6 @@
 import numpy as np
 
-from lmt_simulation import (
+from lmt_sim.lmt_simulation import (
     RABI_FREQ,
     RECOIL_FREQUENCY_HZ,
     T_PI,

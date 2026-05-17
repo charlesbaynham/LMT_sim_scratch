@@ -40,7 +40,7 @@ Add `velocities` as an `(N, 3)` array with columns `[vx, vy, vz]`.
 
 ## API changes
 
-### `lmt_simulation.py`
+### `lmt_sim/lmt_simulation.py`
 
 **`make_atom_states`**
 ```python
@@ -129,7 +129,7 @@ No default for `beam_waist` -- if you want flat-top behaviour, call `pulse_inter
 
 ## File-by-file changes
 
-### `lmt_simulation.py`
+### `lmt_sim/lmt_simulation.py`
 - `make_atom_states`: signature & body, as above (lines ~50-91).
 - `propagate_states_in_borde_representation`: add velocities parameter, ballistic propagation for all 3 dimensions (line ~390).
 - `pulse_interaction_in_borde_representation`: add velocities parameter; scalar-or-array `pulse_rabi_freq` handling at the top of the loop; position updates use ballistic propagation for all 3 dimensions; velocity updates (vx, vy unchanged, vz recoil) (lines ~395-520).
@@ -141,7 +141,7 @@ No default for `beam_waist` -- if you want flat-top behaviour, call `pulse_inter
 - Add new tests (see Verification).
 
 ### `test_pulse.py`
-- This file imports `propagate_states_pulse` and `propagate_states_freely`, both of which no longer exist in `lmt_simulation.py`. It is already broken on the main branch -- out of scope for this milestone, leave it alone (or delete in a separate cleanup commit if the user prefers).
+- This file imports `propagate_states_pulse` and `propagate_states_freely`, both of which no longer exist in `lmt_sim/lmt_simulation.py`. It is already broken on the main branch -- out of scope for this milestone, leave it alone (or delete in a separate cleanup commit if the user prefers).
 
 ### Notebooks
 - `rabi_flop_with_temperature.ipynb`, `mach_zehnder_with_temperature.ipynb`, `sliced_rabi_flop_with_temperature.ipynb`, `slice_duration_vs_survival.ipynb`: these call `make_atom_states` and `pulse_interaction_in_borde_representation` directly. They will continue to work as-is because `make_atom_states` still returns positions with defaults of zero -- but the positions array shape changes from `(2,)` to `(2, 3)` and velocities `(2, 3)` are now returned. Any code that does shape-dependent operations on positions needs a small update.
@@ -187,6 +187,6 @@ No default for `beam_waist` -- if you want flat-top behaviour, call `pulse_inter
 
 ## Critical files
 
-- `lmt_simulation.py` -- all core changes
+- `lmt_sim/lmt_simulation.py` -- all core changes
 - `test_states_vector.py` -- backward-compat sanity + new tests
 - `docs/roadmap.md` -- tick the first item once delivered

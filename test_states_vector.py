@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import lmt_simulation as sim
+import lmt_sim.lmt_simulation as sim
 
 
 def _total_population(m_values, amplitudes, is_ground):
