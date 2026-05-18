@@ -560,19 +560,36 @@ def pulse_interaction_in_borde_representation(
         # Ground-output branch: m = m_ground, velocity = vel_ground_3d
         new_squiggly_amplitudes[idx] = amplitude_vector_out[1]
         new_m_values[idx] = m_ground
-        new_positions[idx] = positions[idx] + vel_ground_3d * t_pulse
         new_velocities[idx] = vel_ground_3d
 
         # Excited-output branch: m = m_excited, velocity = vel_excited_3d
-        # Position: midpoint approximation (first half at ground vel, second at excited vel)
         new_squiggly_amplitudes[ind_excited + idx] = amplitude_vector_out[0]
         new_m_values[ind_excited + idx] = m_excited
-        new_positions[ind_excited + idx] = (
-            positions[idx]
-            + vel_ground_3d * (t_pulse / 2)
-            + vel_excited_3d * (t_pulse / 2)
-        )
         new_velocities[ind_excited + idx] = vel_excited_3d
+
+        # Update the positions. If this state didn't change (i.e. ground->ground
+        # or excited->excited) we can just use the input velocity for the whole
+        # pulse duration. If it did change, we use the midpoint approximation:
+        # half the pulse with the old velocity, half the pulse with the new
+        # velocity.
+        if internal_is_ground[idx]:  # start in ground
+            # ground->ground
+            new_positions[idx] = positions[idx] + vel_ground_3d * t_pulse
+            # ground->excited
+            new_positions[ind_excited + idx] = (
+                positions[idx]
+                + vel_ground_3d * (t_pulse / 2)
+                + vel_excited_3d * (t_pulse / 2)
+            )
+        else:  # start in excited
+            # excited->excited
+            new_positions[idx] = positions[idx] + vel_excited_3d * t_pulse
+            # excited->ground
+            new_positions[ind_excited + idx] = (
+                positions[idx]
+                + vel_ground_3d * (t_pulse / 2)
+                + vel_excited_3d * (t_pulse / 2)
+            )
 
     return (
         new_m_values,
@@ -595,44 +612,27 @@ def change_laser_frequency_in_borde_representation(
 ):
     """Re-express Bordé-frame amplitudes for a new laser frequency.
 
-    Composing ``T(omega_L2) * conj(T(omega_L1))`` from
-    :func:`transform_state_vector` collapses to a single per-row phase: the
-    global ``exp(i omega_0 t / 2)`` factor and the ``exp(-i m k (z + v_z t))``
-    factor are independent of ``omega_L`` and cancel.  Only the
-    ``exp(+/- i omega_L t / 2)`` factor survives.
-
-    Result (with ``delta_f = new_detuning_hz - old_detuning_hz`` and the
-    Hz / factor-of-pi convention used throughout this module):
-
-    * ground rows are multiplied by ``exp(-i pi delta_f * time)``
-    * excited rows are multiplied by ``exp(+i pi delta_f * time)``
-
-    The symbolic derivation is in ``borde_frame_change_derivation.ipynb``.
+    The Borde frame moves with the laser's frequency. So, to avoid having to
+    track the total laser phase, I transform amplitudes from one frame to
+    another whenever the laser frequency changes.
 
     Parameters
     ----------
     m_values, squiggly_amplitudes, internal_is_ground, positions, velocities
-        The state arrays.  Only ``squiggly_amplitudes`` is modified; the
-        others are returned unchanged.
+        The state arrays.  Only ``squiggly_amplitudes`` is modified; the others
+        are returned unchanged.
     old_detuning_hz : float
         Detuning (Hz) of the Bordé frame the amplitudes are currently in.
     new_detuning_hz : float
         Detuning (Hz) of the Bordé frame to express the amplitudes in.
     time : float
-        **Global** simulation time at which the frame change happens, in
-        seconds -- the same ``t`` semantics as
-        :func:`transform_state_vector`.  Pass ``0.0`` only if the frame
-        change happens at the very start of the sequence (before any free
-        propagation or pulse).
+        **Global** simulation time at which the frame change happens, in seconds.
 
     Returns
     -------
     tuple
         ``(m_values, squiggly_amplitudes, internal_is_ground, positions,
-        velocities)`` -- same 5-tuple shape as
-        :func:`propagate_states_in_borde_representation` and
-        :func:`pulse_interaction_in_borde_representation` so the call
-        composes cleanly into a pulse sequence.
+        velocities)``
     """
     delta_f = new_detuning_hz - old_detuning_hz
     phase_gnd = np.exp(-1j * np.pi * delta_f * time)
@@ -647,7 +647,9 @@ def change_laser_frequency_in_borde_representation(
     )
 
 
-def gaussian_rabi(positions, on_axis_rabi, beam_waist, wavelength=TRANSITION_WAVELENGTH):
+def gaussian_rabi(
+    positions, on_axis_rabi, beam_waist, wavelength=TRANSITION_WAVELENGTH
+):
     """Per-row Rabi frequency from a TEM00 Gaussian beam profile.
 
     Includes both the transverse intensity variation and the z-dependent beam
@@ -744,7 +746,9 @@ def do_gaussian_pulse(
     """
     # Compute 3-D position at pulse midpoint for Gaussian Rabi calculation
     positions_mid = positions + velocities * (t_pulse / 2)
-    rabi_per_row = gaussian_rabi(positions_mid, on_axis_rabi_freq, beam_waist, wavelength)
+    rabi_per_row = gaussian_rabi(
+        positions_mid, on_axis_rabi_freq, beam_waist, wavelength
+    )
     return pulse_interaction_in_borde_representation(
         m_values,
         squiggly_amplitudes,
@@ -759,187 +763,6 @@ def do_gaussian_pulse(
         k_wavevector=k_wavevector,
         vz=vz,
     )
-
-
-#     m_values: np.ndarray,
-#     positions: np.ndarray,
-#     internal_amplitude: np.ndarray,
-#     internal_is_ground: np.ndarray,
-#     initial_velocity_z: float = 0.0,
-#     laser_direction: int = +1,  # +1 for +k laser, -1 for -k laser
-#     pulse_detuning: float = 0.0,
-#     pulse_duration: float = T_PI,
-#     pulse_rabi_freq: float = RABI_FREQ,
-#     pulse_phase: float = 0.0,
-# ):
-#     """
-#     Apply a laser pulse to a collection of states using Bordé's 2x2 formalism
-
-#     Each pulse couples |a, m⟩ (ground, momentum m) to |b, m+1⟩ (excited,
-#     momentum m+1) for a +k laser, or |b, m-1⟩ for a -k laser.
-
-#     The effective detuning includes the m-dependent recoil shift (Bordé Eqs. 7-8):
-#         delta_eff(m) = pulse_detuning - v(m) · k / (2π) - (2m + laser_direction) * delta_rec
-
-#     where delta_rec = ℏk²/(2M) is the recoil frequency.
-
-#     Parameters
-#     ----------
-#     m_values : (N,) int array — momentum quantum numbers
-#     positions : (N,) float array — z-positions
-#     internal_amplitude : (N,) complex array — state amplitudes
-#     internal_is_ground : (N,) bool array — True for ground-state rows
-#     initial_velocity_z : float — initial atom velocity (m/s)
-#     laser_direction : int — +1 for +k laser, -1 for -k laser
-#     pulse_detuning : float — laser detuning from zero-velocity resonance (Hz)
-#     pulse_duration : float — pulse duration (s)
-#     pulse_rabi_freq : float — Rabi frequency in Hz
-#     pulse_phase : float — laser phase in radians
-
-#     Returns
-#     -------
-#     new_m_values, new_positions, new_amplitudes, new_is_ground
-#     """
-
-#     logger.debug(
-#         "Applying pulse",
-#         initial_m_values=m_values,
-#         initial_positions=positions,
-#         initial_amplitudes=internal_amplitude,
-#         initial_is_ground=internal_is_ground,
-#         initial_velocity_z=initial_velocity_z,
-#         laser_direction=laser_direction,
-#         pulse_detuning=pulse_detuning,
-#         pulse_duration=pulse_duration,
-#         pulse_rabi_freq=pulse_rabi_freq,
-#         pulse_phase=pulse_phase,
-#     )
-
-#     # Sanity check: the sum of probabilities should be 1 before the pulse
-#     # FIXME this is wrong! We need to sum the amplitudes for each m before squaring, yet this check currently passes...
-#     total_prob = np.sum(np.abs(internal_amplitude) ** 2)
-#     logger.debug(
-#         "Total probability before pulse",
-#         total_prob=total_prob,
-#         internal_amplitude=internal_amplitude,
-#     )
-#     assert np.isclose(
-#         total_prob, 1.0, rtol=1e-6
-#     ), f"State is not normalized before pulse - got {total_prob}"
-
-#     # Prepare output arrays — each row branches into two
-#     N = internal_amplitude.shape[0]
-#     new_num_rows = N * 2
-
-#     new_amplitudes = np.empty(new_num_rows, dtype=internal_amplitude.dtype)
-#     new_m_values = np.empty(new_num_rows, dtype=m_values.dtype)
-#     new_positions = np.empty(new_num_rows, dtype=positions.dtype)
-#     new_is_ground = np.empty(new_num_rows, dtype=internal_is_ground.dtype)
-
-#     # Ground-output rows first, excited-output rows second
-#     ind_excited = N
-#     new_is_ground[:ind_excited] = True
-#     new_is_ground[ind_excited:] = False
-
-#     for i in range(N):
-#         # Build input state vector for propagate_pulse
-#         # Bordé notation: state = [excited_amp, ground_amp] (b, a)
-#         if internal_is_ground[i]:
-#             # The ground state has m = m_a, so the relevant excited state for
-#             # the pulse is m = m_a +- 1
-#             m_ground = m_values[i]
-#             m_excited = m_values[i] + laser_direction
-#             state = np.array([0, internal_amplitude[i]], dtype=complex)
-#         else:
-#             # This excited state has m = m_b, so the relevant ground state for
-#             # the pulse is m = m_b -+ 1
-#             m_ground = m_values[i] - laser_direction
-#             m_excited = m_values[i]
-#             state = np.array([internal_amplitude[i], 0], dtype=complex)
-
-#         # Call propagate_pulse with converted parameters
-#         # borde_test uses omega_ab = pi * RABI_FREQ, angular frequencies in rad/s
-#         omega_ab = np.pi * pulse_rabi_freq
-#         omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_detuning)
-#         omega_0 = 2 * np.pi * TRANSITION_FREQUENCY
-
-#         result = _propagate_state_pair_pulse(
-#             state,
-#             omega_laser=omega_laser,
-#             t_pulse=pulse_duration,
-#             omega_ab=omega_ab,
-#             pulse_phase=pulse_phase,
-#             k_sign=laser_direction,
-#             k=K_WAVEVECTOR,
-#             z=positions[i],
-#             vz=initial_velocity_z,  # Velocity of the m=0 state
-#             m_ground=m_ground,
-#             omega_0=omega_0,
-#         )
-
-#         # Bordé notation: result = [excited, ground]
-#         c_excited = result[0]
-#         c_ground = result[1]
-
-#         # Ground-output branch
-#         new_amplitudes[i] = c_ground
-#         new_m_values[i] = m_ground
-#         new_positions[i] = positions[i]  # FIXME: plus movement during pulse?
-
-#         # Excited-output branch
-#         new_amplitudes[ind_excited + i] = c_excited
-#         new_m_values[ind_excited + i] = m_excited
-#         new_positions[ind_excited + i] = positions[i]
-
-#     normalised_at_start = _are_states_normalized(
-#         m_values, internal_amplitude, internal_is_ground
-#     )
-#     normalised_at_end = _are_states_normalized(
-#         new_m_values, new_amplitudes, new_is_ground
-#     )
-
-#     if not normalised_at_start or not normalised_at_end:  #
-#         k_nonzero_start = np.where(np.abs(internal_amplitude) > 1e-6)[0]
-#         k_nonzero_end = np.where(np.abs(new_amplitudes) > 1e-6)[0]
-
-#         logger.error(
-#             "State normalization check failed",
-#             normalised_at_start=normalised_at_start,
-#             normalised_at_end=normalised_at_end,
-#             nonzero_initial_m_values=m_values[k_nonzero_start],
-#             nonzero_initial_amplitudes=internal_amplitude[k_nonzero_start],
-#             nonzero_initial_is_ground=internal_is_ground[k_nonzero_start],
-#             nonzero_new_m_values=new_m_values[k_nonzero_end],
-#             nonzero_new_amplitudes=new_amplitudes[k_nonzero_end],
-#             nonzero_new_is_ground=new_is_ground[k_nonzero_end],
-#         )
-#         logger.error(
-#             "State normalization check failed",
-#             normalised_at_start=normalised_at_start,
-#             normalised_at_end=normalised_at_end,
-#             initial_m_values=m_values,
-#             initial_amplitudes=internal_amplitude,
-#             initial_is_ground=internal_is_ground,
-#             new_m_values=new_m_values,
-#             new_amplitudes=new_amplitudes,
-#             new_is_ground=new_is_ground,
-#         )
-#         logger.error(
-#             "Params:",
-#             initial_m_values=m_values,
-#             initial_positions=positions,
-#             initial_amplitudes=internal_amplitude,
-#             initial_is_ground=internal_is_ground,
-#             initial_velocity_z=initial_velocity_z,
-#             laser_direction=laser_direction,
-#             pulse_detuning=pulse_detuning,
-#             pulse_duration=pulse_duration,
-#             pulse_rabi_freq=pulse_rabi_freq,
-#             pulse_phase=pulse_phase,
-#         )
-#         raise ValueError("State normalization check failed")
-
-#     return new_m_values, new_positions, new_amplitudes, new_is_ground
 
 
 def calculate_ground_and_excited_probabilities(
@@ -1073,7 +896,9 @@ def run_clearout_trials(sequence_fn, n_trials, rng=None):
         if result is None:
             discard_tally += 1.0
         else:
-            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = result
+            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+                result
+            )
             p_g, p_e = calculate_ground_and_excited_probabilities(
                 m_values, squiggly_amplitudes, internal_is_ground
             )

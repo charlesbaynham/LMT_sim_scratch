@@ -48,10 +48,6 @@ class Freefall:
             raise ValueError("Freefall duration must be non-negative")
 
 
-def _sequence_clock_pulses(sequence):
-    return [event for event in sequence if isinstance(event, Pulse)]
-
-
 def _sequence_event_k_sign(sequence, event_index):
     event = sequence[event_index]
     if isinstance(event, Pulse):
@@ -70,9 +66,9 @@ def _sequence_event_k_sign(sequence, event_index):
 
 def build_mach_zehnder_pulse_sequence(
     phi=0.0,
-    detuning_hz=None,
+    detuning_hz=None,  # FIXME make this positional
     time_between_pulses=200e-6,
-    rabi_frequency=None,
+    rabi_frequency=None,  # FIXME make this positional
     pulse_area_multiplier=1.0,
     k=+1,
 ):
@@ -136,21 +132,21 @@ def run_pulse_sequence_in_borde_representation(
     if not pulse_sequence:
         raise ValueError("pulse_sequence must contain at least one pulse")
 
-    clock_pulses = _sequence_clock_pulses(pulse_sequence)
-    if not clock_pulses:
-        raise ValueError("pulse_sequence must contain at least one clock Pulse")
-
     for event in pulse_sequence:
         if not isinstance(event, (Pulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
 
-    detunings_hz = {pulse.detuning_hz for pulse in clock_pulses}
+    detunings_hz = {
+        pulse.detuning_hz for pulse in pulse_sequence if isinstance(pulse, Pulse)
+    }
     if len(detunings_hz) != 1:
         raise ValueError(
             "All pulses must currently use the same detuning for Bordé-frame propagation"
         )
 
-    omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + clock_pulses[0].detuning_hz)
+    detuning_hz = list(detunings_hz)[0]
+
+    omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + detuning_hz)
     current_time = 0.0
 
     for event_index, event in enumerate(pulse_sequence):
@@ -172,9 +168,7 @@ def run_pulse_sequence_in_borde_representation(
                 )
             )
             current_time += event.duration
-            continue
-
-        if isinstance(event, Clearout):
+        elif isinstance(event, Clearout):
             result = sim.do_clearout(
                 m_values,
                 squiggly_amplitudes,
@@ -190,19 +184,23 @@ def run_pulse_sequence_in_borde_representation(
             )
             if event.duration > 0.0:
                 k_sign = _sequence_event_k_sign(pulse_sequence, event_index)
-                m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-                    sim.propagate_states_in_borde_representation(
-                        m_values,
-                        squiggly_amplitudes,
-                        internal_is_ground,
-                        positions,
-                        velocities,
-                        time_of_propegation=event.duration,
-                        omega_laser=omega_laser,
-                        vz=initial_velocity_z,
-                        k_sign=k_sign,
-                        k_wavevector=sim.K_WAVEVECTOR,
-                    )
+                (
+                    m_values,
+                    squiggly_amplitudes,
+                    internal_is_ground,
+                    positions,
+                    velocities,
+                ) = sim.propagate_states_in_borde_representation(
+                    m_values,
+                    squiggly_amplitudes,
+                    internal_is_ground,
+                    positions,
+                    velocities,
+                    time_of_propegation=event.duration,
+                    omega_laser=omega_laser,
+                    vz=initial_velocity_z,
+                    k_sign=k_sign,
+                    k_wavevector=sim.K_WAVEVECTOR,
                 )
                 current_time += event.duration
             continue
@@ -258,10 +256,8 @@ def calculate_excited_fraction_for_pulse_sequence(
     m_values, positions, velocities, internal_amplitude, internal_is_ground = (
         sim.make_atom_states(initial_velocity_z=initial_velocity_z)
     )
-    clock_pulses = _sequence_clock_pulses(pulse_sequence)
-    if not clock_pulses:
-        raise ValueError("pulse_sequence must contain at least one clock Pulse")
-    omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + clock_pulses[0].detuning_hz)
+
+    omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + list(detunings_hz)[0])
     squiggly_amplitudes = sim.transform_state_vector(
         m_values,
         internal_amplitude,
@@ -310,6 +306,8 @@ def calculate_excited_fraction_for_pulse_sequence(
 
     total_prob = ground_prob + excited_prob
     if not np.isclose(total_prob, 1.0, rtol=1e-6):
-        logger.warning("State is not normalized after pulse sequence: total_prob=%s", total_prob)
+        logger.warning(
+            "State is not normalized after pulse sequence: total_prob=%s", total_prob
+        )
 
     return excited_prob / total_prob
