@@ -18,6 +18,63 @@ def _total_population(m_values, amplitudes, is_ground):
     return ground_prob + excited_prob
 
 
+def run_clearout_trials(sequence_fn, n_trials, rng=None):
+    """Run ``sequence_fn(rng)`` ``n_trials`` times.
+
+    The closure must return either ``None`` (atom discarded mid-sequence)
+    or the final state tuple.
+
+    For surviving runs, each contributes its quantum-mechanical
+    :math:`P_\\text{g}` and :math:`P_\\text{e}` weighted by
+    :math:`1/n_\\text{trials}` (so the result equals the deterministic
+    population breakdown in the limit :math:`n_\\text{trials} \\to \\infty`).
+
+    Parameters
+    ----------
+    sequence_fn : callable
+        ``sequence_fn(rng)`` -> ``None`` or state tuple.
+    n_trials : int
+        Number of Monte-Carlo trials to run.
+    rng : np.random.Generator, optional
+        Random-number generator.  If ``None``, ``np.random.default_rng()``
+        is used.
+
+    Returns
+    -------
+    tuple
+        ``(p_ground, p_excited, p_discarded)`` -- population fractions.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    if n_trials <= 0:
+        raise ValueError("n_trials must be positive")
+
+    ground_tally = 0.0
+    excited_tally = 0.0
+    discard_tally = 0.0
+
+    for _ in range(n_trials):
+        result = sequence_fn(rng)
+        if result is None:
+            discard_tally += 1.0
+        else:
+            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+                result
+            )
+            p_g, p_e = calculate_ground_and_excited_probabilities(
+                m_values, squiggly_amplitudes, internal_is_ground
+            )
+            ground_tally += p_g
+            excited_tally += p_e
+
+    return (
+        ground_tally / n_trials,
+        excited_tally / n_trials,
+        discard_tally / n_trials,
+    )
+
+
 @pytest.mark.parametrize("seed", range(100))
 def test_mz_randomized_population_conserved_every_step(seed):
     rng = np.random.default_rng(seed)
@@ -35,11 +92,13 @@ def test_mz_randomized_population_conserved_every_step(seed):
     pulse_3 = rng.uniform(0.1 * sim.T_PI, 1.9 * sim.T_PI)
     time_between = rng.uniform(0.0, 300e-6)
 
-    m_values, positions, velocities, internal_amplitude, internal_is_ground = sim.make_atom_states(
-        position_z=0.0,
-        initial_velocity_z=0.0,
-        c0=c0,
-        c1=c1,
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
+        sim.make_atom_states(
+            position_z=0.0,
+            initial_velocity_z=0.0,
+            c0=c0,
+            c1=c1,
+        )
     )
 
     assert _total_population(
@@ -222,6 +281,7 @@ def test_mz_randomized_population_conserved_every_step(seed):
 # Tests for gaussian_rabi (pure-physics primitive)
 # ---------------------------------------------------------------------------
 
+
 def test_gaussian_rabi_on_axis():
     """gaussian_rabi at r=0 returns exactly Omega_0."""
     omega_0 = 1000.0
@@ -253,6 +313,7 @@ def test_gaussian_rabi_far_from_axis():
 # Test array-Rabi path matches scalar-Rabi path
 # ---------------------------------------------------------------------------
 
+
 def test_array_rabi_matches_scalar():
     """pulse_interaction_in_borde_representation with array Rabi == scalar Rabi."""
     m_values, positions, velocities, internal_amplitude, internal_is_ground = (
@@ -260,8 +321,14 @@ def test_array_rabi_matches_scalar():
     )
     omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
     squiggly_amplitudes = sim.transform_state_vector(
-        m_values, internal_amplitude, internal_is_ground,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=False,
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=0.0,
+        inverse=False,
     )
 
     common_kwargs = dict(
@@ -275,8 +342,11 @@ def test_array_rabi_matches_scalar():
 
     # Scalar path
     out_scalar = sim.pulse_interaction_in_borde_representation(
-        m_values, squiggly_amplitudes, internal_is_ground,
-        positions, velocities,
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
         pulse_rabi_freq=sim.RABI_FREQ,
         **common_kwargs,
     )
@@ -285,8 +355,11 @@ def test_array_rabi_matches_scalar():
     N = len(m_values)
     rabi_array = np.full(N, sim.RABI_FREQ)
     out_array = sim.pulse_interaction_in_borde_representation(
-        m_values, squiggly_amplitudes, internal_is_ground,
-        positions, velocities,
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
         pulse_rabi_freq=rabi_array,
         **common_kwargs,
     )
@@ -299,6 +372,7 @@ def test_array_rabi_matches_scalar():
 # Gaussian-pulse end-to-end tests
 # ---------------------------------------------------------------------------
 
+
 def test_gaussian_pulse_on_axis_pi():
     """do_gaussian_pulse with atom at beam centre gives full population transfer."""
     m_values, positions, velocities, internal_amplitude, internal_is_ground = (
@@ -306,13 +380,22 @@ def test_gaussian_pulse_on_axis_pi():
     )
     omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
     squiggly_amplitudes = sim.transform_state_vector(
-        m_values, internal_amplitude, internal_is_ground,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=False,
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=0.0,
+        inverse=False,
     )
 
     m_out, amp_out, isg_out, pos_out, vel_out = sim.do_gaussian_pulse(
-        m_values, squiggly_amplitudes, internal_is_ground,
-        positions, velocities,
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
         pulse_detuning=sim.RECOIL_FREQUENCY_HZ,
         t_pulse=sim.T_PI,
         on_axis_rabi_freq=sim.RABI_FREQ,
@@ -321,10 +404,18 @@ def test_gaussian_pulse_on_axis_pi():
     )
 
     amp_lab = sim.transform_state_vector(
-        m_out, amp_out, isg_out,
-        omega_laser=omega_laser, t=sim.T_PI, z=0.0, vz=0.0, inverse=True,
+        m_out,
+        amp_out,
+        isg_out,
+        omega_laser=omega_laser,
+        t=sim.T_PI,
+        z=0.0,
+        vz=0.0,
+        inverse=True,
     )
-    _, excited_prob = sim.calculate_ground_and_excited_probabilities(m_out, amp_lab, isg_out)
+    _, excited_prob = sim.calculate_ground_and_excited_probabilities(
+        m_out, amp_lab, isg_out
+    )
     assert excited_prob == pytest.approx(1.0, abs=1e-4)
 
 
@@ -336,13 +427,22 @@ def test_gaussian_pulse_at_waist():
     )
     omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
     squiggly_amplitudes = sim.transform_state_vector(
-        m_values, internal_amplitude, internal_is_ground,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=False,
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=0.0,
+        inverse=False,
     )
 
     m_out, amp_out, isg_out, pos_out, vel_out = sim.do_gaussian_pulse(
-        m_values, squiggly_amplitudes, internal_is_ground,
-        positions, velocities,
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
         pulse_detuning=sim.RECOIL_FREQUENCY_HZ,
         t_pulse=sim.T_PI,
         on_axis_rabi_freq=sim.RABI_FREQ,
@@ -351,10 +451,18 @@ def test_gaussian_pulse_at_waist():
     )
 
     amp_lab = sim.transform_state_vector(
-        m_out, amp_out, isg_out,
-        omega_laser=omega_laser, t=sim.T_PI, z=0.0, vz=0.0, inverse=True,
+        m_out,
+        amp_out,
+        isg_out,
+        omega_laser=omega_laser,
+        t=sim.T_PI,
+        z=0.0,
+        vz=0.0,
+        inverse=True,
     )
-    _, excited_prob = sim.calculate_ground_and_excited_probabilities(m_out, amp_lab, isg_out)
+    _, excited_prob = sim.calculate_ground_and_excited_probabilities(
+        m_out, amp_lab, isg_out
+    )
     # At r=w: Rabi = Omega_0/e, pulse area = Omega_0/e * T_pi = pi/e
     # excitation = sin^2(pi / (2e))
     expected = np.sin(np.pi / (2 * np.e)) ** 2
@@ -365,27 +473,42 @@ def test_gaussian_pulse_at_waist():
 # Ballistic propagation test
 # ---------------------------------------------------------------------------
 
+
 def test_ballistic_propagation_3d():
     """propagate_states_in_borde_representation updates x, y, z from velocities."""
     vx, vy, vz = 0.01, 0.02, 0.5
     t = 0.1
     m_values, positions, velocities, internal_amplitude, internal_is_ground = (
         sim.make_atom_states(
-            position_x=1.0, position_y=2.0, position_z=3.0,
-            velocity_x=vx, velocity_y=vy, initial_velocity_z=vz,
-            c0=1.0, c1=0.0,
+            position_x=1.0,
+            position_y=2.0,
+            position_z=3.0,
+            velocity_x=vx,
+            velocity_y=vy,
+            initial_velocity_z=vz,
+            c0=1.0,
+            c1=0.0,
         )
     )
 
     omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
     squiggly_amplitudes = sim.transform_state_vector(
-        m_values, internal_amplitude, internal_is_ground,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=vz, inverse=False,
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=vz,
+        inverse=False,
     )
 
     _, _, _, pos_out, vel_out = sim.propagate_states_in_borde_representation(
-        m_values, squiggly_amplitudes, internal_is_ground,
-        positions, velocities,
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
         time_of_propegation=t,
         omega_laser=omega_laser,
         vz=vz,
@@ -400,27 +523,40 @@ def test_ballistic_propagation_3d():
 # Velocity tracking test
 # ---------------------------------------------------------------------------
 
+
 def test_velocity_tracking_through_pulse_and_propagation():
     """vx and vy stay constant; vz changes only via recoil during pulses."""
     vx, vy, vz0 = 0.1, 0.2, 0.0
     m_values, positions, velocities, internal_amplitude, internal_is_ground = (
         sim.make_atom_states(
-            velocity_x=vx, velocity_y=vy, initial_velocity_z=vz0,
-            c0=1.0, c1=0.0,
+            velocity_x=vx,
+            velocity_y=vy,
+            initial_velocity_z=vz0,
+            c0=1.0,
+            c1=0.0,
         )
     )
 
     omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
     squiggly_amplitudes = sim.transform_state_vector(
-        m_values, internal_amplitude, internal_is_ground,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=vz0, inverse=False,
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=vz0,
+        inverse=False,
     )
 
     # Apply a pulse
     m_out, amp_out, isg_out, pos_out, vel_out = (
         sim.pulse_interaction_in_borde_representation(
-            m_values, squiggly_amplitudes, internal_is_ground,
-            positions, velocities,
+            m_values,
+            squiggly_amplitudes,
+            internal_is_ground,
+            positions,
+            velocities,
             pulse_detuning=sim.RECOIL_FREQUENCY_HZ,
             t_pulse=sim.T_PI,
             pulse_rabi_freq=sim.RABI_FREQ,
@@ -442,7 +578,11 @@ def test_velocity_tracking_through_pulse_and_propagation():
 
     # Propagation must leave velocities unchanged
     _, _, _, pos_prop, vel_prop = sim.propagate_states_in_borde_representation(
-        m_out, amp_out, isg_out, pos_out, vel_out,
+        m_out,
+        amp_out,
+        isg_out,
+        pos_out,
+        vel_out,
         time_of_propegation=1e-4,
         omega_laser=omega_laser,
         vz=vz0,
@@ -454,6 +594,7 @@ def test_velocity_tracking_through_pulse_and_propagation():
 # Clearout tests
 # ---------------------------------------------------------------------------
 
+
 def test_clearout_pure_ground_always_discards():
     """c0=1, c1=0: every call returns None."""
     m_values, positions, velocities, internal_amplitude, internal_is_ground = (
@@ -461,14 +602,24 @@ def test_clearout_pure_ground_always_discards():
     )
     omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
     squiggly_amplitudes = sim.transform_state_vector(
-        m_values, internal_amplitude, internal_is_ground,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=False,
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=0.0,
+        inverse=False,
     )
     for seed in range(50):
         rng = np.random.default_rng(seed)
         result = sim.do_clearout(
-            m_values, squiggly_amplitudes, internal_is_ground,
-            positions, velocities, rng=rng,
+            m_values,
+            squiggly_amplitudes,
+            internal_is_ground,
+            positions,
+            velocities,
+            rng=rng,
         )
         assert result is None
 
@@ -484,21 +635,33 @@ def test_clearout_pure_excited_never_discards():
     )
     omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
     squiggly_amplitudes = sim.transform_state_vector(
-        m_values, internal_amplitude, internal_is_ground,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=False,
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=0.0,
+        inverse=False,
     )
     for seed in range(50):
         rng = np.random.default_rng(seed)
         result = sim.do_clearout(
-            m_values, squiggly_amplitudes, internal_is_ground,
-            positions, velocities, rng=rng,
+            m_values,
+            squiggly_amplitudes,
+            internal_is_ground,
+            positions,
+            velocities,
+            rng=rng,
         )
         assert result is not None
         m_out, amp_out, isg_out, pos_out, vel_out = result
         # Only excited row remains
         assert len(m_out) == 1
         assert not isg_out[0]
-        np.testing.assert_allclose(amp_out, squiggly_amplitudes[~internal_is_ground], rtol=1e-12)
+        np.testing.assert_allclose(
+            amp_out, squiggly_amplitudes[~internal_is_ground], rtol=1e-12
+        )
 
 
 def test_clearout_renormalises_to_unit_norm():
@@ -516,8 +679,14 @@ def test_clearout_renormalises_to_unit_norm():
         )
         omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
         squiggly_amplitudes = sim.transform_state_vector(
-            m_values, internal_amplitude, internal_is_ground,
-            omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=False,
+            m_values,
+            internal_amplitude,
+            internal_is_ground,
+            omega_laser=omega_laser,
+            t=0.0,
+            z=0.0,
+            vz=0.0,
+            inverse=False,
         )
 
         # Use a fixed rng that yields "survive" (u >= p_g)
@@ -526,13 +695,19 @@ def test_clearout_renormalises_to_unit_norm():
         for trial in range(1000):
             rng_trial = np.random.default_rng(seed * 1000 + trial)
             result = sim.do_clearout(
-                m_values, squiggly_amplitudes, internal_is_ground,
-                positions, velocities, rng=rng_trial,
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
+                rng=rng_trial,
             )
             if result is not None:
                 m_out, amp_out, isg_out, _, _ = result
                 p_g, p_e = sim.calculate_ground_and_excited_probabilities(
-                    m_out, amp_out, isg_out,
+                    m_out,
+                    amp_out,
+                    isg_out,
                 )
                 assert p_g == pytest.approx(0.0, abs=1e-12)
                 assert p_e == pytest.approx(1.0, rel=1e-6)
@@ -557,8 +732,14 @@ def test_clearout_discard_rate_matches_initial_population():
     )
     omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
     squiggly_amplitudes = sim.transform_state_vector(
-        m_values, internal_amplitude, internal_is_ground,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=False,
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=0.0,
+        inverse=False,
     )
 
     n_trials = 5000
@@ -566,8 +747,12 @@ def test_clearout_discard_rate_matches_initial_population():
     for trial in range(n_trials):
         rng_trial = np.random.default_rng(seed * 10000 + trial)
         result = sim.do_clearout(
-            m_values, squiggly_amplitudes, internal_is_ground,
-            positions, velocities, rng=rng_trial,
+            m_values,
+            squiggly_amplitudes,
+            internal_is_ground,
+            positions,
+            velocities,
+            rng=rng_trial,
         )
         if result is None:
             n_discards += 1
@@ -584,14 +769,23 @@ def test_clearout_drops_ground_rows():
     )
     omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + sim.RECOIL_FREQUENCY_HZ)
     squiggly_amplitudes = sim.transform_state_vector(
-        m_values, internal_amplitude, internal_is_ground,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=False,
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=0.0,
+        inverse=False,
     )
 
     # pi/2 pulse creates both ground and excited rows with various m
     m_vals, amps, isg, pos, vel = sim.pulse_interaction_in_borde_representation(
-        m_values, squiggly_amplitudes, internal_is_ground,
-        positions, velocities,
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
         pulse_detuning=sim.RECOIL_FREQUENCY_HZ,
         t_pulse=sim.T_PI / 2,
         pulse_rabi_freq=sim.RABI_FREQ,
@@ -622,14 +816,23 @@ def test_clearout_then_pulse_consistent():
     )
     omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + sim.RECOIL_FREQUENCY_HZ)
     squiggly_amplitudes = sim.transform_state_vector(
-        m_values, internal_amplitude, internal_is_ground,
-        omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=False,
+        m_values,
+        internal_amplitude,
+        internal_is_ground,
+        omega_laser=omega_laser,
+        t=0.0,
+        z=0.0,
+        vz=0.0,
+        inverse=False,
     )
 
     # pi/2 pulse
     m_vals, amps, isg, pos, vel = sim.pulse_interaction_in_borde_representation(
-        m_values, squiggly_amplitudes, internal_is_ground,
-        positions, velocities,
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
         pulse_detuning=sim.RECOIL_FREQUENCY_HZ,
         t_pulse=sim.T_PI / 2,
         pulse_rabi_freq=sim.RABI_FREQ,
@@ -647,8 +850,11 @@ def test_clearout_then_pulse_consistent():
             m_out, amp_out, isg_out, pos_out, vel_out = result
             # Apply a pi pulse
             m2, a2, i2, p2, v2 = sim.pulse_interaction_in_borde_representation(
-                m_out, amp_out, isg_out,
-                pos_out, vel_out,
+                m_out,
+                amp_out,
+                isg_out,
+                pos_out,
+                vel_out,
                 pulse_detuning=sim.RECOIL_FREQUENCY_HZ,
                 t_pulse=sim.T_PI,
                 pulse_rabi_freq=sim.RABI_FREQ,
@@ -695,15 +901,24 @@ def test_clearout_mc_matches_deterministic_dropground():
         current_time = 0.0
 
         squiggly_amplitudes = sim.transform_state_vector(
-            m_values, internal_amplitude, internal_is_ground,
-            omega_laser=omega_laser, t=current_time, z=0.0, vz=0.0, inverse=False,
+            m_values,
+            internal_amplitude,
+            internal_is_ground,
+            omega_laser=omega_laser,
+            t=current_time,
+            z=0.0,
+            vz=0.0,
+            inverse=False,
         )
 
         # pi/2 pulse (phase=0)
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             sim.pulse_interaction_in_borde_representation(
-                m_values, squiggly_amplitudes, internal_is_ground,
-                positions, velocities,
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
                 pulse_detuning=detuning_hz,
                 t_pulse=sim.T_PI / 2,
                 pulse_rabi_freq=sim.RABI_FREQ,
@@ -718,8 +933,11 @@ def test_clearout_mc_matches_deterministic_dropground():
         # Propagate
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             sim.propagate_states_in_borde_representation(
-                m_values, squiggly_amplitudes, internal_is_ground,
-                positions, velocities,
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
                 time_of_propegation=time_between,
                 omega_laser=omega_laser,
                 vz=0.0,
@@ -732,8 +950,11 @@ def test_clearout_mc_matches_deterministic_dropground():
         # pi pulse (phase=phi)
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             sim.pulse_interaction_in_borde_representation(
-                m_values, squiggly_amplitudes, internal_is_ground,
-                positions, velocities,
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
                 pulse_detuning=detuning_hz,
                 t_pulse=sim.T_PI,
                 pulse_rabi_freq=sim.RABI_FREQ,
@@ -747,17 +968,26 @@ def test_clearout_mc_matches_deterministic_dropground():
 
         # Clearout
         result = sim.do_clearout(
-            m_values, squiggly_amplitudes, internal_is_ground,
-            positions, velocities, rng=rng,
+            m_values,
+            squiggly_amplitudes,
+            internal_is_ground,
+            positions,
+            velocities,
+            rng=rng,
         )
         if result is None:
             return None
-        m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = result
+        m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+            result
+        )
         # Propagate
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             sim.propagate_states_in_borde_representation(
-                m_values, squiggly_amplitudes, internal_is_ground,
-                positions, velocities,
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
                 time_of_propegation=time_between,
                 omega_laser=omega_laser,
                 vz=0.0,
@@ -770,8 +1000,11 @@ def test_clearout_mc_matches_deterministic_dropground():
         # Final pi/2 pulse (phase=4*phi)
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             sim.pulse_interaction_in_borde_representation(
-                m_values, squiggly_amplitudes, internal_is_ground,
-                positions, velocities,
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
                 pulse_detuning=detuning_hz,
                 t_pulse=sim.T_PI / 2,
                 pulse_rabi_freq=sim.RABI_FREQ,
@@ -785,8 +1018,14 @@ def test_clearout_mc_matches_deterministic_dropground():
 
         # Transform back to lab frame
         internal_amplitude_final = sim.transform_state_vector(
-            m_values, squiggly_amplitudes, internal_is_ground,
-            omega_laser=omega_laser, t=current_time, z=0.0, vz=0.0, inverse=True,
+            m_values,
+            squiggly_amplitudes,
+            internal_is_ground,
+            omega_laser=omega_laser,
+            t=current_time,
+            z=0.0,
+            vz=0.0,
+            inverse=True,
         )
 
         return (
@@ -807,15 +1046,24 @@ def test_clearout_mc_matches_deterministic_dropground():
         current_time = 0.0
 
         squiggly_amplitudes = sim.transform_state_vector(
-            m_values, internal_amplitude, internal_is_ground,
-            omega_laser=omega_laser, t=current_time, z=0.0, vz=0.0, inverse=False,
+            m_values,
+            internal_amplitude,
+            internal_is_ground,
+            omega_laser=omega_laser,
+            t=current_time,
+            z=0.0,
+            vz=0.0,
+            inverse=False,
         )
 
         # pi/2 pulse (phase=0)
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             sim.pulse_interaction_in_borde_representation(
-                m_values, squiggly_amplitudes, internal_is_ground,
-                positions, velocities,
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
                 pulse_detuning=detuning_hz,
                 t_pulse=sim.T_PI / 2,
                 pulse_rabi_freq=sim.RABI_FREQ,
@@ -830,8 +1078,11 @@ def test_clearout_mc_matches_deterministic_dropground():
         # Propagate
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             sim.propagate_states_in_borde_representation(
-                m_values, squiggly_amplitudes, internal_is_ground,
-                positions, velocities,
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
                 time_of_propegation=time_between,
                 omega_laser=omega_laser,
                 vz=0.0,
@@ -844,8 +1095,11 @@ def test_clearout_mc_matches_deterministic_dropground():
         # pi pulse (phase=phi)
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             sim.pulse_interaction_in_borde_representation(
-                m_values, squiggly_amplitudes, internal_is_ground,
-                positions, velocities,
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
                 pulse_detuning=detuning_hz,
                 t_pulse=sim.T_PI,
                 pulse_rabi_freq=sim.RABI_FREQ,
@@ -868,8 +1122,11 @@ def test_clearout_mc_matches_deterministic_dropground():
         # Propagate
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             sim.propagate_states_in_borde_representation(
-                m_values, squiggly_amplitudes, internal_is_ground,
-                positions, velocities,
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
                 time_of_propegation=time_between,
                 omega_laser=omega_laser,
                 vz=0.0,
@@ -882,8 +1139,11 @@ def test_clearout_mc_matches_deterministic_dropground():
         # Final pi/2 pulse (phase=4*phi)
         m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
             sim.pulse_interaction_in_borde_representation(
-                m_values, squiggly_amplitudes, internal_is_ground,
-                positions, velocities,
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
                 pulse_detuning=detuning_hz,
                 t_pulse=sim.T_PI / 2,
                 pulse_rabi_freq=sim.RABI_FREQ,
@@ -897,12 +1157,20 @@ def test_clearout_mc_matches_deterministic_dropground():
 
         # Transform back to lab frame
         internal_amplitude_final = sim.transform_state_vector(
-            m_values, squiggly_amplitudes, internal_is_ground,
-            omega_laser=omega_laser, t=current_time, z=0.0, vz=0.0, inverse=True,
+            m_values,
+            squiggly_amplitudes,
+            internal_is_ground,
+            omega_laser=omega_laser,
+            t=current_time,
+            z=0.0,
+            vz=0.0,
+            inverse=True,
         )
 
         p_g, p_e = sim.calculate_ground_and_excited_probabilities(
-            m_values, internal_amplitude_final, internal_is_ground,
+            m_values,
+            internal_amplitude_final,
+            internal_is_ground,
         )
         p_d = 1.0 - (p_g + p_e)
         return p_g, p_e, p_d
@@ -911,7 +1179,7 @@ def test_clearout_mc_matches_deterministic_dropground():
 
     seed = 777
     rng = np.random.default_rng(seed)
-    p_g_mc, p_e_mc, p_d_mc = sim.run_clearout_trials(sequence_fn, n_trials, rng=rng)
+    p_g_mc, p_e_mc, p_d_mc = run_clearout_trials(sequence_fn, n_trials, rng=rng)
 
     tolerance = 4.0 / np.sqrt(n_trials)
     assert p_g_mc == pytest.approx(p_g_det, abs=tolerance)
@@ -938,8 +1206,14 @@ def test_clearout_frame_independence():
     m_b, pos_b, vel_b, amp_b, isg_b = sim.make_atom_states(c0=c0, c1=c1)
     omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
     squiggly_b = sim.transform_state_vector(
-        m_b, amp_b, isg_b,
-        omega_laser=omega_laser, t=t_ref, z=z_ref, vz=vz_ref, inverse=False,
+        m_b,
+        amp_b,
+        isg_b,
+        omega_laser=omega_laser,
+        t=t_ref,
+        z=z_ref,
+        vz=vz_ref,
+        inverse=False,
     )
 
     rng_borde = np.random.default_rng(42)
@@ -949,12 +1223,24 @@ def test_clearout_frame_independence():
     m_l, pos_l, vel_l, amp_l, isg_l = sim.make_atom_states(c0=c0, c1=c1)
     # Transform to Bordé, then back to lab (non-trivial parameters)
     squiggly_tmp = sim.transform_state_vector(
-        m_l, amp_l, isg_l,
-        omega_laser=omega_laser, t=t_ref, z=z_ref, vz=vz_ref, inverse=False,
+        m_l,
+        amp_l,
+        isg_l,
+        omega_laser=omega_laser,
+        t=t_ref,
+        z=z_ref,
+        vz=vz_ref,
+        inverse=False,
     )
     amp_lab = sim.transform_state_vector(
-        m_l, squiggly_tmp, isg_l,
-        omega_laser=omega_laser, t=t_ref, z=z_ref, vz=vz_ref, inverse=True,
+        m_l,
+        squiggly_tmp,
+        isg_l,
+        omega_laser=omega_laser,
+        t=t_ref,
+        z=z_ref,
+        vz=vz_ref,
+        inverse=True,
     )
 
     rng_lab = np.random.default_rng(42)
@@ -968,10 +1254,14 @@ def test_clearout_frame_independence():
         m_b_out, amp_b_out, isg_b_out, _, _ = result_borde
         m_l_out, amp_l_out, isg_l_out, _, _ = result_lab
         p_g_b, p_e_b = sim.calculate_ground_and_excited_probabilities(
-            m_b_out, amp_b_out, isg_b_out,
+            m_b_out,
+            amp_b_out,
+            isg_b_out,
         )
         p_g_l, p_e_l = sim.calculate_ground_and_excited_probabilities(
-            m_l_out, amp_l_out, isg_l_out,
+            m_l_out,
+            amp_l_out,
+            isg_l_out,
         )
         assert p_g_b == pytest.approx(p_g_l, abs=1e-12)
         assert p_e_b == pytest.approx(p_e_l, abs=1e-12)
@@ -1005,7 +1295,9 @@ def test_change_laser_frequency_matches_lab_roundtrip(seed):
     detuning-induced phase we are checking.
     """
     rng = np.random.default_rng(seed)
-    m_values, sq_amp, is_ground, positions, velocities = _make_synthetic_borde_state(rng)
+    m_values, sq_amp, is_ground, positions, velocities = _make_synthetic_borde_state(
+        rng
+    )
 
     old_detuning = rng.uniform(-50e3, 50e3)
     new_detuning = rng.uniform(-50e3, 50e3)
@@ -1017,20 +1309,34 @@ def test_change_laser_frequency_matches_lab_roundtrip(seed):
     # Reference: Bordé(old) -> lab -> Bordé(new), evaluated at the same
     # (t, z, vz) on both legs so the m / k z / v_z t cancellations are exact.
     lab_amp = sim.transform_state_vector(
-        m_values, sq_amp, is_ground,
-        omega_laser=omega_L_old, t=t_frame_change,
-        z=0.0, vz=0.0, inverse=True,
+        m_values,
+        sq_amp,
+        is_ground,
+        omega_laser=omega_L_old,
+        t=t_frame_change,
+        z=0.0,
+        vz=0.0,
+        inverse=True,
     )
     sq_amp_reference = sim.transform_state_vector(
-        m_values, lab_amp, is_ground,
-        omega_laser=omega_L_new, t=t_frame_change,
-        z=0.0, vz=0.0, inverse=False,
+        m_values,
+        lab_amp,
+        is_ground,
+        omega_laser=omega_L_new,
+        t=t_frame_change,
+        z=0.0,
+        vz=0.0,
+        inverse=False,
     )
 
     # Direct.
     m_out, sq_amp_direct, isg_out, pos_out, vel_out = (
         sim.change_laser_frequency_in_borde_representation(
-            m_values, sq_amp, is_ground, positions, velocities,
+            m_values,
+            sq_amp,
+            is_ground,
+            positions,
+            velocities,
             old_detuning_hz=old_detuning,
             new_detuning_hz=new_detuning,
             time=t_frame_change,
@@ -1051,22 +1357,38 @@ def test_change_laser_frequency_matches_lab_roundtrip(seed):
 
 def test_change_laser_frequency_identity_when_time_zero():
     rng = np.random.default_rng(0)
-    m_values, sq_amp, is_ground, positions, velocities = _make_synthetic_borde_state(rng)
+    m_values, sq_amp, is_ground, positions, velocities = _make_synthetic_borde_state(
+        rng
+    )
 
     _, sq_amp_out, _, _, _ = sim.change_laser_frequency_in_borde_representation(
-        m_values, sq_amp, is_ground, positions, velocities,
-        old_detuning_hz=1.0e3, new_detuning_hz=-7.5e3, time=0.0,
+        m_values,
+        sq_amp,
+        is_ground,
+        positions,
+        velocities,
+        old_detuning_hz=1.0e3,
+        new_detuning_hz=-7.5e3,
+        time=0.0,
     )
     np.testing.assert_array_equal(sq_amp_out, sq_amp)
 
 
 def test_change_laser_frequency_identity_when_old_equals_new():
     rng = np.random.default_rng(1)
-    m_values, sq_amp, is_ground, positions, velocities = _make_synthetic_borde_state(rng)
+    m_values, sq_amp, is_ground, positions, velocities = _make_synthetic_borde_state(
+        rng
+    )
 
     _, sq_amp_out, _, _, _ = sim.change_laser_frequency_in_borde_representation(
-        m_values, sq_amp, is_ground, positions, velocities,
-        old_detuning_hz=4.2e3, new_detuning_hz=4.2e3, time=1.5e-4,
+        m_values,
+        sq_amp,
+        is_ground,
+        positions,
+        velocities,
+        old_detuning_hz=4.2e3,
+        new_detuning_hz=4.2e3,
+        time=1.5e-4,
     )
     np.testing.assert_array_equal(sq_amp_out, sq_amp)
 
@@ -1074,16 +1396,30 @@ def test_change_laser_frequency_identity_when_old_equals_new():
 def test_change_laser_frequency_independent_of_position_and_velocity():
     """Guard: the transform must not develop any k*z or v_z dependence."""
     rng = np.random.default_rng(2)
-    m_values, sq_amp, is_ground, positions, velocities = _make_synthetic_borde_state(rng)
+    m_values, sq_amp, is_ground, positions, velocities = _make_synthetic_borde_state(
+        rng
+    )
     zeros_pos = np.zeros_like(positions)
     zeros_vel = np.zeros_like(velocities)
 
     _, sq_with_pos, _, _, _ = sim.change_laser_frequency_in_borde_representation(
-        m_values, sq_amp, is_ground, positions, velocities,
-        old_detuning_hz=1.0e3, new_detuning_hz=-3.0e3, time=2e-4,
+        m_values,
+        sq_amp,
+        is_ground,
+        positions,
+        velocities,
+        old_detuning_hz=1.0e3,
+        new_detuning_hz=-3.0e3,
+        time=2e-4,
     )
     _, sq_without_pos, _, _, _ = sim.change_laser_frequency_in_borde_representation(
-        m_values, sq_amp, is_ground, zeros_pos, zeros_vel,
-        old_detuning_hz=1.0e3, new_detuning_hz=-3.0e3, time=2e-4,
+        m_values,
+        sq_amp,
+        is_ground,
+        zeros_pos,
+        zeros_vel,
+        old_detuning_hz=1.0e3,
+        new_detuning_hz=-3.0e3,
+        time=2e-4,
     )
     np.testing.assert_array_equal(sq_with_pos, sq_without_pos)

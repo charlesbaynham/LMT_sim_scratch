@@ -1,27 +1,71 @@
 import numpy as np
 import pytest
 
-from lmt_sim.lmt_simulation import (
+from lmt_sim.lmt_sequence import (
     Clearout,
     Freefall,
-    K_WAVEVECTOR,
     Pulse,
+    run_pulse_sequence_in_borde_representation,
+)
+from lmt_sim.lmt_simulation import (
+    K_WAVEVECTOR,
     RABI_FREQ,
     RECOIL_FREQUENCY_HZ,
     T_PI,
     TRANSITION_FREQUENCY,
     build_mach_zehnder_pulse_sequence,
-    calc_mz_excitation,
     calculate_excited_fraction_for_pulse_sequence,
     calculate_ground_and_excited_probabilities,
     do_clearout,
     make_atom_states,
     propagate_states_in_borde_representation,
     pulse_interaction_in_borde_representation,
-    run_pulse_sequence_in_borde_representation,
     transform_state_vector,
 )
 from lmt_sim.lmt_real_sequence import build_lmt_real_sequence
+
+
+def calc_mz_excitation(
+    phi,
+    detuning_hz=RECOIL_FREQUENCY_HZ,
+    initial_velocity_z=0.0,
+    time_between_pulses=200e-6,
+):
+    """Compute excitation fraction for Mach-Zehnder sequence.
+
+    Pulse sequence: π/2 (phase=0) - π (phase=φ) - π/2 (phase=4φ)
+    Uses proper quantum state evolution with coherent sum over paths.
+
+    Parameters
+    ----------
+    phi : float
+        Phase parameter in radians
+    detuning_hz : float
+        Laser detuning from resonance in Hz (default: recoil shift)
+    initial_velocity_z : float
+        Initial atom velocity in m/s
+    time_between_pulses : float
+        Time between pulses in seconds (default: 0.0)
+
+    Returns
+    -------
+    float
+        Excitation fraction after full sequence
+    """
+
+    pulse_sequence = build_mach_zehnder_pulse_sequence(
+        phi=phi,
+        detuning_hz=detuning_hz,
+        time_between_pulses=time_between_pulses,
+        rabi_frequency=RABI_FREQ,
+        pulse_area_multiplier=1.0,
+        k=+1,
+    )
+
+    return calculate_excited_fraction_for_pulse_sequence(
+        pulse_sequence,
+        initial_velocity_z=initial_velocity_z,
+    )
 
 
 def legacy_calc_mz_excitation(

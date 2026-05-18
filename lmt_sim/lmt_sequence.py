@@ -3,6 +3,8 @@ import logging
 
 import numpy as np
 
+from lmt_sim.lmt_simulation import RABI_FREQ, T_PI
+
 logger = logging.getLogger(__name__)
 
 
@@ -311,3 +313,38 @@ def calculate_excited_fraction_for_pulse_sequence(
         )
 
     return excited_prob / total_prob
+
+
+def do_rabi_pulse(pulse_detuning, pulse_duration=T_PI, initial_velocity_z=0.0):
+    """Compute excitation fraction for a single pulse.
+
+    Parameters
+    ----------
+    pulse_detuning : float
+        Laser detuning from resonance in Hz
+    pulse_duration : float
+        Pulse duration in seconds (default: T_PI for pi pulse)
+    initial_velocity_z : float
+        Initial atom velocity in m/s
+
+    Returns
+    -------
+    float
+        Excitation fraction (probability of being in excited state)
+    """
+
+    pulse_sequence = [
+        Pulse(
+            k=+1,
+            detuning_hz=pulse_detuning,
+            phi=0.0,
+            label="rabi_pulse",
+            rabi_frequency=RABI_FREQ,
+            duration=pulse_duration,
+        )
+    ]
+
+    return calculate_excited_fraction_for_pulse_sequence(
+        pulse_sequence,
+        initial_velocity_z=initial_velocity_z,
+    )
