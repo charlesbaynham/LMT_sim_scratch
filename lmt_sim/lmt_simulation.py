@@ -216,9 +216,11 @@ def propagate_states_in_borde_representation(
     positions: np.ndarray,
     velocities: np.ndarray,
     time_of_propegation: float,
-    detuning_hz: float,
-    vz: float,
+    detuning_hz: float | None = None,
+    vz: float = 0.0,
+    k_sign: int = +1,
     k_wavevector=K_WAVEVECTOR,
+    omega_laser: float | None = None,
 ):
     """
     Accumulate phase during free fall
@@ -251,6 +253,9 @@ def propagate_states_in_borde_representation(
         Direction of laser, by default +1
     k_wavevector : float, optional
         Wavevector magnitude, by default K_WAVEVECTOR
+    omega_laser : float, optional
+        Legacy API input (rad/s). If ``detuning_hz`` is not given, detuning is
+        inferred as ``omega_laser / (2*pi) - TRANSITION_FREQUENCY``.
 
     Returns
     -------
@@ -260,11 +265,20 @@ def propagate_states_in_borde_representation(
         Velocities are returned unchanged.
     """
 
+    if detuning_hz is None:
+        if omega_laser is None:
+            raise TypeError("Either detuning_hz or omega_laser must be provided")
+        detuning_hz = omega_laser / (2 * np.pi) - TRANSITION_FREQUENCY
+    elif omega_laser is not None:
+        implied_detuning_hz = omega_laser / (2 * np.pi) - TRANSITION_FREQUENCY
+        if not np.isclose(implied_detuning_hz, detuning_hz):
+            raise ValueError(
+                "detuning_hz and omega_laser are inconsistent; provide only one "
+                "or matching values"
+            )
+
     squiggly_amplitudes_out = np.empty_like(squiggly_amplitudes)
     positions_out = np.empty_like(positions)
-
-    k_sign = 1  # FIXME: I think I am free to choose to consider the m <-> m+1 pairs like this, but I should read the paper again and make sure
-    # FIXME I can test by e.g. running an interferometer from excited to ground and making sure it works
 
     for idx in range(len(m_values)):
         is_ground = state_is_ground[idx]
@@ -719,3 +733,28 @@ def do_clearout(
         positions[keep],
         velocities[keep],
     )
+
+
+# Backward-compatible sequence API re-exports for notebooks importing from
+# lmt_simulation.
+from lmt_sim import lmt_sequence as _lmt_sequence  # noqa: E402
+
+Pulse = _lmt_sequence.Pulse
+Clearout = _lmt_sequence.Clearout
+Freefall = _lmt_sequence.Freefall
+
+
+def build_mach_zehnder_pulse_sequence(*args, **kwargs):
+    return _lmt_sequence.build_mach_zehnder_pulse_sequence(*args, **kwargs)
+
+
+def run_pulse_sequence_in_lab_frame(*args, **kwargs):
+    return _lmt_sequence.run_pulse_sequence_in_lab_frame(*args, **kwargs)
+
+
+def run_pulse_sequence_in_borde_representation(*args, **kwargs):
+    return _lmt_sequence.run_pulse_sequence_in_borde_representation(*args, **kwargs)
+
+
+def calculate_excited_fraction_for_pulse_sequence(*args, **kwargs):
+    return _lmt_sequence.calculate_excited_fraction_for_pulse_sequence(*args, **kwargs)
