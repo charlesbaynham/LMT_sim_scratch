@@ -253,6 +253,142 @@ def run_pulse_sequence_in_lab_frame(
     )
 
 
+def run_pulse_sequence_in_borde_representation(
+    m_values,
+    positions,
+    velocities,
+    squiggly_amplitudes,
+    internal_is_ground,
+    pulse_sequence,
+    initial_velocity_z=0.0,
+    rng=None,
+):
+    """Run a pulse sequence while staying in the Borde representation."""
+    import lmt_sim.lmt_simulation as sim
+
+    if not pulse_sequence:
+        raise ValueError("pulse_sequence must contain at least one pulse")
+
+    for event in pulse_sequence:
+        if not isinstance(event, (Pulse, Clearout, Freefall)):
+            raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
+
+    detunings_hz = [
+        pulse.detuning_hz for pulse in pulse_sequence if isinstance(pulse, Pulse)
+    ]
+    if len(detunings_hz) > 0 and any(d != detunings_hz[0] for d in detunings_hz):
+        raise ValueError(
+            "All pulses must currently use the same detuning for Bordé-frame propagation"
+        )
+
+    current_detuning_hz = detunings_hz[0] if len(detunings_hz) > 0 else 0.0
+    current_time = 0.0
+
+    for event in pulse_sequence:
+        if isinstance(event, Pulse):
+            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+                sim.pulse_interaction_in_borde_representation(
+                    m_values,
+                    squiggly_amplitudes,
+                    internal_is_ground,
+                    positions,
+                    velocities,
+                    pulse_detuning=event.detuning_hz,
+                    t_pulse=event.duration,
+                    pulse_rabi_freq=event.rabi_frequency,
+                    pulse_phase=event.phi,
+                    k_sign=event.k,
+                    k_wavevector=sim.K_WAVEVECTOR,
+                    vz=initial_velocity_z,
+                )
+            )
+        elif isinstance(event, Clearout):
+            result = sim.do_clearout(
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
+                rng=rng,
+            )
+            if result is None:
+                return None
+            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
+                result
+            )
+
+        if (
+            isinstance(event, Freefall) or isinstance(event, Clearout)
+        ) and event.duration > 0.0:
+            (
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
+            ) = sim.propagate_states_in_borde_representation(
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
+                time_of_propegation=event.duration,
+                detuning_hz=current_detuning_hz,
+                vz=initial_velocity_z,
+                k_wavevector=sim.K_WAVEVECTOR,
+            )
+
+        current_time += event.duration
+
+    return (
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
+        2 * np.pi * (sim.TRANSITION_FREQUENCY + current_detuning_hz),
+        current_time,
+    )
+
+
+def calculate_excited_fraction_for_pulse_sequence(
+    pulse_sequence,
+    initial_velocity_z=0.0,
+):
+    """Calculate final excited-state fraction for a sequence without clearout."""
+    import lmt_sim.lmt_simulation as sim
+
+    if any(isinstance(event, Clearout) for event in pulse_sequence):
+        raise ValueError(
+            "calculate_excited_fraction_for_pulse_sequence does not support Clearout events"
+        )
+
+    m_values, positions, velocities, amplitudes, internal_is_ground = sim.make_atom_states(
+        initial_velocity_z=initial_velocity_z
+    )
+
+    result = run_pulse_sequence_in_lab_frame(
+        m_values,
+        positions,
+        velocities,
+        amplitudes,
+        internal_is_ground,
+        pulse_sequence,
+        initial_velocity_z=initial_velocity_z,
+    )
+
+    if result is None:
+        return None
+
+    m_values, amplitudes, internal_is_ground, *_ = result
+    ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(
+        m_values,
+        amplitudes,
+        internal_is_ground,
+    )
+    return excited_prob / (ground_prob + excited_prob)
+
+
 def do_rabi_pulse(pulse_detuning, pulse_duration=T_PI, initial_velocity_z=0.0):
     """Compute excitation fraction for a single pulse.
 

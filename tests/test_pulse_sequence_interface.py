@@ -5,7 +5,9 @@ from lmt_sim.lmt_sequence import (
     Clearout,
     Freefall,
     Pulse,
+    calculate_excited_fraction_for_pulse_sequence,
     run_pulse_sequence_in_lab_frame,
+    run_pulse_sequence_in_borde_representation,
     build_mach_zehnder_pulse_sequence,
 )
 from lmt_sim.lmt_simulation import (
@@ -87,11 +89,12 @@ def calc_mz_excitation(
             current_detuning_hz,
             current_time,
         ) = result
-        return calculate_ground_and_excited_probabilities(
+        ground_prob, excited_prob = calculate_ground_and_excited_probabilities(
             m_values,
             amplitudes,
             internal_is_ground,
         )
+        return excited_prob / (ground_prob + excited_prob)
 
 
 def legacy_calc_mz_excitation(
