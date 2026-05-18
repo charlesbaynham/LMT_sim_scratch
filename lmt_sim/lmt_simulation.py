@@ -583,6 +583,70 @@ def pulse_interaction_in_borde_representation(
     )
 
 
+def change_laser_frequency_in_borde_representation(
+    m_values: np.ndarray,
+    squiggly_amplitudes: np.ndarray,
+    internal_is_ground: np.ndarray,
+    positions: np.ndarray,
+    velocities: np.ndarray,
+    old_detuning_hz: float,
+    new_detuning_hz: float,
+    time: float,
+):
+    """Re-express Bordé-frame amplitudes for a new laser frequency.
+
+    Composing ``T(omega_L2) * conj(T(omega_L1))`` from
+    :func:`transform_state_vector` collapses to a single per-row phase: the
+    global ``exp(i omega_0 t / 2)`` factor and the ``exp(-i m k (z + v_z t))``
+    factor are independent of ``omega_L`` and cancel.  Only the
+    ``exp(+/- i omega_L t / 2)`` factor survives.
+
+    Result (with ``delta_f = new_detuning_hz - old_detuning_hz`` and the
+    Hz / factor-of-pi convention used throughout this module):
+
+    * ground rows are multiplied by ``exp(-i pi delta_f * time)``
+    * excited rows are multiplied by ``exp(+i pi delta_f * time)``
+
+    The symbolic derivation is in ``borde_frame_change_derivation.ipynb``.
+
+    Parameters
+    ----------
+    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities
+        The state arrays.  Only ``squiggly_amplitudes`` is modified; the
+        others are returned unchanged.
+    old_detuning_hz : float
+        Detuning (Hz) of the Bordé frame the amplitudes are currently in.
+    new_detuning_hz : float
+        Detuning (Hz) of the Bordé frame to express the amplitudes in.
+    time : float
+        **Global** simulation time at which the frame change happens, in
+        seconds -- the same ``t`` semantics as
+        :func:`transform_state_vector`.  Pass ``0.0`` only if the frame
+        change happens at the very start of the sequence (before any free
+        propagation or pulse).
+
+    Returns
+    -------
+    tuple
+        ``(m_values, squiggly_amplitudes, internal_is_ground, positions,
+        velocities)`` -- same 5-tuple shape as
+        :func:`propagate_states_in_borde_representation` and
+        :func:`pulse_interaction_in_borde_representation` so the call
+        composes cleanly into a pulse sequence.
+    """
+    delta_f = new_detuning_hz - old_detuning_hz
+    phase_gnd = np.exp(-1j * np.pi * delta_f * time)
+    phase_exc = np.exp(+1j * np.pi * delta_f * time)
+    phase = np.where(internal_is_ground, phase_gnd, phase_exc)
+    return (
+        m_values,
+        squiggly_amplitudes * phase,
+        internal_is_ground,
+        positions,
+        velocities,
+    )
+
+
 def gaussian_rabi(positions, on_axis_rabi, beam_waist, wavelength=TRANSITION_WAVELENGTH):
     """Per-row Rabi frequency from a TEM00 Gaussian beam profile.
 

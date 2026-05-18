@@ -975,3 +975,115 @@ def test_clearout_frame_independence():
         )
         assert p_g_b == pytest.approx(p_g_l, abs=1e-12)
         assert p_e_b == pytest.approx(p_e_l, abs=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# change_laser_frequency_in_borde_representation
+# ---------------------------------------------------------------------------
+
+
+def _make_synthetic_borde_state(rng):
+    m_values = np.array([-1, 0, 0, 1, 2], dtype=int)
+    internal_is_ground = np.array([True, True, False, False, True], dtype=bool)
+    sq = rng.normal(size=5) + 1j * rng.normal(size=5)
+    sq = sq / np.linalg.norm(sq)
+    positions = rng.normal(size=(5, 3)) * 1e-3
+    velocities = rng.normal(size=(5, 3)) * 0.1
+    return m_values, sq, internal_is_ground, positions, velocities
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_change_laser_frequency_matches_lab_roundtrip(seed):
+    """Direct Bordé(old)→Bordé(new) equals routing through the lab frame.
+
+    The reference path multiplies by exp(i * omega_laser * t / 2) and its
+    conjugate-with-different-omega_laser, where omega_laser is dominated by
+    the optical transition frequency (~10^15 rad/s).  np.exp of such a large
+    argument has ~eps * |arg| precision in the resulting phase, so the
+    reference path is noisy at the eps * omega_0 * t / 2 level.  We bound
+    t to the microsecond scale to keep that noise well below the
+    detuning-induced phase we are checking.
+    """
+    rng = np.random.default_rng(seed)
+    m_values, sq_amp, is_ground, positions, velocities = _make_synthetic_borde_state(rng)
+
+    old_detuning = rng.uniform(-50e3, 50e3)
+    new_detuning = rng.uniform(-50e3, 50e3)
+    t_frame_change = rng.uniform(1e-7, 1e-5)
+
+    omega_L_old = 2 * np.pi * (sim.TRANSITION_FREQUENCY + old_detuning)
+    omega_L_new = 2 * np.pi * (sim.TRANSITION_FREQUENCY + new_detuning)
+
+    # Reference: Bordé(old) -> lab -> Bordé(new), evaluated at the same
+    # (t, z, vz) on both legs so the m / k z / v_z t cancellations are exact.
+    lab_amp = sim.transform_state_vector(
+        m_values, sq_amp, is_ground,
+        omega_laser=omega_L_old, t=t_frame_change,
+        z=0.0, vz=0.0, inverse=True,
+    )
+    sq_amp_reference = sim.transform_state_vector(
+        m_values, lab_amp, is_ground,
+        omega_laser=omega_L_new, t=t_frame_change,
+        z=0.0, vz=0.0, inverse=False,
+    )
+
+    # Direct.
+    m_out, sq_amp_direct, isg_out, pos_out, vel_out = (
+        sim.change_laser_frequency_in_borde_representation(
+            m_values, sq_amp, is_ground, positions, velocities,
+            old_detuning_hz=old_detuning,
+            new_detuning_hz=new_detuning,
+            time=t_frame_change,
+        )
+    )
+
+    np.testing.assert_allclose(sq_amp_direct, sq_amp_reference, rtol=1e-5, atol=1e-6)
+
+    # Pass-through invariants.
+    np.testing.assert_array_equal(m_out, m_values)
+    np.testing.assert_array_equal(isg_out, is_ground)
+    np.testing.assert_array_equal(pos_out, positions)
+    np.testing.assert_array_equal(vel_out, velocities)
+
+    # Norm preservation (each row's phase factor is unit-modulus).
+    np.testing.assert_allclose(np.abs(sq_amp_direct), np.abs(sq_amp), rtol=1e-12)
+
+
+def test_change_laser_frequency_identity_when_time_zero():
+    rng = np.random.default_rng(0)
+    m_values, sq_amp, is_ground, positions, velocities = _make_synthetic_borde_state(rng)
+
+    _, sq_amp_out, _, _, _ = sim.change_laser_frequency_in_borde_representation(
+        m_values, sq_amp, is_ground, positions, velocities,
+        old_detuning_hz=1.0e3, new_detuning_hz=-7.5e3, time=0.0,
+    )
+    np.testing.assert_array_equal(sq_amp_out, sq_amp)
+
+
+def test_change_laser_frequency_identity_when_old_equals_new():
+    rng = np.random.default_rng(1)
+    m_values, sq_amp, is_ground, positions, velocities = _make_synthetic_borde_state(rng)
+
+    _, sq_amp_out, _, _, _ = sim.change_laser_frequency_in_borde_representation(
+        m_values, sq_amp, is_ground, positions, velocities,
+        old_detuning_hz=4.2e3, new_detuning_hz=4.2e3, time=1.5e-4,
+    )
+    np.testing.assert_array_equal(sq_amp_out, sq_amp)
+
+
+def test_change_laser_frequency_independent_of_position_and_velocity():
+    """Guard: the transform must not develop any k*z or v_z dependence."""
+    rng = np.random.default_rng(2)
+    m_values, sq_amp, is_ground, positions, velocities = _make_synthetic_borde_state(rng)
+    zeros_pos = np.zeros_like(positions)
+    zeros_vel = np.zeros_like(velocities)
+
+    _, sq_with_pos, _, _, _ = sim.change_laser_frequency_in_borde_representation(
+        m_values, sq_amp, is_ground, positions, velocities,
+        old_detuning_hz=1.0e3, new_detuning_hz=-3.0e3, time=2e-4,
+    )
+    _, sq_without_pos, _, _, _ = sim.change_laser_frequency_in_borde_representation(
+        m_values, sq_amp, is_ground, zeros_pos, zeros_vel,
+        old_detuning_hz=1.0e3, new_detuning_hz=-3.0e3, time=2e-4,
+    )
+    np.testing.assert_array_equal(sq_with_pos, sq_without_pos)
