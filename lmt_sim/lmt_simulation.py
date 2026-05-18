@@ -2,19 +2,8 @@
 
 import logging
 
-# import logging
-
-import lmt_sim.version_info as vs
-
 import numpy as np
 from scipy import constants
-from scipy.linalg import expm
-import matplotlib.pyplot as plt
-from lmt_sim.lmt_sequence import (
-    build_mach_zehnder_pulse_sequence,
-    calculate_excited_fraction_for_pulse_sequence,
-    do_rabi_pulse,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -120,37 +109,6 @@ def make_atom_states(
     return m_values, positions, velocities, internal_amplitude, internal_is_ground
 
 
-def _are_states_normalized(
-    m_values: np.ndarray,
-    internal_amplitude: np.ndarray,
-    internal_is_ground: np.ndarray,
-):
-    # For each unique value of m, sum the amplitudes of all rows with that m, then square to get probability
-    unique_m = np.unique(m_values)
-
-    states = []
-
-    for m in unique_m:
-        k_this_m = m_values == m
-        total_gnd_amp = np.sum(internal_amplitude[k_this_m & internal_is_ground])
-        total_exc_amp = np.sum(internal_amplitude[k_this_m & ~internal_is_ground])
-
-        states.append([m, total_gnd_amp, total_exc_amp])
-
-    states = np.array(states)
-
-    print(states)
-
-    prob_excited = np.sum(np.abs(states[:, 2]) ** 2)
-    prob_ground = np.sum(np.abs(states[:, 1]) ** 2)
-
-    print(
-        f"Total probability: {prob_ground + prob_excited:.6f} (ground: {prob_ground:.6f}, excited: {prob_excited:.6f})"
-    )
-
-    return np.isclose(prob_excited + prob_ground, 1.0, rtol=1e-6)
-
-
 def transform_state_vector(
     m_values,
     internal_amplitude,
@@ -249,98 +207,6 @@ def _calculate_interaction_constants(
     D = np.cos(Omega * t_pulse / 2) - 1j * Omega_3 / Omega * np.sin(Omega * t_pulse / 2)
 
     return A, B, C, D
-
-
-# def _propagate_state_pair_pulse(
-#     state,
-#     omega_laser,
-#     t_pulse,
-#     omega_ab,
-#     pulse_phase=0.0,
-#     k_sign=+1,
-#     k=K_WAVEVECTOR,
-#     z=0.0,
-#     vz=0.0,
-#     m_ground=0,
-#     omega_0=2 * np.pi * TRANSITION_FREQUENCY,
-# ):
-#     """Apply a laser pulse to a _single pair_ of states
-
-#     This is an internal function - library users should use :meth:`propegate_states_pulse` instead.
-
-#     Calculate the effect on a single pair of states |a, m_ground⟩ and
-#     |b, m_ground + k_sign⟩ coupled by a laser pulse, where |a⟩ is the
-#     ground state and |b⟩ is the excited state.
-
-#     Parameters
-#     ----------
-#     state : ndarray, shape (2,), complex
-#         Input state vector [excited_amp, ground_amp] (Bordé's b, a)
-#     omega_laser : float
-#         Laser angular frequency in rad/s
-#     t_pulse : float
-#         Pulse duration in seconds
-#     omega_ab : float
-#         Rabi frequency (rad/s), defined as pi/(2*t_pi) per Bordé
-#     pulse_phase : float
-#         Laser phase in radians
-#     k_sign : int
-#         +1 for +k laser, -1 for -k laser
-#     k : float
-#         Wavevector magnitude (2*pi/wavelength)
-#     z : float
-#         Position along laser beam at t=0
-#     vz : float
-#         Velocity along laser beam direction
-#     m : int
-#         **Ground state** momentum quantum number (default: 0)
-#     omega_0 : float
-#         Atomic transition angular frequency
-
-#     Returns
-#     -------
-#     ndarray, shape (2,), complex
-#         Output state vector [excited_amp, ground_amp] (Bordé's b, a)
-#     """
-#     delta_E = constants.hbar * omega_0
-#     Delta = omega_laser - omega_0
-#     delta_recoil = constants.hbar * k**2 / (2 * MASS_ATOM)
-
-#     # Equation 7: Omega_3 = Delta - k_sign*k*vz - [(m+k_sign)^2 - m^2]*delta_recoil
-#     Omega_3 = (
-#         Delta
-#         - k_sign * k * vz
-#         - ((m_ground + k_sign) ** 2 - m_ground**2) * delta_recoil
-#     )
-
-#     # Equation 8: Omega_0_val = -[(m+k_sign)^2 + m^2]*delta_recoil - (2*m + k_sign)*k*vz
-#     Omega_0_val = (
-#         -((m_ground + k_sign) ** 2 + m_ground**2) * delta_recoil
-#         - (2 * m_ground + k_sign) * k * vz
-#     )
-
-#     # Pauli matrices
-#     S0 = np.array([[1, 0], [0, 1]], dtype=complex)
-
-#     # Eq 12: Generalized Rabi frequency
-#     Omega = np.sqrt(Omega_3**2 + 4 * omega_ab**2)
-
-#     # Equation 13: Matrix elements
-#     A = np.cos(Omega * t_pulse / 2) + 1j * Omega_3 / Omega * np.sin(Omega * t_pulse / 2)
-#     B = 2j * omega_ab / Omega * np.sin(Omega * t_pulse / 2)
-#     C = B
-#     D = np.cos(Omega * t_pulse / 2) - 1j * Omega_3 / Omega * np.sin(Omega * t_pulse / 2)
-
-#     # Equation 10: Pulse operator
-#     matrix_operator = np.array(
-#         [[A, B * np.exp(-1j * pulse_phase)], [C * np.exp(1j * pulse_phase), D]]
-#     )
-
-#     # Equation 9: Apply phase evolution and pulse
-#     vec_ba_s_t = expm(1j / 2 * Omega_0_val * S0 * t_pulse) @ matrix_operator @ state
-
-#     # Transform back (Equation 4)
-#     return U.conj().T @ vec_ba_s_t
 
 
 def propagate_states_in_borde_representation(

@@ -62,7 +62,7 @@ def run_clearout_trials(sequence_fn, n_trials, rng=None):
             m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
                 result
             )
-            p_g, p_e = calculate_ground_and_excited_probabilities(
+            p_g, p_e = sim.calculate_ground_and_excited_probabilities(
                 m_values, squiggly_amplitudes, internal_is_ground
             )
             ground_tally += p_g
