@@ -151,14 +151,14 @@ def transform_state_vector(
 
 
 def _calculate_propagation_constants(
-    omega_laser,
+    detuning_hz,
     k_sign=+1,
     k=K_WAVEVECTOR,
     vz=0.0,
     m_ground=0,
 ):
     omega_0 = 2 * np.pi * TRANSITION_FREQUENCY
-    Delta = omega_laser - omega_0
+    Delta = 2 * np.pi * detuning_hz
     delta_recoil = constants.hbar * k**2 / (2 * MASS_ATOM)
 
     # Equation 7: Omega_3 = Delta - k_sign*k*vz - [(m+k_sign)^2 - m^2]*delta_recoil
@@ -216,7 +216,7 @@ def propagate_states_in_borde_representation(
     positions: np.ndarray,
     velocities: np.ndarray,
     time_of_propegation: float,
-    omega_laser: float,
+    detuning_hz: float,
     vz: float,
     k_wavevector=K_WAVEVECTOR,
 ):
@@ -243,8 +243,8 @@ def propagate_states_in_borde_representation(
         vz includes accumulated recoil kicks.
     time_of_propegation : float
         Time to propagate
-    omega_laser : float
-        Laser angular frequency
+    detuning_hz : float
+        Laser detuning in Hz
     vz : float
         Reference z-velocity (v_0) used for Borde phase calculations
     k_sign : int, optional
@@ -274,7 +274,7 @@ def propagate_states_in_borde_representation(
             m_ground = m_values[idx] - k_sign
 
         Delta, delta_recoil, Omega_0_val, Omega_3 = _calculate_propagation_constants(
-            omega_laser,
+            detuning_hz,
             k=k_wavevector,
             vz=vz,
             k_sign=k_sign,

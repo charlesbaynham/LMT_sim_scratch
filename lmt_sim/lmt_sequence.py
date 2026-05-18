@@ -135,7 +135,6 @@ def run_pulse_sequence_in_borde_representation(
 
     # Process the sequence event by event
     for event in pulse_sequence:
-
         if isinstance(event, Pulse):
             # If it's a Pulse, apply it to the state. This includes
             # ballistically propagating the states
@@ -221,7 +220,7 @@ def run_pulse_sequence_in_borde_representation(
                 positions,
                 velocities,
                 time_of_propegation=event.duration,
-                omega_laser=current_omega_laser,
+                detuning_hz=current_detuning_hz,
                 vz=initial_velocity_z,
                 k_wavevector=sim.K_WAVEVECTOR,
             )
@@ -234,88 +233,9 @@ def run_pulse_sequence_in_borde_representation(
         internal_is_ground,
         positions,
         velocities,
-        current_omega_laser,
+        current_detuning_hz,
         current_time,
     )
-
-
-def calculate_excited_fraction_for_pulse_sequence(
-    pulse_sequence,
-    initial_velocity_z=0.0,
-):
-    """Run a lab-frame pulse sequence and return the final excited-state fraction."""
-    import lmt_sim.lmt_simulation as sim
-
-    if not pulse_sequence:
-        raise ValueError("pulse_sequence must contain at least one pulse")
-
-    for event in pulse_sequence:
-        if not isinstance(event, (Pulse, Freefall, Clearout)):
-            raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
-
-    if any(isinstance(event, Clearout) for event in pulse_sequence):
-        raise ValueError(
-            "calculate_excited_fraction_for_pulse_sequence does not support Clearout events"
-        )
-
-    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
-        sim.make_atom_states(initial_velocity_z=initial_velocity_z)
-    )
-
-    omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + list(detunings_hz)[0])
-    squiggly_amplitudes = sim.transform_state_vector(
-        m_values,
-        internal_amplitude,
-        internal_is_ground,
-        omega_laser=omega_laser,
-        t=0.0,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=False,
-    )
-
-    (
-        m_values,
-        squiggly_amplitudes,
-        internal_is_ground,
-        positions,
-        velocities,
-        _omega_laser,
-        current_time,
-    ) = run_pulse_sequence_in_borde_representation(
-        m_values,
-        positions,
-        velocities,
-        squiggly_amplitudes,
-        internal_is_ground,
-        pulse_sequence,
-        initial_velocity_z=initial_velocity_z,
-    )
-
-    internal_amplitude_final = sim.transform_state_vector(
-        m_values,
-        squiggly_amplitudes,
-        internal_is_ground,
-        omega_laser=omega_laser,
-        t=current_time,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=True,
-    )
-
-    ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(
-        m_values,
-        internal_amplitude_final,
-        internal_is_ground,
-    )
-
-    total_prob = ground_prob + excited_prob
-    if not np.isclose(total_prob, 1.0, rtol=1e-6):
-        logger.warning(
-            "State is not normalized after pulse sequence: total_prob=%s", total_prob
-        )
-
-    return excited_prob / total_prob
 
 
 def do_rabi_pulse(pulse_detuning, pulse_duration=T_PI, initial_velocity_z=0.0):

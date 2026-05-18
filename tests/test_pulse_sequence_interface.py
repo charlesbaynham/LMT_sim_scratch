@@ -119,7 +119,7 @@ def legacy_calc_mz_excitation(
                 positions,
                 velocities,
                 time_of_propegation=time_between_pulses,
-                omega_laser=omega_laser,
+                detuning_hz=detuning_hz,
                 vz=initial_velocity_z,
                 k_wavevector=K_WAVEVECTOR,
             )
@@ -153,7 +153,7 @@ def legacy_calc_mz_excitation(
                 positions,
                 velocities,
                 time_of_propegation=time_between_pulses,
-                omega_laser=omega_laser,
+                detuning_hz=detuning_hz,
                 vz=initial_velocity_z,
                 k_wavevector=K_WAVEVECTOR,
             )
@@ -235,7 +235,7 @@ def legacy_run_mz_sequence_in_borde_representation(
                     positions,
                     velocities,
                     time_of_propegation=event.duration,
-                    omega_laser=omega_laser,
+                    detuning_hz=detuning_hz,
                     vz=initial_velocity_z,
                     k_wavevector=K_WAVEVECTOR,
                 )
@@ -322,7 +322,7 @@ def legacy_run_mz_sequence_with_clearout_in_borde_representation(
                 positions,
                 velocities,
                 time_of_propegation=time_between_pulses,
-                omega_laser=omega_laser,
+                detuning_hz=detuning_hz,
                 vz=initial_velocity_z,
                 k_wavevector=K_WAVEVECTOR,
             )
@@ -368,7 +368,7 @@ def legacy_run_mz_sequence_with_clearout_in_borde_representation(
                 positions,
                 velocities,
                 time_of_propegation=time_between_pulses,
-                omega_laser=omega_laser,
+                detuning_hz=detuning_hz,
                 vz=initial_velocity_z,
                 k_wavevector=K_WAVEVECTOR,
             )
