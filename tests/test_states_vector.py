@@ -217,7 +217,6 @@ def test_mz_randomized_population_conserved_every_step(seed):
             time_of_propegation=time_between,
             omega_laser=omega_laser,
             vz=0.0,
-            k_sign=+1,
             k_wavevector=sim.K_WAVEVECTOR,
         )
     )

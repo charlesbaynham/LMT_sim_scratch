@@ -218,7 +218,6 @@ def propagate_states_in_borde_representation(
     time_of_propegation: float,
     omega_laser: float,
     vz: float,
-    k_sign=+1,
     k_wavevector=K_WAVEVECTOR,
 ):
     """
@@ -263,6 +262,10 @@ def propagate_states_in_borde_representation(
 
     squiggly_amplitudes_out = np.empty_like(squiggly_amplitudes)
     positions_out = np.empty_like(positions)
+
+    k_sign = 1  # FIXME: I think I am free to choose to consider the m <-> m+1 pairs like this, but I should read the paper again and make sure
+    # FIXME I can test by e.g. running an interferometer from excited to ground and making sure it works
+
     for idx in range(len(m_values)):
         is_ground = state_is_ground[idx]
         if is_ground:

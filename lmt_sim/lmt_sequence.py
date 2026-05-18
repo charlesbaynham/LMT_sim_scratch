@@ -50,22 +50,6 @@ class Freefall:
             raise ValueError("Freefall duration must be non-negative")
 
 
-def _sequence_event_k_sign(sequence, event_index):
-    event = sequence[event_index]
-    if isinstance(event, Pulse):
-        return event.k
-
-    for prior_event in reversed(sequence[:event_index]):
-        if isinstance(prior_event, Pulse):
-            return prior_event.k
-
-    for later_event in sequence[event_index + 1 :]:
-        if isinstance(later_event, Pulse):
-            return later_event.k
-
-    return +1
-
-
 def build_mach_zehnder_pulse_sequence(
     phi=0.0,
     detuning_hz=None,  # FIXME make this positional
@@ -151,8 +135,12 @@ def run_pulse_sequence_in_borde_representation(
     omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + detuning_hz)
     current_time = 0.0
 
-    for event_index, event in enumerate(pulse_sequence):
+    # Process the sequence event by event
+    for event in pulse_sequence:
+
         if isinstance(event, Pulse):
+            # If it's a Pulse, apply it to the state. This includes
+            # ballistically propagating the states
             m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
                 sim.pulse_interaction_in_borde_representation(
                     m_values,
@@ -169,8 +157,11 @@ def run_pulse_sequence_in_borde_representation(
                     vz=initial_velocity_z,
                 )
             )
-            current_time += event.duration
+
         elif isinstance(event, Clearout):
+            # If it's a clearout, do the projection and abort if the atom is
+            # cleared out. N.B. This does not do balliastic propegation - we
+            # must do it later
             result = sim.do_clearout(
                 m_values,
                 squiggly_amplitudes,
@@ -184,46 +175,41 @@ def run_pulse_sequence_in_borde_representation(
             m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
                 result
             )
-            if event.duration > 0.0:
-                k_sign = _sequence_event_k_sign(pulse_sequence, event_index)
-                (
-                    m_values,
-                    squiggly_amplitudes,
-                    internal_is_ground,
-                    positions,
-                    velocities,
-                ) = sim.propagate_states_in_borde_representation(
-                    m_values,
-                    squiggly_amplitudes,
-                    internal_is_ground,
-                    positions,
-                    velocities,
-                    time_of_propegation=event.duration,
-                    omega_laser=omega_laser,
-                    vz=initial_velocity_z,
-                    k_sign=k_sign,
-                    k_wavevector=sim.K_WAVEVECTOR,
-                )
-                current_time += event.duration
-            continue
 
-        if event.duration > 0.0:
-            k_sign = _sequence_event_k_sign(pulse_sequence, event_index)
-            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-                sim.propagate_states_in_borde_representation(
-                    m_values,
-                    squiggly_amplitudes,
-                    internal_is_ground,
-                    positions,
-                    velocities,
-                    time_of_propegation=event.duration,
-                    omega_laser=omega_laser,
-                    vz=initial_velocity_z,
-                    k_sign=k_sign,
-                    k_wavevector=sim.K_WAVEVECTOR,
-                )
+        if (
+            isinstance(event, Freefall) or isinstance(event, Clearout)
+        ) and event.duration > 0.0:
+            # Propegate the atom states ballistically during freefall or after clearout
+
+            # for prior_event in reversed(sequence[:event_index]):
+            #     if isinstance(prior_event, Pulse):
+            #         return prior_event.k
+
+            # for later_event in sequence[event_index + 1 :]:
+            #     if isinstance(later_event, Pulse):
+            #         return later_event.k
+
+            # return +1
+
+            (
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
+            ) = sim.propagate_states_in_borde_representation(
+                m_values,
+                squiggly_amplitudes,
+                internal_is_ground,
+                positions,
+                velocities,
+                time_of_propegation=event.duration,
+                omega_laser=omega_laser,
+                vz=initial_velocity_z,
+                k_wavevector=sim.K_WAVEVECTOR,
             )
-            current_time += event.duration
+
+        current_time += event.duration
 
     return (
         m_values,

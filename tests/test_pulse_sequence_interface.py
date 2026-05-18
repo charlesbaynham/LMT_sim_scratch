@@ -6,6 +6,8 @@ from lmt_sim.lmt_sequence import (
     Freefall,
     Pulse,
     run_pulse_sequence_in_borde_representation,
+    build_mach_zehnder_pulse_sequence,
+    calculate_excited_fraction_for_pulse_sequence,
 )
 from lmt_sim.lmt_simulation import (
     K_WAVEVECTOR,
@@ -13,8 +15,6 @@ from lmt_sim.lmt_simulation import (
     RECOIL_FREQUENCY_HZ,
     T_PI,
     TRANSITION_FREQUENCY,
-    build_mach_zehnder_pulse_sequence,
-    calculate_excited_fraction_for_pulse_sequence,
     calculate_ground_and_excited_probabilities,
     do_clearout,
     make_atom_states,
@@ -121,7 +121,6 @@ def legacy_calc_mz_excitation(
                 time_of_propegation=time_between_pulses,
                 omega_laser=omega_laser,
                 vz=initial_velocity_z,
-                k_sign=+1,
                 k_wavevector=K_WAVEVECTOR,
             )
         )
@@ -156,7 +155,6 @@ def legacy_calc_mz_excitation(
                 time_of_propegation=time_between_pulses,
                 omega_laser=omega_laser,
                 vz=initial_velocity_z,
-                k_sign=+1,
                 k_wavevector=K_WAVEVECTOR,
             )
         )
@@ -239,7 +237,6 @@ def legacy_run_mz_sequence_in_borde_representation(
                     time_of_propegation=event.duration,
                     omega_laser=omega_laser,
                     vz=initial_velocity_z,
-                    k_sign=+1,
                     k_wavevector=K_WAVEVECTOR,
                 )
             )
@@ -327,7 +324,6 @@ def legacy_run_mz_sequence_with_clearout_in_borde_representation(
                 time_of_propegation=time_between_pulses,
                 omega_laser=omega_laser,
                 vz=initial_velocity_z,
-                k_sign=+1,
                 k_wavevector=K_WAVEVECTOR,
             )
         )
@@ -374,7 +370,6 @@ def legacy_run_mz_sequence_with_clearout_in_borde_representation(
                 time_of_propegation=time_between_pulses,
                 omega_laser=omega_laser,
                 vz=initial_velocity_z,
-                k_sign=+1,
                 k_wavevector=K_WAVEVECTOR,
             )
         )
