@@ -122,17 +122,15 @@ def run_pulse_sequence_in_borde_representation(
         if not isinstance(event, (Pulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
 
-    detunings_hz = {
+    detunings_hz = [
         pulse.detuning_hz for pulse in pulse_sequence if isinstance(pulse, Pulse)
-    }
-    if len(detunings_hz) != 1:
-        raise ValueError(
-            "All pulses must currently use the same detuning for Bordé-frame propagation"
-        )
+    ]
+    if len(detunings_hz) == 0:
+        logger.warning("No pulses in sequence, defaulting to zero detuning")
+        current_detuning_hz = 0.0
+    else:
+        current_detuning_hz = detunings_hz[0]
 
-    detuning_hz = list(detunings_hz)[0]
-
-    omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + detuning_hz)
     current_time = 0.0
 
     # Process the sequence event by event
@@ -141,6 +139,25 @@ def run_pulse_sequence_in_borde_representation(
         if isinstance(event, Pulse):
             # If it's a Pulse, apply it to the state. This includes
             # ballistically propagating the states
+
+            # If the frequency has changed, transform the states to the new frame
+            new_detuning_hz = event.detuning_hz
+            if new_detuning_hz != current_detuning_hz:
+                squiggly_amplitudes = (
+                    sim.change_laser_frequency_in_borde_representation(
+                        m_values,
+                        squiggly_amplitudes,
+                        internal_is_ground,
+                        positions,
+                        velocities,
+                        new_detuning_hz=new_detuning_hz,
+                        old_detuning_hz=current_detuning_hz,
+                        time=current_time,
+                    )
+                )
+                current_detuning_hz = new_detuning_hz
+
+            # Do the pulse interaction
             m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
                 sim.pulse_interaction_in_borde_representation(
                     m_values,
@@ -204,7 +221,7 @@ def run_pulse_sequence_in_borde_representation(
                 positions,
                 velocities,
                 time_of_propegation=event.duration,
-                omega_laser=omega_laser,
+                omega_laser=current_omega_laser,
                 vz=initial_velocity_z,
                 k_wavevector=sim.K_WAVEVECTOR,
             )
@@ -217,7 +234,7 @@ def run_pulse_sequence_in_borde_representation(
         internal_is_ground,
         positions,
         velocities,
-        omega_laser,
+        current_omega_laser,
         current_time,
     )
 
