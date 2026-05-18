@@ -247,8 +247,6 @@ def propagate_states_in_borde_representation(
         Laser detuning in Hz
     vz : float
         Reference z-velocity (v_0) used for Borde phase calculations
-    k_sign : int, optional
-        Direction of laser, by default +1
     k_wavevector : float, optional
         Wavevector magnitude, by default K_WAVEVECTOR
 

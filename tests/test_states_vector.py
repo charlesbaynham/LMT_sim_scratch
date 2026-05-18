@@ -167,7 +167,7 @@ def test_mz_randomized_population_conserved_every_step(seed):
             time_of_propegation=time_between,
             detuning_hz=detuning_hz,
             vz=0.0,
-            k_sign=+1,
+            
             k_wavevector=sim.K_WAVEVECTOR,
         )
     )
@@ -941,7 +941,7 @@ def test_clearout_mc_matches_deterministic_dropground():
                 time_of_propegation=time_between,
                 detuning_hz=detuning_hz,
                 vz=0.0,
-                k_sign=+1,
+                
                 k_wavevector=sim.K_WAVEVECTOR,
             )
         )
@@ -991,7 +991,7 @@ def test_clearout_mc_matches_deterministic_dropground():
                 time_of_propegation=time_between,
                 detuning_hz=detuning_hz,
                 vz=0.0,
-                k_sign=+1,
+                
                 k_wavevector=sim.K_WAVEVECTOR,
             )
         )
@@ -1086,7 +1086,7 @@ def test_clearout_mc_matches_deterministic_dropground():
                 time_of_propegation=time_between,
                 detuning_hz=detuning_hz,
                 vz=0.0,
-                k_sign=+1,
+                
                 k_wavevector=sim.K_WAVEVECTOR,
             )
         )
@@ -1130,7 +1130,7 @@ def test_clearout_mc_matches_deterministic_dropground():
                 time_of_propegation=time_between,
                 detuning_hz=detuning_hz,
                 vz=0.0,
-                k_sign=+1,
+                
                 k_wavevector=sim.K_WAVEVECTOR,
             )
         )
