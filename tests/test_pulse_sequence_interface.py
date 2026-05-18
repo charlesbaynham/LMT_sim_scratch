@@ -5,9 +5,8 @@ from lmt_sim.lmt_sequence import (
     Clearout,
     Freefall,
     Pulse,
-    run_pulse_sequence_in_borde_representation,
+    run_pulse_sequence_in_lab_frame,
     build_mach_zehnder_pulse_sequence,
-    calculate_excited_fraction_for_pulse_sequence,
 )
 from lmt_sim.lmt_simulation import (
     K_WAVEVECTOR,
@@ -62,10 +61,37 @@ def calc_mz_excitation(
         k=+1,
     )
 
-    return calculate_excited_fraction_for_pulse_sequence(
+    m_values, positions, velocities, internal_amplitude, internal_is_ground = (
+        make_atom_states()
+    )
+
+    result = run_pulse_sequence_in_lab_frame(
+        m_values,
+        positions,
+        velocities,
+        internal_amplitude,
+        internal_is_ground,
         pulse_sequence,
         initial_velocity_z=initial_velocity_z,
     )
+
+    if result is None:
+        return result
+    else:
+        (
+            m_values,
+            amplitudes,
+            internal_is_ground,
+            positions,
+            velocities,
+            current_detuning_hz,
+            current_time,
+        ) = result
+        return calculate_ground_and_excited_probabilities(
+            m_values,
+            amplitudes,
+            internal_is_ground,
+        )
 
 
 def legacy_calc_mz_excitation(

@@ -102,17 +102,19 @@ def build_mach_zehnder_pulse_sequence(
     return [first_pulse, second_pulse, third_pulse]
 
 
-def run_pulse_sequence_in_borde_representation(
+def run_pulse_sequence_in_lab_frame(
     m_values,
     positions,
     velocities,
-    squiggly_amplitudes,
+    amplitudes,
     internal_is_ground,
     pulse_sequence,
     initial_velocity_z=0.0,
     rng=None,
 ):
-    """Run a pulse sequence on amplitudes already expressed in the Bordé frame."""
+    """
+    Run a pulse sequence on a state vector
+    """
     import lmt_sim.lmt_simulation as sim
 
     if not pulse_sequence:
@@ -132,6 +134,18 @@ def run_pulse_sequence_in_borde_representation(
         current_detuning_hz = detunings_hz[0]
 
     current_time = 0.0
+
+    # Convert to the Borde representation based on the first detuning
+    squiggly_amplitudes = sim.transform_state_vector(
+        m_values,
+        amplitudes,
+        internal_is_ground,
+        omega_laser=2 * np.pi * (sim.TRANSITION_FREQUENCY + current_detuning_hz),
+        t=current_time,
+        z=0.0,
+        vz=initial_velocity_z,
+        inverse=False,
+    )
 
     # Process the sequence event by event
     for event in pulse_sequence:
@@ -196,17 +210,6 @@ def run_pulse_sequence_in_borde_representation(
             isinstance(event, Freefall) or isinstance(event, Clearout)
         ) and event.duration > 0.0:
             # Propegate the atom states ballistically during freefall or after clearout
-
-            # for prior_event in reversed(sequence[:event_index]):
-            #     if isinstance(prior_event, Pulse):
-            #         return prior_event.k
-
-            # for later_event in sequence[event_index + 1 :]:
-            #     if isinstance(later_event, Pulse):
-            #         return later_event.k
-
-            # return +1
-
             (
                 m_values,
                 squiggly_amplitudes,
@@ -227,9 +230,21 @@ def run_pulse_sequence_in_borde_representation(
 
         current_time += event.duration
 
-    return (
+    # Convert back to the lab frame
+    amplitudes = sim.transform_state_vector(
         m_values,
         squiggly_amplitudes,
+        internal_is_ground,
+        omega_laser=2 * np.pi * (sim.TRANSITION_FREQUENCY + current_detuning_hz),
+        t=current_time,
+        z=0.0,
+        vz=initial_velocity_z,
+        inverse=True,
+    )
+
+    return (
+        m_values,
+        amplitudes,
         internal_is_ground,
         positions,
         velocities,
