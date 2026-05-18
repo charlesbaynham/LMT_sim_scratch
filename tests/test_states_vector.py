@@ -331,15 +331,6 @@ def test_array_rabi_matches_scalar():
         inverse=False,
     )
 
-    common_kwargs = dict(
-        pulse_detuning=sim.RECOIL_FREQUENCY_HZ,
-        t_pulse=sim.T_PI,
-        pulse_phase=0.0,
-        k_sign=+1,
-        k_wavevector=sim.K_WAVEVECTOR,
-        vz=0.0,
-    )
-
     # Scalar path
     out_scalar = sim.pulse_interaction_in_borde_representation(
         m_values,
@@ -348,7 +339,12 @@ def test_array_rabi_matches_scalar():
         positions,
         velocities,
         pulse_rabi_freq=sim.RABI_FREQ,
-        **common_kwargs,
+        pulse_detuning=sim.RECOIL_FREQUENCY_HZ,
+        t_pulse=sim.T_PI,
+        pulse_phase=0.0,
+        k_sign=int(+1),
+        k_wavevector=sim.K_WAVEVECTOR,
+        vz=0.0,
     )
 
     # Array path: same value broadcast to (N,)
@@ -361,7 +357,12 @@ def test_array_rabi_matches_scalar():
         positions,
         velocities,
         pulse_rabi_freq=rabi_array,
-        **common_kwargs,
+        pulse_detuning=sim.RECOIL_FREQUENCY_HZ,
+        t_pulse=sim.T_PI,
+        pulse_phase=0.0,
+        k_sign=int(+1),
+        k_wavevector=sim.K_WAVEVECTOR,
+        vz=0.0,
     )
 
     np.testing.assert_allclose(out_scalar[1], out_array[1], rtol=1e-12)

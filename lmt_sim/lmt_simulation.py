@@ -48,8 +48,8 @@ def make_atom_states(
     velocity_x=0.0,
     velocity_y=0.0,
     initial_velocity_z=0.0,
-    c0=1,
-    c1=0,
+    c0=1.0,
+    c1=0.0,
 ):
     """Make the initial state for an atom with the given parameters.
 
