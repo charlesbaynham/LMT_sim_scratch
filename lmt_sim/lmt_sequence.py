@@ -50,30 +50,6 @@ class Freefall:
             raise ValueError("Freefall duration must be non-negative")
 
 
-@dataclass
-class Cloud:
-    """Trajectory of one cloud branch through a pulse sequence."""
-
-    times: list
-    z: list
-    m: list
-    is_ground: list
-    labels: list
-    alive: bool = True
-
-    @property
-    def v(self):
-        return self.m[-1] * sim.RECOIL_VELOCITY
-
-    def _fork(self):
-        return Cloud(
-            times=list(self.times),
-            z=list(self.z),
-            m=list(self.m),
-            is_ground=list(self.is_ground),
-            labels=list(self.labels),
-        )
-
 
 def build_mach_zehnder_pulse_sequence(
     phi=0.0,
@@ -324,6 +300,28 @@ def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
     tuple
         (clouds, clearout_times) where clouds is a list of Cloud objects.
     """
+    @dataclass
+    class Cloud:
+        times: list
+        z: list
+        m: list
+        is_ground: list
+        labels: list
+        alive: bool = True
+
+        @property
+        def v(self):
+            return self.m[-1] * sim.RECOIL_VELOCITY
+
+        def _fork(self):
+            return Cloud(
+                times=list(self.times),
+                z=list(self.z),
+                m=list(self.m),
+                is_ground=list(self.is_ground),
+                labels=list(self.labels),
+            )
+
     for event in sequence:
         if not isinstance(event, (Pulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
