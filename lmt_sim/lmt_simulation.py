@@ -19,7 +19,8 @@ N_PULSES = 1
 N_ROWS = 2 ** (N_PULSES * 2)
 MASS_ATOM = constants.atomic_mass * 87
 TRANSITION_WAVELENGTH = 698e-9
-RABI_FREQ = 1 / (2 * 45e-6)
+RABI_FREQ = 1 / (2 * 45e-6)  # FIXME
+RABI_FREQ = 1 / (2 * 500e-6)
 T_PI = 1 / (2 * RABI_FREQ)
 
 TRANSITION_FREQUENCY = constants.c / TRANSITION_WAVELENGTH
