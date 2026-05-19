@@ -375,34 +375,21 @@ def test_compute_spacetime_trajectory_returns_expected_shapes_and_clearouts():
         ),
     ]
 
-    outputs = compute_spacetime_trajectory(sequence)
-    (
-        times,
-        z_top,
-        z_bot,
-        v_top,
-        v_bot,
-        m_top,
-        m_bot,
-        s_top,
-        s_bot,
-        labels,
-        clearout_times,
-    ) = outputs
+    clouds, clearout_times = compute_spacetime_trajectory(sequence)
 
-    expected_len = len(sequence) + 1
-    assert len(times) == expected_len
-    assert len(z_top) == expected_len
-    assert len(z_bot) == expected_len
-    assert len(v_top) == expected_len
-    assert len(v_bot) == expected_len
-    assert len(m_top) == expected_len
-    assert len(m_bot) == expected_len
-    assert len(s_top) == expected_len
-    assert len(s_bot) == expected_len
-    assert len(labels) == expected_len
     assert len(clearout_times) == 1
-    assert labels[-1] == sequence[-1].label
+    assert len(clouds) >= 1
+
+    alive = [c for c in clouds if c.alive]
+    dead = [c for c in clouds if not c.alive]
+
+    assert len(alive) >= 1
+    expected_len = len(sequence) + 1
+    for cloud in alive:
+        assert len(cloud.times) == expected_len
+        assert cloud.labels[-1] == sequence[-1].label
+    for cloud in dead:
+        assert len(cloud.times) < expected_len
 
 
 def test_compute_spacetime_trajectory_plot_true_runs_without_error():
@@ -411,7 +398,7 @@ def test_compute_spacetime_trajectory_plot_true_runs_without_error():
             k=+1,
             detuning_hz=RECOIL_FREQUENCY_HZ,
             phi=0.0,
-            label="vel sel (UP-TOP)",
+            label="bs1",
             rabi_frequency=RABI_FREQ,
             duration=T_PI / 2,
         ),
@@ -419,14 +406,26 @@ def test_compute_spacetime_trajectory_plot_true_runs_without_error():
             k=+1,
             detuning_hz=RECOIL_FREQUENCY_HZ,
             phi=0.0,
-            label="G1 #1 UP-TOP (BS1 pi/2)",
+            label="mirror",
             rabi_frequency=RABI_FREQ,
             duration=T_PI / 2,
         ),
     ]
 
-    outputs = compute_spacetime_trajectory(sequence, plot=True)
-    assert len(outputs[0]) == len(sequence) + 1
+    clouds, _ = compute_spacetime_trajectory(sequence, plot=True)
+    assert len(clouds[0].times) == len(sequence) + 1
+
+
+def test_compute_spacetime_trajectory_mach_zehnder():
+    sequence = build_mach_zehnder_pulse_sequence()
+    clouds, clearout_times = compute_spacetime_trajectory(sequence)
+
+    assert len(clearout_times) == 0
+    assert all(c.alive for c in clouds)
+    # BS1 splits 1→2, mirror flips both, BS2 splits each 2→4
+    assert len(clouds) == 4
+    # Final m values should be two of each: 0 and 1
+    assert sorted(c.m[-1] for c in clouds) == [0, 0, 1, 1]
 
 
 @pytest.mark.parametrize(

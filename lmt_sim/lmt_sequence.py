@@ -50,6 +50,31 @@ class Freefall:
             raise ValueError("Freefall duration must be non-negative")
 
 
+@dataclass
+class Cloud:
+    """Trajectory of one cloud branch through a pulse sequence."""
+
+    times: list
+    z: list
+    m: list
+    is_ground: list
+    labels: list
+    alive: bool = True
+
+    @property
+    def v(self):
+        return self.m[-1] * sim.RECOIL_VELOCITY
+
+    def _fork(self):
+        return Cloud(
+            times=list(self.times),
+            z=list(self.z),
+            m=list(self.m),
+            is_ground=list(self.is_ground),
+            labels=list(self.labels),
+        )
+
+
 def build_mach_zehnder_pulse_sequence(
     phi=0.0,
     detuning_hz=None,  # FIXME make this positional
@@ -267,239 +292,159 @@ def calculate_excited_fraction_for_pulse_sequence(
     return excited_prob / (ground_prob + excited_prob)
 
 
-def compute_spacetime_trajectory(sequence, plot=False):
-    """Compute deterministic TOP/BOTTOM cloud trajectory for a sequence.
+def _transition_probability(m, is_ground, pulse):
+    """Rabi transition probability for a stationary on-axis atom at momentum class m."""
+    k = pulse.k
+    m_ground = m if is_ground else m - k
+    omega_ab = np.pi * pulse.rabi_frequency
+    # delta_rec = hbar*K²/(2M) = K*RECOIL_VELOCITY/2
+    delta_rec = sim.K_WAVEVECTOR * sim.RECOIL_VELOCITY / 2
+    Omega_3 = 2 * np.pi * pulse.detuning_hz - (2 * m_ground + k) * delta_rec
+    Omega = np.sqrt(Omega_3**2 + 4 * omega_ab**2)
+    return float((2 * omega_ab / Omega) ** 2 * np.sin(Omega * pulse.duration / 2) ** 2)
 
-    Pulse labels must include "-TOP" or "-BOT" or "-BOTH" to indicate which cloud they are
-    intended to address.
+
+def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
+    """Infer intended spacetime trajectory by simulating an ideal atom.
+
+    Walks the sequence with a stationary, on-axis atom in the ground state and
+    decides for each pulse whether each cloud flips, drifts, or splits based on
+    the Rabi transition probability.
 
     Parameters
     ----------
     sequence : list[Pulse | Clearout | Freefall]
-        Sequence of events to track.
+    flip_threshold : float
+        Probability >= this → flip; <= 1-this → no-op; between → split.
     plot : bool
         If True, produce a spacetime/momentum figure.
 
     Returns
     -------
     tuple
-        (times, z_top, z_bot, v_top, v_bot, m_top, m_bot,
-         s_top, s_bot, labels, clearout_times)
+        (clouds, clearout_times) where clouds is a list of Cloud objects.
     """
-
     for event in sequence:
         if not isinstance(event, (Pulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
 
-    v_recoil = sim.RECOIL_VELOCITY
-    top = {"z": 0.0, "v": 0.0, "m": 0, "state": "g"}
-    bot = dict(top)
-    bottom_exists = False
+    t = 0.0
+    clouds = [Cloud(times=[0.0], z=[0.0], m=[0], is_ground=[True], labels=[""])]
     clearout_times = []
 
-    def _flip(cloud, k_sign, t_pulse):
-        if cloud["state"] == "g":
-            dm = +k_sign
-            new_state = "e"
-        else:
-            dm = -k_sign
-            new_state = "g"
-        m_new = cloud["m"] + dm
-        v_new = m_new * v_recoil
-        cloud["z"] = cloud["z"] + 0.5 * (cloud["v"] + v_new) * t_pulse
-        cloud["v"] = v_new
-        cloud["m"] = m_new
-        cloud["state"] = new_state
-
-    def _drift(cloud, t_pulse):
-        cloud["z"] = cloud["z"] + cloud["v"] * t_pulse
-
-    times = [0.0]
-    z_top_list, z_bot_list = [top["z"]], [bot["z"]]
-    v_top_list, v_bot_list = [top["v"]], [bot["v"]]
-    m_top_list, m_bot_list = [top["m"]], [bot["m"]]
-    s_top_list, s_bot_list = [top["state"]], [bot["state"]]
-    labels = [""]
-
-    t = 0.0
-
     for event in sequence:
-        if isinstance(event, (Clearout, Freefall)):
+        dt = event.duration
+
+        if isinstance(event, (Freefall, Clearout)):
+            t += dt
+            for cloud in clouds:
+                if cloud.alive:
+                    cloud.times.append(t)
+                    cloud.z.append(cloud.z[-1] + cloud.v * dt)
+                    cloud.m.append(cloud.m[-1])
+                    cloud.is_ground.append(cloud.is_ground[-1])
+                    cloud.labels.append(event.label)
             if isinstance(event, Clearout):
                 clearout_times.append(t)
-            if event.duration > 0.0:
-                _drift(top, event.duration)
-                if bottom_exists:
-                    _drift(bot, event.duration)
-            t += event.duration
-            times.append(t)
-            z_top_list.append(top["z"])
-            z_bot_list.append(bot["z"])
-            v_top_list.append(top["v"])
-            v_bot_list.append(bot["v"])
-            m_top_list.append(top["m"])
-            m_bot_list.append(bot["m"])
-            s_top_list.append(top["state"])
-            s_bot_list.append(bot["state"])
-            labels.append(event.label)
+                for cloud in clouds:
+                    if cloud.alive and cloud.is_ground[-1]:
+                        cloud.alive = False
             continue
 
-        k_sign = event.k
-        t_pulse = event.duration
-        label = event.label
-        addresses_top = "-TOP" in label
-        addresses_bot = "-BOT" in label
-
-        if label == "vel sel (UP-TOP)":
-            _flip(top, +1, t_pulse)
-            bot.update({k: top[k] for k in ("z", "v", "m", "state")})
-        elif (
-            (not bottom_exists)
-            and addresses_top
-            and ("BS1" in label)
-            and not addresses_bot
-        ):
-            _drift(top, t_pulse)
-            _flip(bot, k_sign, t_pulse)
-            bottom_exists = True
-        else:
-            if addresses_top and addresses_bot:
-                # Both clouds addressed (e.g., "-BOTH" label)
-                _flip(top, k_sign, t_pulse)
-                if bottom_exists:
-                    _flip(bot, k_sign, t_pulse)
-            elif addresses_top ^ addresses_bot:
-                # Exactly one cloud addressed
-                target = top if addresses_top else bot
-                other = bot if addresses_top else top
-                _flip(target, k_sign, t_pulse)
-                if bottom_exists:
-                    _drift(other, t_pulse)
+        # Pulse
+        t += dt
+        new_clouds = []
+        for cloud in clouds:
+            if not cloud.alive:
+                new_clouds.append(cloud)
+                continue
+            p = _transition_probability(cloud.m[-1], cloud.is_ground[-1], event)
+            if p >= flip_threshold:
+                dm = event.k if cloud.is_ground[-1] else -event.k
+                new_m = cloud.m[-1] + dm
+                new_z = cloud.z[-1] + 0.5 * (cloud.v + new_m * sim.RECOIL_VELOCITY) * dt
+                cloud.times.append(t)
+                cloud.z.append(new_z)
+                cloud.m.append(new_m)
+                cloud.is_ground.append(not cloud.is_ground[-1])
+                cloud.labels.append(event.label)
+                new_clouds.append(cloud)
+            elif p <= 1.0 - flip_threshold:
+                cloud.times.append(t)
+                cloud.z.append(cloud.z[-1] + cloud.v * dt)
+                cloud.m.append(cloud.m[-1])
+                cloud.is_ground.append(cloud.is_ground[-1])
+                cloud.labels.append(event.label)
+                new_clouds.append(cloud)
             else:
-                raise ValueError(
-                    "Pulse label must address exactly one cloud with '-TOP', '-BOT', or both with '-BOTH': "
-                    + label
-                )
-
-        t += t_pulse
-        times.append(t)
-        z_top_list.append(top["z"])
-        z_bot_list.append(bot["z"])
-        v_top_list.append(top["v"])
-        v_bot_list.append(bot["v"])
-        m_top_list.append(top["m"])
-        m_bot_list.append(bot["m"])
-        s_top_list.append(top["state"])
-        s_bot_list.append(bot["state"])
-        labels.append(label)
-
-    outputs = (
-        np.asarray(times),
-        np.asarray(z_top_list),
-        np.asarray(z_bot_list),
-        np.asarray(v_top_list),
-        np.asarray(v_bot_list),
-        np.asarray(m_top_list),
-        np.asarray(m_bot_list),
-        s_top_list,
-        s_bot_list,
-        labels,
-        np.asarray(clearout_times),
-    )
+                drifter = cloud._fork()
+                flipper = cloud._fork()
+                drifter.times.append(t)
+                drifter.z.append(drifter.z[-1] + drifter.v * dt)
+                drifter.m.append(drifter.m[-1])
+                drifter.is_ground.append(drifter.is_ground[-1])
+                drifter.labels.append(event.label)
+                dm = event.k if flipper.is_ground[-1] else -event.k
+                new_m = flipper.m[-1] + dm
+                new_z = flipper.z[-1] + 0.5 * (flipper.v + new_m * sim.RECOIL_VELOCITY) * dt
+                flipper.times.append(t)
+                flipper.z.append(new_z)
+                flipper.m.append(new_m)
+                flipper.is_ground.append(not flipper.is_ground[-1])
+                flipper.labels.append(event.label)
+                new_clouds.extend([drifter, flipper])
+        clouds = new_clouds
 
     if plot:
-        import matplotlib.pyplot as plt
+        _plot_spacetime(clouds, clearout_times)
 
-        (
-            times_a,
-            z_top_a,
-            z_bot_a,
-            _v_top_a,
-            _v_bot_a,
-            m_top_a,
-            m_bot_a,
-            s_top_a,
-            s_bot_a,
-            _labels_a,
-            clearout_times_a,
-        ) = outputs
+    return clouds, np.asarray(clearout_times)
 
-        def _plot_state_trajectory(ax, times_us, z_mm, states, color, legend_label):
-            label_added = False
-            for i in range(len(times_us) - 1):
-                ls = ":" if states[i] == "e" else "-"
-                lbl = legend_label if not label_added else None
-                ax.plot(
-                    times_us[i : i + 2],
-                    z_mm[i : i + 2],
-                    ls,
-                    color=color,
-                    lw=1.5,
-                    label=lbl,
-                )
-                label_added = True
-            ax.plot(times_us, z_mm, "o", color=color, ms=3)
 
-        fig, (ax_z, ax_v) = plt.subplots(
-            2, 1, figsize=(13, 9), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
-        )
+def _plot_spacetime(clouds, clearout_times):
+    import matplotlib.pyplot as plt
 
-        _plot_state_trajectory(
-            ax_z,
-            times_a * 1e6,
-            z_top_a * 1e3,
-            s_top_a,
-            "tab:red",
-            "TOP",
-        )
-        _plot_state_trajectory(
-            ax_z,
-            times_a * 1e6,
-            z_bot_a * 1e3,
-            s_bot_a,
-            "tab:blue",
-            "BOTTOM",
-        )
+    colors = plt.cm.tab10.colors
+    fig, (ax_z, ax_m) = plt.subplots(
+        2, 1, figsize=(13, 9), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
+    )
 
-        for t_clearout in clearout_times_a:
-            ax_z.axvline(
-                t_clearout * 1e6,
-                color="tab:green",
-                lw=0.6,
-                alpha=0.6,
-                linestyle="--",
-            )
-        if len(clearout_times_a) > 0:
-            ax_z.plot(
-                [],
-                [],
-                color="tab:green",
-                linestyle="--",
-                alpha=0.6,
-                label=f"clearout ({len(clearout_times_a)} positions)",
-            )
+    for i, cloud in enumerate(clouds):
+        color = colors[i % len(colors)]
+        times_us = np.asarray(cloud.times) * 1e6
+        z_mm = np.asarray(cloud.z) * 1e3
+        m_arr = np.asarray(cloud.m)
+        label_added = False
+        for j in range(len(times_us) - 1):
+            ls = "-" if cloud.is_ground[j] else ":"
+            lbl = f"cloud {i}" if not label_added else None
+            ax_z.plot(times_us[j : j + 2], z_mm[j : j + 2], ls, color=color, lw=1.5, label=lbl)
+            label_added = True
+        ax_z.plot(times_us, z_mm, "o", color=color, ms=3)
+        ax_m.plot(times_us, m_arr, "-o", color=color, ms=3, label=f"cloud {i}")
 
-        ax_z.plot([], [], "-", color="gray", lw=1.5, label="|g> (solid)")
-        ax_z.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")
-        ax_z.set_ylabel("z position (mm)")
-        ax_z.set_title("LMT spacetime diagram")
-        ax_z.legend(loc="upper left")
-        ax_z.grid(True, alpha=0.3)
+    for t_co in clearout_times:
+        ax_z.axvline(t_co * 1e6, color="tab:green", lw=0.6, alpha=0.6, linestyle="--")
+    if len(clearout_times) > 0:
+        ax_z.plot([], [], color="tab:green", linestyle="--", alpha=0.6,
+                  label=f"clearout ({len(clearout_times)} positions)")
 
-        ax_v.plot(times_a * 1e6, m_top_a, "-o", color="tab:red", ms=3, label="TOP")
-        ax_v.plot(times_a * 1e6, m_bot_a, "-o", color="tab:blue", ms=3, label="BOTTOM")
-        ax_v.axhline(0, color="k", lw=0.3, alpha=0.3)
-        ax_v.set_xlabel("time (us)")
-        ax_v.set_ylabel(r"$v_z$ ($v_\mathrm{recoil}$)")
-        ax_v.set_title(
-            "v_recoil = "
-            + f"{v_recoil * 1e3:.2f} mm/s; "
-            + f"|m_TOP|_max = {int(np.abs(m_top_a).max())}, "
-            + f"|m_BOTTOM|_max = {int(np.abs(m_bot_a).max())}"
-        )
-        ax_v.grid(True, alpha=0.3)
+    ax_z.plot([], [], "-", color="gray", lw=1.5, label="|g> (solid)")
+    ax_z.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")
+    ax_z.set_ylabel("z position (mm)")
+    ax_z.set_title("LMT spacetime diagram")
+    ax_z.legend(loc="upper left")
+    ax_z.grid(True, alpha=0.3)
 
-    return outputs
+    all_m = [m for cloud in clouds for m in cloud.m]
+    ax_m.axhline(0, color="k", lw=0.3, alpha=0.3)
+    ax_m.set_xlabel("time (us)")
+    ax_m.set_ylabel(r"$v_z$ ($v_\mathrm{recoil}$)")
+    ax_m.set_title(
+        f"v_recoil = {sim.RECOIL_VELOCITY * 1e3:.2f} mm/s; "
+        + f"|m|_max = {int(np.abs(all_m).max()) if all_m else 0}"
+    )
+    ax_m.grid(True, alpha=0.3)
 
 
 def do_rabi_pulse(pulse_detuning, pulse_duration=T_PI, initial_velocity_z=0.0):
