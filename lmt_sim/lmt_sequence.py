@@ -355,7 +355,7 @@ def calculate_excited_fraction_for_pulse_sequence(
 def compute_spacetime_trajectory(sequence, plot=False):
     """Compute deterministic TOP/BOTTOM cloud trajectory for a sequence.
 
-    Pulse labels must include "-TOP" or "-BOT" to indicate which cloud they are
+    Pulse labels must include "-TOP" or "-BOT" or "-BOTH" to indicate which cloud they are
     intended to address.
 
     Parameters
