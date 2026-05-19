@@ -103,11 +103,7 @@ def build_mach_zehnder_pulse_sequence(
 
 
 def run_pulse_sequence_in_lab_frame(
-    m_values,
-    positions,
-    velocities,
-    amplitudes,
-    internal_is_ground,
+    state,
     pulse_sequence,
     initial_velocity_z=0.0,
     rng=None,
@@ -136,10 +132,8 @@ def run_pulse_sequence_in_lab_frame(
     current_time = 0.0
 
     # Convert to the Borde representation based on the first detuning
-    squiggly_amplitudes = sim.transform_state_vector(
-        m_values,
-        amplitudes,
-        internal_is_ground,
+    state = sim.transform_state_vector(
+        state,
         omega_laser=2 * np.pi * (sim.TRANSITION_FREQUENCY + current_detuning_hz),
         t=current_time,
         z=0.0,
@@ -149,11 +143,7 @@ def run_pulse_sequence_in_lab_frame(
 
     # Run the sequence in the Borde representation
     result = run_pulse_sequence_in_borde_representation(
-        m_values,
-        positions,
-        velocities,
-        squiggly_amplitudes,
-        internal_is_ground,
+        state,
         pulse_sequence,
         initial_velocity_z=initial_velocity_z,
         rng=rng,
@@ -161,21 +151,11 @@ def run_pulse_sequence_in_lab_frame(
     if result is None:
         # Atom was cleared out
         return None
-    (
-        m_values,
-        squiggly_amplitudes,
-        internal_is_ground,
-        positions,
-        velocities,
-        current_detuning_hz,
-        current_time,
-    ) = result
+    state, current_detuning_hz, current_time = result
 
     # Convert back to the lab frame
-    amplitudes = sim.transform_state_vector(
-        m_values,
-        squiggly_amplitudes,
-        internal_is_ground,
+    state = sim.transform_state_vector(
+        state,
         omega_laser=2 * np.pi * (sim.TRANSITION_FREQUENCY + current_detuning_hz),
         t=current_time,
         z=0.0,
@@ -183,23 +163,11 @@ def run_pulse_sequence_in_lab_frame(
         inverse=True,
     )
 
-    return (
-        m_values,
-        positions,
-        velocities,
-        amplitudes,
-        internal_is_ground,
-        current_detuning_hz,
-        current_time,
-    )
+    return state, current_detuning_hz, current_time
 
 
 def run_pulse_sequence_in_borde_representation(
-    m_values,
-    positions,
-    velocities,
-    squiggly_amplitudes,
-    internal_is_ground,
+    state,
     pulse_sequence,
     initial_velocity_z=0.0,
     rng=None,
@@ -225,18 +193,8 @@ def run_pulse_sequence_in_borde_representation(
             # If the frequency has changed, transform the states to the new frame
             new_detuning_hz = event.detuning_hz
             if new_detuning_hz != current_detuning_hz:
-                (
-                    m_values,
-                    squiggly_amplitudes,
-                    internal_is_ground,
-                    positions,
-                    velocities,
-                ) = sim.change_laser_frequency_in_borde_representation(
-                    m_values,
-                    squiggly_amplitudes,
-                    internal_is_ground,
-                    positions,
-                    velocities,
+                state = sim.change_laser_frequency_in_borde_representation(
+                    state,
                     new_detuning_hz=new_detuning_hz,
                     old_detuning_hz=current_detuning_hz,
                     time=current_time,
@@ -244,57 +202,32 @@ def run_pulse_sequence_in_borde_representation(
                 current_detuning_hz = new_detuning_hz
 
             # Do the pulse interaction
-            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-                sim.pulse_interaction_in_borde_representation(
-                    m_values,
-                    squiggly_amplitudes,
-                    internal_is_ground,
-                    positions,
-                    velocities,
-                    pulse_detuning=event.detuning_hz,
-                    t_pulse=event.duration,
-                    pulse_rabi_freq=event.rabi_frequency,
-                    pulse_phase=event.phi,
-                    k_sign=event.k,
-                    k_wavevector=sim.K_WAVEVECTOR,
-                    vz=initial_velocity_z,
-                )
+            state = sim.pulse_interaction_in_borde_representation(
+                state,
+                pulse_detuning=event.detuning_hz,
+                t_pulse=event.duration,
+                pulse_rabi_freq=event.rabi_frequency,
+                pulse_phase=event.phi,
+                k_sign=event.k,
+                k_wavevector=sim.K_WAVEVECTOR,
+                vz=initial_velocity_z,
             )
 
         elif isinstance(event, Clearout):
             # If it's a clearout, do the projection and abort if the atom is
             # cleared out. N.B. This does not do balliastic propegation - we
             # must do it later
-            result = sim.do_clearout(
-                m_values,
-                squiggly_amplitudes,
-                internal_is_ground,
-                positions,
-                velocities,
-                rng=rng,
-            )
+            result = sim.do_clearout(state, rng=rng)
             if result is None:
                 return None
-            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-                result
-            )
+            state = result
 
         if (
             isinstance(event, Freefall) or isinstance(event, Clearout)
         ) and event.duration > 0.0:
             # Propegate the atom states ballistically during freefall or after clearout
-            (
-                m_values,
-                squiggly_amplitudes,
-                internal_is_ground,
-                positions,
-                velocities,
-            ) = sim.propagate_states_in_borde_representation(
-                m_values,
-                squiggly_amplitudes,
-                internal_is_ground,
-                positions,
-                velocities,
+            state = sim.propagate_states_in_borde_representation(
+                state,
                 time_of_propegation=event.duration,
                 detuning_hz=current_detuning_hz,
                 vz=initial_velocity_z,
@@ -303,15 +236,7 @@ def run_pulse_sequence_in_borde_representation(
 
         current_time += event.duration
 
-    return (
-        m_values,
-        squiggly_amplitudes,
-        internal_is_ground,
-        positions,
-        velocities,
-        2 * np.pi * (sim.TRANSITION_FREQUENCY + current_detuning_hz),
-        current_time,
-    )
+    return state, current_detuning_hz, current_time
 
 
 def calculate_excited_fraction_for_pulse_sequence(
@@ -326,16 +251,10 @@ def calculate_excited_fraction_for_pulse_sequence(
             "calculate_excited_fraction_for_pulse_sequence does not support Clearout events"
         )
 
-    m_values, positions, velocities, amplitudes, internal_is_ground = (
-        sim.make_atom_states(initial_velocity_z=initial_velocity_z)
-    )
+    state = sim.make_atom_states(initial_velocity_z=initial_velocity_z)
 
     result = run_pulse_sequence_in_lab_frame(
-        m_values,
-        positions,
-        velocities,
-        amplitudes,
-        internal_is_ground,
+        state,
         pulse_sequence,
         initial_velocity_z=initial_velocity_z,
     )
@@ -343,19 +262,15 @@ def calculate_excited_fraction_for_pulse_sequence(
     if result is None:
         return None
 
-    m_values, amplitudes, internal_is_ground, *_ = result
-    ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(
-        m_values,
-        amplitudes,
-        internal_is_ground,
-    )
+    state, *_ = result
+    ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(state)
     return excited_prob / (ground_prob + excited_prob)
 
 
 def compute_spacetime_trajectory(sequence, plot=False):
     """Compute deterministic TOP/BOTTOM cloud trajectory for a sequence.
 
-    Pulse labels must include "-TOP" or "-BOT" to indicate which cloud they are
+    Pulse labels must include "-TOP" or "-BOT" or "-BOTH" to indicate which cloud they are
     intended to address.
 
     Parameters
@@ -438,21 +353,33 @@ def compute_spacetime_trajectory(sequence, plot=False):
         if label == "vel sel (UP-TOP)":
             _flip(top, +1, t_pulse)
             bot.update({k: top[k] for k in ("z", "v", "m", "state")})
-        elif (not bottom_exists) and addresses_top and ("BS1" in label):
+        elif (
+            (not bottom_exists)
+            and addresses_top
+            and ("BS1" in label)
+            and not addresses_bot
+        ):
             _drift(top, t_pulse)
             _flip(bot, k_sign, t_pulse)
             bottom_exists = True
         else:
-            if not (addresses_top ^ addresses_bot):
+            if addresses_top and addresses_bot:
+                # Both clouds addressed (e.g., "-BOTH" label)
+                _flip(top, k_sign, t_pulse)
+                if bottom_exists:
+                    _flip(bot, k_sign, t_pulse)
+            elif addresses_top ^ addresses_bot:
+                # Exactly one cloud addressed
+                target = top if addresses_top else bot
+                other = bot if addresses_top else top
+                _flip(target, k_sign, t_pulse)
+                if bottom_exists:
+                    _drift(other, t_pulse)
+            else:
                 raise ValueError(
-                    "Pulse label must address exactly one cloud with '-TOP' or '-BOT': "
+                    "Pulse label must address exactly one cloud with '-TOP', '-BOT', or both with '-BOTH': "
                     + label
                 )
-            target = top if addresses_top else bot
-            other = bot if addresses_top else top
-            _flip(target, k_sign, t_pulse)
-            if bottom_exists:
-                _drift(other, t_pulse)
 
         t += t_pulse
         times.append(t)

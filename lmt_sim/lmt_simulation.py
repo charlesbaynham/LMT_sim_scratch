@@ -1,6 +1,7 @@
 ######
 
 import logging
+from dataclasses import dataclass, replace
 
 import numpy as np
 from scipy import constants
@@ -8,9 +9,6 @@ from scipy import constants
 logger = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.INFO)
-# structlog.configure(
-#     wrapper_class=logging.make_filtering_bound_logger(logging.INFO),
-# )
 
 
 ######
@@ -34,6 +32,15 @@ RECOIL_VELOCITY = constants.hbar * K_WAVEVECTOR / MASS_ATOM
 # we keep it in the same units.  The recoil shift enters the detuning
 # as (2m ± 1) * RECOIL_FREQUENCY_HZ.
 RECOIL_FREQUENCY_HZ = constants.hbar * K_WAVEVECTOR**2 / (2 * MASS_ATOM) / (2 * np.pi)
+
+
+@dataclass(frozen=True)
+class AtomState:
+    m_values: np.ndarray
+    positions: np.ndarray
+    velocities: np.ndarray
+    amplitudes: np.ndarray
+    internal_is_ground: np.ndarray
 
 
 def make_atom_states(
@@ -71,16 +78,8 @@ def make_atom_states(
 
     Returns
     -------
-    m_values : ndarray, shape (2,), int
-        Momentum quantum numbers.  m=0 for both initial rows.
-    positions : ndarray, shape (2, 3), float
-        [x, y, z] positions of each state row.
-    velocities : ndarray, shape (2, 3), float
-        [vx, vy, vz] velocities of each state row.
-    internal_amplitude : ndarray, shape (2,), complex128
-        Complex amplitudes for each state row.
-    internal_is_ground : ndarray, shape (2,), bool
-        True for ground-state rows.
+    AtomState
+        Initial atom state.
     """
     m_values = np.array([0, 0], dtype=int)
     positions = np.array(
@@ -101,13 +100,17 @@ def make_atom_states(
     internal_amplitude = np.array([c0, c1], dtype=np.complex128)
     internal_is_ground = np.array([True, False], dtype=bool)
 
-    return m_values, positions, velocities, internal_amplitude, internal_is_ground
+    return AtomState(
+        m_values=m_values,
+        positions=positions,
+        velocities=velocities,
+        amplitudes=internal_amplitude,
+        internal_is_ground=internal_is_ground,
+    )
 
 
 def transform_state_vector(
-    m_values,
-    internal_amplitude,
-    internal_is_ground,
+    state: AtomState,
     omega_laser,
     t,
     z,
@@ -128,13 +131,13 @@ def transform_state_vector(
     global_phase = np.exp(1j * omega_0 / 2 * t)
 
     m_dependent_phase_gnd = np.exp(
-        1j / 2 * (-omega_laser * t - 2 * m_values * k * (z + vz * t))
+        1j / 2 * (-omega_laser * t - 2 * state.m_values * k * (z + vz * t))
     )
     m_dependent_phase_excited = np.exp(
-        1j / 2 * (omega_laser * t - 2 * m_values * k * (z + vz * t))
+        1j / 2 * (omega_laser * t - 2 * state.m_values * k * (z + vz * t))
     )
     m_dependent_phase = np.where(
-        internal_is_ground, m_dependent_phase_gnd, m_dependent_phase_excited
+        state.internal_is_ground, m_dependent_phase_gnd, m_dependent_phase_excited
     )
 
     transform = global_phase * m_dependent_phase
@@ -142,7 +145,7 @@ def transform_state_vector(
     if inverse:
         transform = np.conj(transform)
 
-    return transform * internal_amplitude
+    return replace(state, amplitudes=transform * state.amplitudes)
 
 
 def _calculate_propagation_constants(
@@ -205,11 +208,7 @@ def _calculate_interaction_constants(
 
 
 def propagate_states_in_borde_representation(
-    m_values: np.ndarray,
-    squiggly_amplitudes: np.ndarray,
-    state_is_ground: np.ndarray,
-    positions: np.ndarray,
-    velocities: np.ndarray,
+    state: AtomState,
     time_of_propegation: float,
     detuning_hz: float,
     vz: float,
@@ -225,17 +224,8 @@ def propagate_states_in_borde_representation(
 
     Parameters
     ----------
-    m_values : np.ndarray
-        Momentum quantum numbers for each state row
-    squiggly_amplitudes : np.ndarray
-        Amplitudes in Borde representation
-    state_is_ground : np.ndarray
-        Boolean array indicating ground (True) or excited (False) state
-    positions : np.ndarray, shape (N, 3)
-        [x, y, z] positions of each state row (classical tracking)
-    velocities : np.ndarray, shape (N, 3)
-        [vx, vy, vz] velocities of each state row. vx and vy are constant.
-        vz includes accumulated recoil kicks.
+    state : AtomState
+        Atom state in the Borde representation.
     time_of_propegation : float
         Time to propagate
     detuning_hz : float
@@ -247,24 +237,22 @@ def propagate_states_in_borde_representation(
 
     Returns
     -------
-    tuple
-        (m_values, squiggly_amplitudes_out, state_is_ground, positions_out, velocities)
-        Positions are updated ballistically from velocities.
-        Velocities are returned unchanged.
+    AtomState
+        Propagated atom state.
     """
 
-    squiggly_amplitudes_out = np.empty_like(squiggly_amplitudes)
-    positions_out = np.empty_like(positions)
+    amplitudes_out = np.empty_like(state.amplitudes)
+    positions_out = np.empty_like(state.positions)
 
     k_sign = 1  # FIXME: I think I am free to choose to consider the m <-> m+1 pairs like this, but I should read the paper again and make sure
     # FIXME I can test by e.g. running an interferometer from excited to ground and making sure it works
 
-    for idx in range(len(m_values)):
-        is_ground = state_is_ground[idx]
+    for idx in range(len(state.m_values)):
+        is_ground = state.internal_is_ground[idx]
         if is_ground:
-            m_ground = m_values[idx]
+            m_ground = state.m_values[idx]
         else:
-            m_ground = m_values[idx] - k_sign
+            m_ground = state.m_values[idx] - k_sign
 
         Delta, delta_recoil, Omega_0_val, Omega_3 = _calculate_propagation_constants(
             detuning_hz,
@@ -277,24 +265,28 @@ def propagate_states_in_borde_representation(
         phase = np.exp(1j * Omega_3 * time_of_propegation / 2)
 
         if is_ground:
-            squiggly_amplitudes_out[idx] = squiggly_amplitudes[idx] * phase
+            amplitudes_out[idx] = state.amplitudes[idx] * phase
         else:
-            squiggly_amplitudes_out[idx] = squiggly_amplitudes[idx] * np.conj(phase)
+            amplitudes_out[idx] = state.amplitudes[idx] * np.conj(phase)
 
         # Update position ballistically for all three dimensions.
         # velocities[idx, 2] already encodes v_0 + m * v_recoil accumulated from
         # recoil kicks during previous pulses, so no separate m-term is needed here.
-        positions_out[idx] = positions[idx] + velocities[idx] * time_of_propegation
+        positions_out[idx] = (
+            state.positions[idx] + state.velocities[idx] * time_of_propegation
+        )
 
-    return m_values, squiggly_amplitudes_out, state_is_ground, positions_out, velocities
+    return AtomState(
+        m_values=state.m_values,
+        positions=positions_out,
+        velocities=state.velocities,
+        amplitudes=amplitudes_out,
+        internal_is_ground=state.internal_is_ground,
+    )
 
 
 def pulse_interaction_in_borde_representation(
-    m_values: np.ndarray,
-    squiggly_amplitudes: np.ndarray,
-    internal_is_ground: np.ndarray,
-    positions: np.ndarray,
-    velocities: np.ndarray,
+    state: AtomState,
     pulse_detuning: float,
     t_pulse: float,
     pulse_rabi_freq,
@@ -314,17 +306,8 @@ def pulse_interaction_in_borde_representation(
 
     Parameters
     ----------
-    m_values : np.ndarray
-        Momentum quantum numbers for each state row
-    squiggly_amplitudes : np.ndarray
-        Amplitudes in Borde representation
-    internal_is_ground : np.ndarray
-        Boolean array indicating ground (True) or excited (False) state
-    positions : np.ndarray, shape (N, 3)
-        [x, y, z] positions of each state row (classical tracking)
-    velocities : np.ndarray, shape (N, 3)
-        [vx, vy, vz] velocities of each state row. vx and vy are constant.
-        vz includes accumulated recoil kicks from previous pulses.
+    state : AtomState
+        Atom state in the Borde representation.
     pulse_detuning : float
         Laser detuning from resonance in Hz
     t_pulse : float
@@ -343,26 +326,24 @@ def pulse_interaction_in_borde_representation(
 
     Returns
     -------
-    tuple
-        (new_m_values, new_squiggly_amplitudes, new_is_ground, new_positions, new_velocities)
-        Positions are updated with midpoint approximation for m-changing branches.
-        Velocities: vx and vy unchanged, vz updated by recoil kick for m-changing branches.
+    AtomState
+        Atom state after the pulse.
     """
 
     # Implement equation 13 / 14 / 15
 
     # Prepare output arrays -- each row branches into two
-    N = squiggly_amplitudes.shape[0]
+    N = state.amplitudes.shape[0]
     new_num_rows = N * 2
 
     # Broadcast pulse_rabi_freq to a per-row array
     rabi_arr = np.broadcast_to(np.asarray(pulse_rabi_freq, dtype=float), (N,)).copy()
 
-    new_squiggly_amplitudes = np.empty(new_num_rows, dtype=squiggly_amplitudes.dtype)
-    new_m_values = np.empty(new_num_rows, dtype=m_values.dtype)
-    new_positions = np.empty((new_num_rows, 3), dtype=positions.dtype)
-    new_velocities = np.empty((new_num_rows, 3), dtype=velocities.dtype)
-    new_is_ground = np.empty(new_num_rows, dtype=internal_is_ground.dtype)
+    new_amplitudes = np.empty(new_num_rows, dtype=state.amplitudes.dtype)
+    new_m_values = np.empty(new_num_rows, dtype=state.m_values.dtype)
+    new_positions = np.empty((new_num_rows, 3), dtype=state.positions.dtype)
+    new_velocities = np.empty((new_num_rows, 3), dtype=state.velocities.dtype)
+    new_is_ground = np.empty(new_num_rows, dtype=state.internal_is_ground.dtype)
 
     # Ground-output rows first, excited-output rows second
     ind_excited = N
@@ -372,18 +353,18 @@ def pulse_interaction_in_borde_representation(
     for idx in range(N):
         # Build input state vector for propagate_pulse
         # Borde notation: state = [excited_amp, ground_amp] (b, a)
-        if internal_is_ground[idx]:
+        if state.internal_is_ground[idx]:
             # The ground state has m = m_a, so the relevant excited state for
             # the pulse is m = m_a +- 1
-            m_ground = m_values[idx]
-            m_excited = m_values[idx] + k_sign
-            state = np.array([0, squiggly_amplitudes[idx]], dtype=complex)
+            m_ground = state.m_values[idx]
+            m_excited = state.m_values[idx] + k_sign
+            amplitude_vector_in = np.array([0, state.amplitudes[idx]], dtype=complex)
         else:
             # This excited state has m = m_b, so the relevant ground state for
             # the pulse is m = m_b -+ 1
-            m_ground = m_values[idx] - k_sign
-            m_excited = m_values[idx]
-            state = np.array([squiggly_amplitudes[idx], 0], dtype=complex)
+            m_ground = state.m_values[idx] - k_sign
+            m_excited = state.m_values[idx]
+            amplitude_vector_in = np.array([state.amplitudes[idx], 0], dtype=complex)
 
         # Borde uses omega_ab = pi * RABI_FREQ, angular frequencies in rad/s
         omega_ab = np.pi * rabi_arr[idx]
@@ -403,7 +384,7 @@ def pulse_interaction_in_borde_representation(
             [[A, B * np.exp(-1j * pulse_phase)], [C * np.exp(1j * pulse_phase), D]]
         )
 
-        amplitude_vector_out = prop_matrix @ state
+        amplitude_vector_out = prop_matrix @ amplitude_vector_in
 
         # Build 3D velocity vectors for the two output branches.
         # vz for each branch is computed from the reference velocity plus
@@ -413,16 +394,20 @@ def pulse_interaction_in_borde_representation(
         vz_ground = vz + m_ground * RECOIL_VELOCITY
         vz_excited = vz + m_excited * RECOIL_VELOCITY
 
-        vel_ground_3d = np.array([velocities[idx, 0], velocities[idx, 1], vz_ground])
-        vel_excited_3d = np.array([velocities[idx, 0], velocities[idx, 1], vz_excited])
+        vel_ground_3d = np.array(
+            [state.velocities[idx, 0], state.velocities[idx, 1], vz_ground]
+        )
+        vel_excited_3d = np.array(
+            [state.velocities[idx, 0], state.velocities[idx, 1], vz_excited]
+        )
 
         # Ground-output branch: m = m_ground, velocity = vel_ground_3d
-        new_squiggly_amplitudes[idx] = amplitude_vector_out[1]
+        new_amplitudes[idx] = amplitude_vector_out[1]
         new_m_values[idx] = m_ground
         new_velocities[idx] = vel_ground_3d
 
         # Excited-output branch: m = m_excited, velocity = vel_excited_3d
-        new_squiggly_amplitudes[ind_excited + idx] = amplitude_vector_out[0]
+        new_amplitudes[ind_excited + idx] = amplitude_vector_out[0]
         new_m_values[ind_excited + idx] = m_excited
         new_velocities[ind_excited + idx] = vel_excited_3d
 
@@ -431,40 +416,36 @@ def pulse_interaction_in_borde_representation(
         # pulse duration. If it did change, we use the midpoint approximation:
         # half the pulse with the old velocity, half the pulse with the new
         # velocity.
-        if internal_is_ground[idx]:  # start in ground
+        if state.internal_is_ground[idx]:  # start in ground
             # ground->ground
-            new_positions[idx] = positions[idx] + vel_ground_3d * t_pulse
+            new_positions[idx] = state.positions[idx] + vel_ground_3d * t_pulse
             # ground->excited
             new_positions[ind_excited + idx] = (
-                positions[idx]
+                state.positions[idx]
                 + vel_ground_3d * (t_pulse / 2)
                 + vel_excited_3d * (t_pulse / 2)
             )
         else:  # start in excited
             # excited->excited
-            new_positions[idx] = positions[idx] + vel_excited_3d * t_pulse
+            new_positions[idx] = state.positions[idx] + vel_excited_3d * t_pulse
             # excited->ground
             new_positions[ind_excited + idx] = (
-                positions[idx]
+                state.positions[idx]
                 + vel_ground_3d * (t_pulse / 2)
                 + vel_excited_3d * (t_pulse / 2)
             )
 
-    return (
-        new_m_values,
-        new_squiggly_amplitudes,
-        new_is_ground,
-        new_positions,
-        new_velocities,
+    return AtomState(
+        m_values=new_m_values,
+        positions=new_positions,
+        velocities=new_velocities,
+        amplitudes=new_amplitudes,
+        internal_is_ground=new_is_ground,
     )
 
 
 def change_laser_frequency_in_borde_representation(
-    m_values: np.ndarray,
-    squiggly_amplitudes: np.ndarray,
-    internal_is_ground: np.ndarray,
-    positions: np.ndarray,
-    velocities: np.ndarray,
+    state: AtomState,
     old_detuning_hz: float,
     new_detuning_hz: float,
     time: float,
@@ -477,9 +458,8 @@ def change_laser_frequency_in_borde_representation(
 
     Parameters
     ----------
-    m_values, squiggly_amplitudes, internal_is_ground, positions, velocities
-        The state arrays.  Only ``squiggly_amplitudes`` is modified; the others
-        are returned unchanged.
+    state : AtomState
+        Atom state in the Bordé representation.
     old_detuning_hz : float
         Detuning (Hz) of the Bordé frame the amplitudes are currently in.
     new_detuning_hz : float
@@ -489,22 +469,14 @@ def change_laser_frequency_in_borde_representation(
 
     Returns
     -------
-    tuple
-        ``(m_values, squiggly_amplitudes, internal_is_ground, positions,
-        velocities)``
+    AtomState
+        Atom state expressed in the new Bordé frame.
     """
     delta_f = new_detuning_hz - old_detuning_hz
     phase_gnd = np.exp(-1j * np.pi * delta_f * time)
     phase_exc = np.exp(+1j * np.pi * delta_f * time)
-    phase = np.where(internal_is_ground, phase_gnd, phase_exc)
-    new_squiggly_amplitudes = squiggly_amplitudes * phase
-    return (
-        m_values,
-        new_squiggly_amplitudes,
-        internal_is_ground,
-        positions,
-        velocities,
-    )
+    phase = np.where(state.internal_is_ground, phase_gnd, phase_exc)
+    return replace(state, amplitudes=state.amplitudes * phase)
 
 
 def gaussian_rabi(
@@ -544,11 +516,7 @@ def gaussian_rabi(
 
 
 def do_gaussian_pulse(
-    m_values,
-    squiggly_amplitudes,
-    internal_is_ground,
-    positions,
-    velocities,
+    state: AtomState,
     pulse_detuning,
     t_pulse,
     on_axis_rabi_freq,
@@ -569,16 +537,8 @@ def do_gaussian_pulse(
 
     Parameters
     ----------
-    m_values : np.ndarray
-        Momentum quantum numbers for each state row.
-    squiggly_amplitudes : np.ndarray
-        Amplitudes in Borde representation.
-    internal_is_ground : np.ndarray
-        Boolean array, True for ground-state rows.
-    positions : np.ndarray, shape (N, 3)
-        [x, y, z] positions of each state row.
-    velocities : np.ndarray, shape (N, 3)
-        [vx, vy, vz] velocities of each state row.
+    state : AtomState
+        Atom state in the Borde representation.
     pulse_detuning : float
         Laser detuning from resonance in Hz.
     t_pulse : float
@@ -601,20 +561,16 @@ def do_gaussian_pulse(
 
     Returns
     -------
-    tuple
-        (new_m_values, new_squiggly_amplitudes, new_is_ground, new_positions, new_velocities)
+    AtomState
+        Atom state after the Gaussian pulse.
     """
     # Compute 3-D position at pulse midpoint for Gaussian Rabi calculation
-    positions_mid = positions + velocities * (t_pulse / 2)
+    positions_mid = state.positions + state.velocities * (t_pulse / 2)
     rabi_per_row = gaussian_rabi(
         positions_mid, on_axis_rabi_freq, beam_waist, wavelength
     )
     return pulse_interaction_in_borde_representation(
-        m_values,
-        squiggly_amplitudes,
-        internal_is_ground,
-        positions,
-        velocities,
+        state,
         pulse_detuning=pulse_detuning,
         t_pulse=t_pulse,
         pulse_rabi_freq=rabi_per_row,
@@ -625,17 +581,15 @@ def do_gaussian_pulse(
     )
 
 
-def calculate_ground_and_excited_probabilities(
-    m_values, internal_amplitude, internal_is_ground
-):
-    unique_m = np.unique(m_values)
+def calculate_ground_and_excited_probabilities(state: AtomState):
+    unique_m = np.unique(state.m_values)
     ground_prob = 0.0
     excited_prob = 0.0
 
     for m in unique_m:
-        k_this_m = m_values == m
-        total_gnd_amp = np.sum(internal_amplitude[k_this_m & internal_is_ground])
-        total_exc_amp = np.sum(internal_amplitude[k_this_m & ~internal_is_ground])
+        k_this_m = state.m_values == m
+        total_gnd_amp = np.sum(state.amplitudes[k_this_m & state.internal_is_ground])
+        total_exc_amp = np.sum(state.amplitudes[k_this_m & ~state.internal_is_ground])
 
         ground_prob += np.abs(total_gnd_amp) ** 2
         excited_prob += np.abs(total_exc_amp) ** 2
@@ -643,14 +597,7 @@ def calculate_ground_and_excited_probabilities(
     return ground_prob, excited_prob
 
 
-def do_clearout(
-    m_values,
-    squiggly_amplitudes,
-    internal_is_ground,
-    positions,
-    velocities,
-    rng=None,
-):
+def do_clearout(state: AtomState, rng=None):
     """Projective measurement in the {ground, excited} basis.
 
     Per-atom Monte Carlo: samples one outcome from the current
@@ -664,16 +611,8 @@ def do_clearout(
 
     Parameters
     ----------
-    m_values : np.ndarray
-        Momentum quantum numbers for each state row.
-    squiggly_amplitudes : np.ndarray
-        Amplitudes in the Bordé representation.
-    internal_is_ground : np.ndarray
-        Boolean array, True for ground-state rows.
-    positions : np.ndarray, shape (N, 3)
-        [x, y, z] positions of each state row.
-    velocities : np.ndarray, shape (N, 3)
-        [vx, vy, vz] velocities of each state row.
+    state : AtomState
+        Atom state in the Bordé or lab representation.
     rng : np.random.Generator, optional
         Random-number generator.  If ``None``, ``np.random.default_rng()``
         is used (avoids the legacy global random state).
@@ -682,17 +621,13 @@ def do_clearout(
     -------
     None
         If the atom is projected to ground (discarded).
-    tuple
-        ``(m_values, squiggly_amplitudes, internal_is_ground, positions,
-        velocities)`` with ground rows removed and excited amplitudes
-        renormalised so the wavefunction has unit norm.
+    AtomState
+        Surviving excited-state rows, renormalised to unit norm.
     """
     if rng is None:
         rng = np.random.default_rng()
 
-    p_g, p_e = calculate_ground_and_excited_probabilities(
-        m_values, squiggly_amplitudes, internal_is_ground
-    )
+    p_g, p_e = calculate_ground_and_excited_probabilities(state)
 
     total_prob = p_g + p_e
     if np.isclose(total_prob, 0.0):
@@ -705,11 +640,11 @@ def do_clearout(
         return None
 
     # Survived -- keep only excited rows and renormalise
-    keep = ~internal_is_ground
-    return (
-        m_values[keep],
-        squiggly_amplitudes[keep] * (1.0 / np.sqrt(p_e)),
-        internal_is_ground[keep],
-        positions[keep],
-        velocities[keep],
+    keep = ~state.internal_is_ground
+    return AtomState(
+        m_values=state.m_values[keep],
+        positions=state.positions[keep],
+        velocities=state.velocities[keep],
+        amplitudes=state.amplitudes[keep] * (1.0 / np.sqrt(p_e)),
+        internal_is_ground=state.internal_is_ground[keep],
     )
