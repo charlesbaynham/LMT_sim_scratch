@@ -14,14 +14,10 @@ from lmt_sim.lmt_simulation import (
 
 
 def run_pulse_sequence(c0, c1, pulse_durations, pulse_detuning_hz=RECOIL_FREQUENCY_HZ):
-    m, pos, vel, amp, isg = make_atom_states(
-        position_z=0.0, initial_velocity_z=0.0, c0=c0, c1=c1
-    )
+    state = make_atom_states(position_z=0.0, initial_velocity_z=0.0, c0=c0, c1=c1)
     omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_detuning_hz)
-    sq_amp = transform_state_vector(
-        m,
-        amp,
-        isg,
+    state = transform_state_vector(
+        state,
         omega_laser=omega_laser,
         t=0.0,
         z=0.0,
@@ -29,12 +25,8 @@ def run_pulse_sequence(c0, c1, pulse_durations, pulse_detuning_hz=RECOIL_FREQUEN
         inverse=False,
     )
     for pulse_duration in pulse_durations:
-        m, sq_amp, isg, pos, vel = pulse_interaction_in_borde_representation(
-            m,
-            sq_amp,
-            isg,
-            pos,
-            vel,
+        state = pulse_interaction_in_borde_representation(
+            state,
             pulse_detuning=pulse_detuning_hz,
             t_pulse=pulse_duration,
             pulse_rabi_freq=RABI_FREQ,
@@ -43,7 +35,7 @@ def run_pulse_sequence(c0, c1, pulse_durations, pulse_detuning_hz=RECOIL_FREQUEN
             k_wavevector=K_WAVEVECTOR,
             vz=0.0,
         )
-    return calculate_ground_and_excited_probabilities(m, sq_amp, isg)
+    return calculate_ground_and_excited_probabilities(state)
 
 
 def test_pi_pulse():
