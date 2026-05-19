@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from lmt_sim.lmt_sequence import (
+    compute_spacetime_trajectory,
     Clearout,
     Freefall,
     Pulse,
@@ -461,6 +462,89 @@ def test_build_mach_zehnder_pulse_sequence_returns_pulse_objects():
     assert len(freefalls) == 2
     assert np.isclose(freefalls[0].duration, 200e-6)
     assert np.isclose(freefalls[1].duration, 200e-6)
+
+
+def test_compute_spacetime_trajectory_returns_expected_shapes_and_clearouts():
+    sequence = [
+        Pulse(
+            k=+1,
+            detuning_hz=RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="vel sel (UP-TOP)",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI / 2,
+        ),
+        Clearout(duration=0.0, label="velocity selection clearout"),
+        Pulse(
+            k=+1,
+            detuning_hz=RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="G1 #1 UP-TOP (BS1 pi/2)",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI / 2,
+        ),
+        Pulse(
+            k=-1,
+            detuning_hz=RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="G1 #2 DOWN-BOT (acc pi)",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI,
+        ),
+    ]
+
+    outputs = compute_spacetime_trajectory(sequence)
+    (
+        times,
+        z_top,
+        z_bot,
+        v_top,
+        v_bot,
+        m_top,
+        m_bot,
+        s_top,
+        s_bot,
+        labels,
+        clearout_times,
+    ) = outputs
+
+    expected_len = len(sequence) + 1
+    assert len(times) == expected_len
+    assert len(z_top) == expected_len
+    assert len(z_bot) == expected_len
+    assert len(v_top) == expected_len
+    assert len(v_bot) == expected_len
+    assert len(m_top) == expected_len
+    assert len(m_bot) == expected_len
+    assert len(s_top) == expected_len
+    assert len(s_bot) == expected_len
+    assert len(labels) == expected_len
+    assert len(clearout_times) == 1
+    assert labels[-1] == sequence[-1].label
+
+
+def test_compute_spacetime_trajectory_plot_true_runs_without_error():
+    sequence = [
+        Pulse(
+            k=+1,
+            detuning_hz=RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="vel sel (UP-TOP)",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI / 2,
+        ),
+        Pulse(
+            k=+1,
+            detuning_hz=RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="G1 #1 UP-TOP (BS1 pi/2)",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI / 2,
+        ),
+    ]
+
+    outputs = compute_spacetime_trajectory(sequence, plot=True)
+    assert len(outputs[0]) == len(sequence) + 1
 
 
 @pytest.mark.parametrize(

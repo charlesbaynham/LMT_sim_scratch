@@ -22,6 +22,10 @@ Examples of guards to respect (not exhaustive):
 
 Minimal working example of a Large Momentum Transfer (LMT) atom interferometer simulation for Sr-87 on the 698 nm clock transition, using the formalism of Bordé (PhysRevA.30.1836).
 
+## Environment
+
+This is python code, managed by UV. Call "uv sync" at the start of your session and prefix calls with `uv run xxx`.
+
 ## Architecture
 
 The simulation tracks an ensemble of **state rows**, each representing a branch of the atom's wavefunction. A state row consists of:
