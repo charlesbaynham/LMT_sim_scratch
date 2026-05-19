@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import logging
 
 import numpy as np
-
+import lmt_sim.lmt_simulation as sim
 from lmt_sim.lmt_simulation import RABI_FREQ, T_PI
 
 logger = logging.getLogger(__name__)
@@ -147,6 +147,75 @@ def run_pulse_sequence_in_lab_frame(
         inverse=False,
     )
 
+    # Run the sequence in the Borde representation
+    result = run_pulse_sequence_in_borde_representation(
+        m_values,
+        positions,
+        velocities,
+        squiggly_amplitudes,
+        internal_is_ground,
+        pulse_sequence,
+        initial_velocity_z=initial_velocity_z,
+        rng=rng,
+    )
+    if result is None:
+        # Atom was cleared out
+        return None
+    (
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
+        current_detuning_hz,
+        current_time,
+    ) = result
+
+    # Convert back to the lab frame
+    amplitudes = sim.transform_state_vector(
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        omega_laser=2 * np.pi * (sim.TRANSITION_FREQUENCY + current_detuning_hz),
+        t=current_time,
+        z=0.0,
+        vz=initial_velocity_z,
+        inverse=True,
+    )
+
+    return (
+        m_values,
+        positions,
+        velocities,
+        amplitudes,
+        internal_is_ground,
+        current_detuning_hz,
+        current_time,
+    )
+
+
+def run_pulse_sequence_in_borde_representation(
+    m_values,
+    positions,
+    velocities,
+    squiggly_amplitudes,
+    internal_is_ground,
+    pulse_sequence,
+    initial_velocity_z=0.0,
+    rng=None,
+):
+    """Run a pulse sequence while staying in the Borde representation."""
+
+    for event in pulse_sequence:
+        if not isinstance(event, (Pulse, Clearout, Freefall)):
+            raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
+
+    detunings_hz = [
+        pulse.detuning_hz for pulse in pulse_sequence if isinstance(pulse, Pulse)
+    ]
+    current_detuning_hz = detunings_hz[0] if len(detunings_hz) > 0 else 0.0
+    current_time = 0.0
+
     # Process the sequence event by event
     for event in pulse_sequence:
         if isinstance(event, Pulse):
@@ -156,17 +225,21 @@ def run_pulse_sequence_in_lab_frame(
             # If the frequency has changed, transform the states to the new frame
             new_detuning_hz = event.detuning_hz
             if new_detuning_hz != current_detuning_hz:
-                squiggly_amplitudes = (
-                    sim.change_laser_frequency_in_borde_representation(
-                        m_values,
-                        squiggly_amplitudes,
-                        internal_is_ground,
-                        positions,
-                        velocities,
-                        new_detuning_hz=new_detuning_hz,
-                        old_detuning_hz=current_detuning_hz,
-                        time=current_time,
-                    )
+                (
+                    m_values,
+                    squiggly_amplitudes,
+                    internal_is_ground,
+                    positions,
+                    velocities,
+                ) = sim.change_laser_frequency_in_borde_representation(
+                    m_values,
+                    squiggly_amplitudes,
+                    internal_is_ground,
+                    positions,
+                    velocities,
+                    new_detuning_hz=new_detuning_hz,
+                    old_detuning_hz=current_detuning_hz,
+                    time=current_time,
                 )
                 current_detuning_hz = new_detuning_hz
 
@@ -230,116 +303,6 @@ def run_pulse_sequence_in_lab_frame(
 
         current_time += event.duration
 
-    # Convert back to the lab frame
-    amplitudes = sim.transform_state_vector(
-        m_values,
-        squiggly_amplitudes,
-        internal_is_ground,
-        omega_laser=2 * np.pi * (sim.TRANSITION_FREQUENCY + current_detuning_hz),
-        t=current_time,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=True,
-    )
-
-    return (
-        m_values,
-        amplitudes,
-        internal_is_ground,
-        positions,
-        velocities,
-        current_detuning_hz,
-        current_time,
-    )
-
-
-def run_pulse_sequence_in_borde_representation(
-    m_values,
-    positions,
-    velocities,
-    squiggly_amplitudes,
-    internal_is_ground,
-    pulse_sequence,
-    initial_velocity_z=0.0,
-    rng=None,
-):
-    """Run a pulse sequence while staying in the Borde representation."""
-    import lmt_sim.lmt_simulation as sim
-
-    if not pulse_sequence:
-        raise ValueError("pulse_sequence must contain at least one pulse")
-
-    for event in pulse_sequence:
-        if not isinstance(event, (Pulse, Clearout, Freefall)):
-            raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
-
-    detunings_hz = [
-        pulse.detuning_hz for pulse in pulse_sequence if isinstance(pulse, Pulse)
-    ]
-    if len(detunings_hz) > 0 and any(d != detunings_hz[0] for d in detunings_hz):
-        raise ValueError(
-            "All pulses must currently use the same detuning for Bordé-frame propagation"
-        )
-
-    current_detuning_hz = detunings_hz[0] if len(detunings_hz) > 0 else 0.0
-    current_time = 0.0
-
-    for event in pulse_sequence:
-        if isinstance(event, Pulse):
-            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-                sim.pulse_interaction_in_borde_representation(
-                    m_values,
-                    squiggly_amplitudes,
-                    internal_is_ground,
-                    positions,
-                    velocities,
-                    pulse_detuning=event.detuning_hz,
-                    t_pulse=event.duration,
-                    pulse_rabi_freq=event.rabi_frequency,
-                    pulse_phase=event.phi,
-                    k_sign=event.k,
-                    k_wavevector=sim.K_WAVEVECTOR,
-                    vz=initial_velocity_z,
-                )
-            )
-        elif isinstance(event, Clearout):
-            result = sim.do_clearout(
-                m_values,
-                squiggly_amplitudes,
-                internal_is_ground,
-                positions,
-                velocities,
-                rng=rng,
-            )
-            if result is None:
-                return None
-            m_values, squiggly_amplitudes, internal_is_ground, positions, velocities = (
-                result
-            )
-
-        if (
-            isinstance(event, Freefall) or isinstance(event, Clearout)
-        ) and event.duration > 0.0:
-            (
-                m_values,
-                squiggly_amplitudes,
-                internal_is_ground,
-                positions,
-                velocities,
-            ) = sim.propagate_states_in_borde_representation(
-                m_values,
-                squiggly_amplitudes,
-                internal_is_ground,
-                positions,
-                velocities,
-                time_of_propegation=event.duration,
-                detuning_hz=current_detuning_hz,
-                vz=initial_velocity_z,
-                k_wavevector=sim.K_WAVEVECTOR,
-            )
-
-        current_time += event.duration
-
     return (
         m_values,
         squiggly_amplitudes,
@@ -363,8 +326,8 @@ def calculate_excited_fraction_for_pulse_sequence(
             "calculate_excited_fraction_for_pulse_sequence does not support Clearout events"
         )
 
-    m_values, positions, velocities, amplitudes, internal_is_ground = sim.make_atom_states(
-        initial_velocity_z=initial_velocity_z
+    m_values, positions, velocities, amplitudes, internal_is_ground = (
+        sim.make_atom_states(initial_velocity_z=initial_velocity_z)
     )
 
     result = run_pulse_sequence_in_lab_frame(

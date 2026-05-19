@@ -502,9 +502,10 @@ def change_laser_frequency_in_borde_representation(
     phase_gnd = np.exp(-1j * np.pi * delta_f * time)
     phase_exc = np.exp(+1j * np.pi * delta_f * time)
     phase = np.where(internal_is_ground, phase_gnd, phase_exc)
+    new_squiggly_amplitudes = squiggly_amplitudes * phase
     return (
         m_values,
-        squiggly_amplitudes * phase,
+        new_squiggly_amplitudes,
         internal_is_ground,
         positions,
         velocities,
