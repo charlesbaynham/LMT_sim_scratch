@@ -438,21 +438,28 @@ def compute_spacetime_trajectory(sequence, plot=False):
         if label == "vel sel (UP-TOP)":
             _flip(top, +1, t_pulse)
             bot.update({k: top[k] for k in ("z", "v", "m", "state")})
-        elif (not bottom_exists) and addresses_top and ("BS1" in label):
+        elif (not bottom_exists) and addresses_top and ("BS1" in label) and not addresses_bot:
             _drift(top, t_pulse)
             _flip(bot, k_sign, t_pulse)
             bottom_exists = True
         else:
-            if not (addresses_top ^ addresses_bot):
+            if addresses_top and addresses_bot:
+                # Both clouds addressed (e.g., "-BOTH" label)
+                _flip(top, k_sign, t_pulse)
+                if bottom_exists:
+                    _flip(bot, k_sign, t_pulse)
+            elif addresses_top ^ addresses_bot:
+                # Exactly one cloud addressed
+                target = top if addresses_top else bot
+                other = bot if addresses_top else top
+                _flip(target, k_sign, t_pulse)
+                if bottom_exists:
+                    _drift(other, t_pulse)
+            else:
                 raise ValueError(
-                    "Pulse label must address exactly one cloud with '-TOP' or '-BOT': "
+                    "Pulse label must address exactly one cloud with '-TOP', '-BOT', or both with '-BOTH': "
                     + label
                 )
-            target = top if addresses_top else bot
-            other = bot if addresses_top else top
-            _flip(target, k_sign, t_pulse)
-            if bottom_exists:
-                _drift(other, t_pulse)
 
         t += t_pulse
         times.append(t)
