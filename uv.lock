@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.13"
 
 [[package]]
@@ -234,6 +234,15 @@ wheels = [
 ]
 
 [[package]]
+name = "git-version-info"
+version = "0.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f1/bb/f1b3c4e971bb6d395f5a5322417e25f133dbb8c55456f81cc02ea0f21ef8/git_version_info-0.7.1.tar.gz", hash = "sha256:1df7891f196a160561f59f02ecee51752ad09a2299fffb5c9fcb06bbdf577bd6", size = 20306, upload-time = "2023-05-13T14:34:06.541Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/de/cf/c1b96156340b227638c81cdca718f51e04def4d49b07cf728e225aa0b388/git_version_info-0.7.1-py3-none-any.whl", hash = "sha256:1b96b408c5624bde1b3720526e41fecf4f32b3631e6a17b2601f515df2166ac3", size = 4626, upload-time = "2023-05-13T14:34:05.04Z" },
+]
+
+[[package]]
 name = "iniconfig"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -440,6 +449,7 @@ name = "lmt-sim-scratch"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "git-version-info" },
     { name = "ipykernel" },
     { name = "matplotlib" },
     { name = "numpy" },
@@ -458,6 +468,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "git-version-info", specifier = ">=0.7.1" },
     { name = "ipykernel", specifier = ">=7.2.0" },
     { name = "matplotlib" },
     { name = "numpy" },

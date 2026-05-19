@@ -10,6 +10,7 @@ dependencies = [
     "tqdm",
     "structlog",
     "ipykernel>=7.2.0",
+    "git-version-info>=0.7.1",
 ]
 
 [dependency-groups]
