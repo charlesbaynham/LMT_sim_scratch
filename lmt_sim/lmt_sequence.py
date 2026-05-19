@@ -343,7 +343,7 @@ def calculate_excited_fraction_for_pulse_sequence(
     if result is None:
         return None
 
-    m_values, amplitudes, internal_is_ground, *_ = result
+    m_values, _, _, amplitudes, internal_is_ground, *_ = result
     ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(
         m_values,
         amplitudes,

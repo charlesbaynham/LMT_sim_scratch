@@ -83,10 +83,10 @@ def calc_mz_excitation(
     else:
         (
             m_values,
-            amplitudes,
-            internal_is_ground,
             positions,
             velocities,
+            amplitudes,
+            internal_is_ground,
             current_detuning_hz,
             current_time,
         ) = result
