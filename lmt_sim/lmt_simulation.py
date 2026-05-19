@@ -8,9 +8,6 @@ from scipy import constants
 logger = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.INFO)
-# structlog.configure(
-#     wrapper_class=logging.make_filtering_bound_logger(logging.INFO),
-# )
 
 
 ######

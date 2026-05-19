@@ -438,7 +438,12 @@ def compute_spacetime_trajectory(sequence, plot=False):
         if label == "vel sel (UP-TOP)":
             _flip(top, +1, t_pulse)
             bot.update({k: top[k] for k in ("z", "v", "m", "state")})
-        elif (not bottom_exists) and addresses_top and ("BS1" in label) and not addresses_bot:
+        elif (
+            (not bottom_exists)
+            and addresses_top
+            and ("BS1" in label)
+            and not addresses_bot
+        ):
             _drift(top, t_pulse)
             _flip(bot, k_sign, t_pulse)
             bottom_exists = True
