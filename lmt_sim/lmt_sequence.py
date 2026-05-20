@@ -526,14 +526,14 @@ def _plot_spacetime(sequence, clouds, clearout_times):
             )
 
     for t_co in clearout_times:
-        ax_z.axvline(t_co * 1e6, color="tab:green", lw=0.6, alpha=0.6, linestyle="--")
+        ax_z.axvline(t_co * 1e6, color="tab:green", lw=4, alpha=0.3, linestyle="-")
     if len(clearout_times) > 0:
         ax_z.plot(
             [],
             [],
             color="tab:green",
-            linestyle="--",
-            alpha=0.6,
+            linestyle="-",
+            alpha=0.3,
             label=f"clearout ({len(clearout_times)} positions)",
         )
 
