@@ -50,7 +50,6 @@ class Freefall:
             raise ValueError("Freefall duration must be non-negative")
 
 
-
 def build_mach_zehnder_pulse_sequence(
     phi=0.0,
     detuning_hz=None,  # FIXME make this positional
@@ -301,6 +300,7 @@ def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
     tuple
         (clouds, clearout_times) where clouds is a list of Cloud objects.
     """
+
     @dataclass
     class Cloud:
         times: list
@@ -403,12 +403,12 @@ def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
         clouds = new_clouds
 
     if plot:
-        _plot_spacetime(clouds, clearout_times)
+        _plot_spacetime(sequence, clouds, clearout_times)
 
     return clouds, np.asarray(clearout_times)
 
 
-def _plot_spacetime(clouds, clearout_times):
+def _plot_spacetime(sequence, clouds, clearout_times):
     import matplotlib.pyplot as plt
 
     colors = plt.cm.tab10.colors
@@ -416,35 +416,149 @@ def _plot_spacetime(clouds, clearout_times):
         2, 1, figsize=(13, 9), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
     )
 
+    def build_plot_trace(cloud):
+        # Build the complete midpoint-convention trace from t=0 so that all
+        # positions are self-consistent regardless of where the cloud forked.
+        # Then slice to only show from one event before the fork.
+        times = [cloud.times[0]]
+        positions = [cloud.z[0]]
+        momentum_times = [cloud.times[0]]
+        momentum = [cloud.m[0]]
+        ground = [cloud.is_ground[0]]
+
+        current_time = cloud.times[0]
+        current_position = cloud.z[0]
+        current_m = cloud.m[0]
+        current_ground = cloud.is_ground[0]
+
+        for i in range(len(cloud.times) - 1):
+            event = sequence[i]
+            dt = event.duration
+            event_end_time = current_time + dt
+
+            if isinstance(event, Pulse):
+                mid_time = current_time + dt / 2
+                mid_position = (
+                    current_position + current_m * sim.RECOIL_VELOCITY * dt / 2
+                )
+                next_m = cloud.m[i + 1]
+                next_ground = cloud.is_ground[i + 1]
+                end_position = mid_position + next_m * sim.RECOIL_VELOCITY * dt / 2
+
+                times.extend([mid_time, event_end_time])
+                positions.extend([mid_position, end_position])
+                momentum_times.extend([mid_time, mid_time, event_end_time])
+                momentum.extend([current_m, next_m, next_m])
+                ground.extend([current_ground, next_ground])
+            else:
+                next_m = cloud.m[i + 1]
+                next_ground = cloud.is_ground[i + 1]
+                end_position = current_position + current_m * sim.RECOIL_VELOCITY * dt
+
+                times.append(event_end_time)
+                positions.append(end_position)
+                momentum_times.append(event_end_time)
+                momentum.append(next_m)
+                ground.append(next_ground)
+
+            current_time = event_end_time
+            current_position = positions[-1]
+            current_m = momentum[-1]
+            current_ground = ground[-1]
+
+        # Slice to start one event before the fork so forked clouds are only
+        # plotted from their branch point. Each event contributes 2 entries to
+        # the z/ground trace (Pulse) or 1 (everything else), and 3 or 1 to the
+        # momentum trace.
+        fi = max(0, cloud.fork_index - 1)
+        z_start = sum(2 if isinstance(sequence[i], Pulse) else 1 for i in range(fi))
+        m_start = sum(3 if isinstance(sequence[i], Pulse) else 1 for i in range(fi))
+
+        return (
+            np.asarray(times[z_start:]),
+            np.asarray(positions[z_start:]),
+            np.asarray(momentum_times[m_start:]),
+            np.asarray(momentum[m_start:]),
+            np.asarray(ground[z_start:]),
+        )
+
     for cloud in clouds:
         color = colors[cloud.color_index % len(colors)]
-        times_us = np.asarray(cloud.times) * 1e6
-        z_mm = np.asarray(cloud.z) * 1e3
-        m_arr = np.asarray(cloud.m)
-        start_j = max(0, cloud.fork_index - 1)
+        times_us, z_mm, m_times_us, m_arr, is_ground = build_plot_trace(cloud)
         label_added = False
-        for j in range(start_j, len(times_us) - 1):
-            ls = "-" if cloud.is_ground[j + 1] else ":"
+        for j in range(len(times_us) - 1):
+            ls = "-" if is_ground[j + 1] else ":"
             lbl = f"cloud {cloud.color_index}" if not label_added else None
-            ax_z.plot(times_us[j : j + 2], z_mm[j : j + 2], ls, color=color, lw=1.5, label=lbl)
+            ax_z.plot(
+                times_us[j : j + 2] * 1e6,
+                z_mm[j : j + 2] * 1e3,
+                ls,
+                color=color,
+                lw=1.5,
+                label=lbl,
+            )
             label_added = True
         if cloud.alive:
-            ax_z.plot(times_us[start_j:], z_mm[start_j:], "o", color=color, ms=3)
-            ax_m.plot(times_us[start_j:], m_arr[start_j:], "-o", color=color, ms=3,
-                      label=f"cloud {cloud.color_index}", drawstyle="steps-pre")
+            ax_z.plot(times_us * 1e6, z_mm * 1e3, "o", color=color, ms=3)
+            ax_m.plot(
+                m_times_us * 1e6,
+                m_arr,
+                "-o",
+                color=color,
+                ms=3,
+                label=f"cloud {cloud.color_index}",
+            )
         else:
-            ax_z.plot(times_us[start_j:-1], z_mm[start_j:-1], "o", color=color, ms=3)
-            ax_z.plot(times_us[-1:], z_mm[-1:], "x", color=color, ms=5, mew=1.5)
-            ax_m.plot(times_us[start_j:], m_arr[start_j:], "-", color=color, ms=3,
-                      label=f"cloud {cloud.color_index}", drawstyle="steps-pre")
-            ax_m.plot(times_us[start_j:-1], m_arr[start_j:-1], "o", color=color, ms=3)
-            ax_m.plot(times_us[-1:], m_arr[-1:], "x", color=color, ms=5, mew=1.5)
+            ax_z.plot(times_us[:-1] * 1e6, z_mm[:-1] * 1e3, "o", color=color, ms=3)
+            ax_z.plot(
+                times_us[-1:] * 1e6, z_mm[-1:] * 1e3, "x", color=color, ms=5, mew=1.5
+            )
+            ax_m.plot(
+                m_times_us * 1e6,
+                m_arr,
+                "-o",
+                color=color,
+                ms=3,
+                label=f"cloud {cloud.color_index}",
+            )
+            ax_m.plot(
+                m_times_us[-1:] * 1e6, m_arr[-1:], "x", color=color, ms=5, mew=1.5
+            )
 
     for t_co in clearout_times:
         ax_z.axvline(t_co * 1e6, color="tab:green", lw=0.6, alpha=0.6, linestyle="--")
     if len(clearout_times) > 0:
-        ax_z.plot([], [], color="tab:green", linestyle="--", alpha=0.6,
-                  label=f"clearout ({len(clearout_times)} positions)")
+        ax_z.plot(
+            [],
+            [],
+            color="tab:green",
+            linestyle="--",
+            alpha=0.6,
+            label=f"clearout ({len(clearout_times)} positions)",
+        )
+
+    # Pulse shading
+    pulse_fill_added = {+1: False, -1: False}
+    pulse_colors = {+1: "tab:blue", -1: "tab:red"}
+    pulse_labels = {+1: "k=+1 pulse", -1: "k=−1 pulse"}
+    t_event = 0.0
+    for event in sequence:
+        if isinstance(event, Pulse):
+            t_start_us = t_event * 1e6
+            t_end_us = (t_event + event.duration) * 1e6
+            lbl = pulse_labels[event.k] if not pulse_fill_added[event.k] else None
+            for ax in (ax_z, ax_m):
+                ax.axvspan(
+                    t_start_us,
+                    t_end_us,
+                    color=pulse_colors[event.k],
+                    alpha=0.12,
+                    lw=0,
+                    label=lbl,
+                )
+            lbl = None  # only add to one axis
+            pulse_fill_added[event.k] = True
+        t_event += event.duration
 
     ax_z.plot([], [], "-", color="gray", lw=1.5, label="|g> (solid)")
     ax_z.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")

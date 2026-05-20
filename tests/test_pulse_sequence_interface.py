@@ -416,6 +416,74 @@ def test_compute_spacetime_trajectory_plot_true_runs_without_error():
     assert len(clouds[0].times) == len(sequence) + 1
 
 
+def test_compute_spacetime_trajectory_plot_places_pulse_step_at_midpoint(monkeypatch):
+    sequence = [
+        Pulse(
+            k=+1,
+            detuning_hz=RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="midpoint-check",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI,
+        )
+    ]
+
+    class DummyAxis:
+        def __init__(self):
+            self.plot_calls = []
+            self.vline_calls = []
+
+        def plot(self, x, y, *args, **kwargs):
+            self.plot_calls.append((np.asarray(x), np.asarray(y), args, kwargs))
+            return []
+
+        def axvline(self, *args, **kwargs):
+            self.vline_calls.append((args, kwargs))
+
+        def set_ylabel(self, *args, **kwargs):
+            pass
+
+        def set_xlabel(self, *args, **kwargs):
+            pass
+
+        def set_title(self, *args, **kwargs):
+            pass
+
+        def legend(self, *args, **kwargs):
+            pass
+
+        def grid(self, *args, **kwargs):
+            pass
+
+        def axhline(self, *args, **kwargs):
+            pass
+
+        def axvspan(self, *args, **kwargs):
+            pass
+
+    ax_z = DummyAxis()
+    ax_m = DummyAxis()
+
+    def fake_subplots(*args, **kwargs):
+        return object(), (ax_z, ax_m)
+
+    monkeypatch.setattr("matplotlib.pyplot.subplots", fake_subplots)
+
+    compute_spacetime_trajectory(sequence, plot=True)
+
+    midpoint_us = T_PI * 1e6 / 2
+    end_us = T_PI * 1e6
+
+    z_segment_xs = [call[0] for call in ax_z.plot_calls if len(call[0]) == 2]
+    assert any(np.allclose(xs, [0.0, midpoint_us]) for xs in z_segment_xs)
+    assert any(np.allclose(xs, [midpoint_us, end_us]) for xs in z_segment_xs)
+
+    m_trace_xs = [call[0] for call in ax_m.plot_calls if len(call[0]) >= 3]
+    assert any(
+        np.allclose(xs, [0.0, midpoint_us, midpoint_us, end_us]) for xs in m_trace_xs
+    )
+
+
 def test_compute_spacetime_trajectory_mach_zehnder():
     sequence = build_mach_zehnder_pulse_sequence()
     clouds, clearout_times = compute_spacetime_trajectory(sequence)
