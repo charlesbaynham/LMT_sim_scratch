@@ -428,6 +428,38 @@ def test_compute_spacetime_trajectory_mach_zehnder():
     assert sorted(c.m[-1] for c in clouds) == [0, 0, 1, 1]
 
 
+def test_compute_spacetime_trajectory_alternating_k_lmt():
+    """Successive pi pulses with alternating k must each be resonant on the
+    accumulated momentum state, so the cloud should ratchet up in |m| and
+    alternate between |g> and |e>."""
+
+    def resonant_detuning(i):
+        return (2 * i + 1) * (-1) ** i * RECOIL_FREQUENCY_HZ
+
+    n = 5
+    sequence = [
+        Pulse(
+            k=+1 if i % 2 == 0 else -1,
+            detuning_hz=resonant_detuning(i),
+            phi=0.0,
+            label=f"lmt {i}",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI,
+        )
+        for i in range(n)
+    ]
+
+    clouds, _ = compute_spacetime_trajectory(sequence)
+
+    assert len(clouds) == 1, "pi pulses should never split the cloud"
+    cloud = clouds[0]
+    # Each pi pulse should alternate the internal state and accumulate +1 in m
+    expected_m = [0] + [i + 1 for i in range(n)]
+    expected_is_ground = [True] + [(i % 2 == 1) for i in range(n)]
+    assert cloud.m == expected_m
+    assert cloud.is_ground == expected_is_ground
+
+
 @pytest.mark.parametrize(
     ("phi", "detuning_hz", "initial_velocity_z", "time_between_pulses"),
     [

@@ -275,7 +275,8 @@ def _transition_probability(m, is_ground, pulse):
     omega_ab = np.pi * pulse.rabi_frequency
     # delta_rec = hbar*K²/(2M) = K*RECOIL_VELOCITY/2
     delta_rec = sim.K_WAVEVECTOR * sim.RECOIL_VELOCITY / 2
-    Omega_3 = 2 * np.pi * pulse.detuning_hz - (2 * m_ground + k) * delta_rec
+    # Bordé eq 7: ((m_g + k)^2 - m_g^2) = 2*m_g*k + 1  (since k^2 = 1)
+    Omega_3 = 2 * np.pi * pulse.detuning_hz - (2 * m_ground * k + 1) * delta_rec
     Omega = np.sqrt(Omega_3**2 + 4 * omega_ab**2)
     return float((2 * omega_ab / Omega) ** 2 * np.sin(Omega * pulse.duration / 2) ** 2)
 
