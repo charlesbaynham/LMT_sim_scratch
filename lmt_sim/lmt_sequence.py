@@ -361,7 +361,7 @@ def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
             if p >= flip_threshold:
                 dm = event.k if cloud.is_ground[-1] else -event.k
                 new_m = cloud.m[-1] + dm
-                new_z = cloud.z[-1] + 0.5 * (cloud.v + new_m * sim.RECOIL_VELOCITY) * dt
+                new_z = cloud.z[-1] + new_m * sim.RECOIL_VELOCITY * dt
                 cloud.times.append(t)
                 cloud.z.append(new_z)
                 cloud.m.append(new_m)
@@ -385,7 +385,7 @@ def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
                 drifter.labels.append(event.label)
                 dm = event.k if flipper.is_ground[-1] else -event.k
                 new_m = flipper.m[-1] + dm
-                new_z = flipper.z[-1] + 0.5 * (flipper.v + new_m * sim.RECOIL_VELOCITY) * dt
+                new_z = flipper.z[-1] + new_m * sim.RECOIL_VELOCITY * dt
                 flipper.times.append(t)
                 flipper.z.append(new_z)
                 flipper.m.append(new_m)
