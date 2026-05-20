@@ -309,6 +309,8 @@ def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
         is_ground: list
         labels: list
         alive: bool = True
+        fork_index: int = 0
+        color_index: int = 0
 
         @property
         def v(self):
@@ -321,6 +323,8 @@ def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
                 m=list(self.m),
                 is_ground=list(self.is_ground),
                 labels=list(self.labels),
+                fork_index=self.fork_index,
+                color_index=self.color_index,
             )
 
     for event in sequence:
@@ -330,6 +334,7 @@ def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
     t = 0.0
     clouds = [Cloud(times=[0.0], z=[0.0], m=[0], is_ground=[True], labels=[""])]
     clearout_times = []
+    next_color_index = 1
 
     for event in sequence:
         dt = event.duration
@@ -378,6 +383,9 @@ def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
             else:
                 drifter = cloud._fork()
                 flipper = cloud._fork()
+                flipper.fork_index = len(cloud.times)
+                flipper.color_index = next_color_index
+                next_color_index += 1
                 drifter.times.append(t)
                 drifter.z.append(drifter.z[-1] + drifter.v * dt)
                 drifter.m.append(drifter.m[-1])
@@ -408,19 +416,21 @@ def _plot_spacetime(clouds, clearout_times):
         2, 1, figsize=(13, 9), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
     )
 
-    for i, cloud in enumerate(clouds):
-        color = colors[i % len(colors)]
+    for cloud in clouds:
+        color = colors[cloud.color_index % len(colors)]
         times_us = np.asarray(cloud.times) * 1e6
         z_mm = np.asarray(cloud.z) * 1e3
         m_arr = np.asarray(cloud.m)
+        start_j = max(0, cloud.fork_index - 1)
         label_added = False
-        for j in range(len(times_us) - 1):
+        for j in range(start_j, len(times_us) - 1):
             ls = "-" if cloud.is_ground[j + 1] else ":"
-            lbl = f"cloud {i}" if not label_added else None
+            lbl = f"cloud {cloud.color_index}" if not label_added else None
             ax_z.plot(times_us[j : j + 2], z_mm[j : j + 2], ls, color=color, lw=1.5, label=lbl)
             label_added = True
-        ax_z.plot(times_us, z_mm, "o", color=color, ms=3)
-        ax_m.plot(times_us, m_arr, "-o", color=color, ms=3, label=f"cloud {i}", drawstyle="steps-pre")
+        ax_z.plot(times_us[start_j:], z_mm[start_j:], "o", color=color, ms=3)
+        ax_m.plot(times_us[start_j:], m_arr[start_j:], "-o", color=color, ms=3,
+                  label=f"cloud {cloud.color_index}", drawstyle="steps-pre")
 
     for t_co in clearout_times:
         ax_z.axvline(t_co * 1e6, color="tab:green", lw=0.6, alpha=0.6, linestyle="--")
