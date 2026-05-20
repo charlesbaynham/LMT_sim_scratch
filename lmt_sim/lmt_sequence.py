@@ -420,7 +420,7 @@ def _plot_spacetime(clouds, clearout_times):
             ax_z.plot(times_us[j : j + 2], z_mm[j : j + 2], ls, color=color, lw=1.5, label=lbl)
             label_added = True
         ax_z.plot(times_us, z_mm, "o", color=color, ms=3)
-        ax_m.plot(times_us, m_arr, "-o", color=color, ms=3, label=f"cloud {i}")
+        ax_m.plot(times_us, m_arr, "-o", color=color, ms=3, label=f"cloud {i}", drawstyle="steps-post")
 
     for t_co in clearout_times:
         ax_z.axvline(t_co * 1e6, color="tab:green", lw=0.6, alpha=0.6, linestyle="--")
