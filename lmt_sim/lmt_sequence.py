@@ -425,6 +425,7 @@ def _plot_spacetime(sequence, clouds, clearout_times):
         momentum_times = [cloud.times[0]]
         momentum = [cloud.m[0]]
         ground = [cloud.is_ground[0]]
+        m_ground = [cloud.is_ground[0]]
 
         current_time = cloud.times[0]
         current_position = cloud.z[0]
@@ -450,6 +451,7 @@ def _plot_spacetime(sequence, clouds, clearout_times):
                 momentum_times.extend([mid_time, mid_time, event_end_time])
                 momentum.extend([current_m, next_m, next_m])
                 ground.extend([current_ground, next_ground])
+                m_ground.extend([current_ground, next_ground, next_ground])
             else:
                 next_m = cloud.m[i + 1]
                 next_ground = cloud.is_ground[i + 1]
@@ -460,6 +462,7 @@ def _plot_spacetime(sequence, clouds, clearout_times):
                 momentum_times.append(event_end_time)
                 momentum.append(next_m)
                 ground.append(next_ground)
+                m_ground.append(next_ground)
 
             current_time = event_end_time
             current_position = positions[-1]
@@ -480,11 +483,12 @@ def _plot_spacetime(sequence, clouds, clearout_times):
             np.asarray(momentum_times[m_start:]),
             np.asarray(momentum[m_start:]),
             np.asarray(ground[z_start:]),
+            np.asarray(m_ground[m_start:]),
         )
 
     for cloud in clouds:
         color = colors[cloud.color_index % len(colors)]
-        times_us, z_mm, m_times_us, m_arr, is_ground = build_plot_trace(cloud)
+        times_us, z_mm, m_times_us, m_arr, is_ground, m_is_ground = build_plot_trace(cloud)
         label_added = False
         for j in range(len(times_us) - 1):
             ls = "-" if is_ground[j + 1] else ":"
@@ -498,29 +502,28 @@ def _plot_spacetime(sequence, clouds, clearout_times):
                 label=lbl,
             )
             label_added = True
+        m_label_added = False
+        for j in range(len(m_times_us) - 1):
+            ls = "-" if m_is_ground[j + 1] else ":"
+            lbl = f"cloud {cloud.color_index}" if not m_label_added else None
+            ax_m.plot(
+                m_times_us[j : j + 2] * 1e6,
+                m_arr[j : j + 2],
+                ls,
+                color=color,
+                lw=1.5,
+                label=lbl,
+            )
+            m_label_added = True
         if cloud.alive:
             ax_z.plot(times_us * 1e6, z_mm * 1e3, "o", color=color, ms=3)
-            ax_m.plot(
-                m_times_us * 1e6,
-                m_arr,
-                "-o",
-                color=color,
-                ms=3,
-                label=f"cloud {cloud.color_index}",
-            )
+            ax_m.plot(m_times_us * 1e6, m_arr, "o", color=color, ms=3)
         else:
             ax_z.plot(times_us[:-1] * 1e6, z_mm[:-1] * 1e3, "o", color=color, ms=3)
             ax_z.plot(
                 times_us[-1:] * 1e6, z_mm[-1:] * 1e3, "x", color=color, ms=5, mew=1.5
             )
-            ax_m.plot(
-                m_times_us * 1e6,
-                m_arr,
-                "-o",
-                color=color,
-                ms=3,
-                label=f"cloud {cloud.color_index}",
-            )
+            ax_m.plot(m_times_us[:-1] * 1e6, m_arr[:-1], "o", color=color, ms=3)
             ax_m.plot(
                 m_times_us[-1:] * 1e6, m_arr[-1:], "x", color=color, ms=5, mew=1.5
             )
@@ -562,6 +565,8 @@ def _plot_spacetime(sequence, clouds, clearout_times):
 
     ax_z.plot([], [], "-", color="gray", lw=1.5, label="|g> (solid)")
     ax_z.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")
+    ax_m.plot([], [], "-", color="gray", lw=1.5, label="|g> (solid)")
+    ax_m.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")
     ax_z.set_ylabel("z position (mm)")
     ax_z.set_title("LMT spacetime diagram")
     ax_z.legend(loc="upper left")
