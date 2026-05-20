@@ -483,6 +483,11 @@ def test_compute_spacetime_trajectory_plot_places_pulse_step_at_midpoint(monkeyp
         np.allclose(xs, [0.0, midpoint_us, midpoint_us, end_us]) for xs in m_trace_xs
     )
 
+    z_vline_xs = sorted(float(args[0]) for args, _ in ax_z.vline_calls)
+    m_vline_xs = sorted(float(args[0]) for args, _ in ax_m.vline_calls)
+    assert np.allclose(z_vline_xs, [0.0, end_us])
+    assert np.allclose(m_vline_xs, [0.0, end_us])
+
 
 def test_compute_spacetime_trajectory_mach_zehnder():
     sequence = build_mach_zehnder_pulse_sequence()
