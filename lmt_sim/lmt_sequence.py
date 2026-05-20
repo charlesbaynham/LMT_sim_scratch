@@ -428,9 +428,17 @@ def _plot_spacetime(clouds, clearout_times):
             lbl = f"cloud {cloud.color_index}" if not label_added else None
             ax_z.plot(times_us[j : j + 2], z_mm[j : j + 2], ls, color=color, lw=1.5, label=lbl)
             label_added = True
-        ax_z.plot(times_us[start_j:], z_mm[start_j:], "o", color=color, ms=3)
-        ax_m.plot(times_us[start_j:], m_arr[start_j:], "-o", color=color, ms=3,
-                  label=f"cloud {cloud.color_index}", drawstyle="steps-pre")
+        if cloud.alive:
+            ax_z.plot(times_us[start_j:], z_mm[start_j:], "o", color=color, ms=3)
+            ax_m.plot(times_us[start_j:], m_arr[start_j:], "-o", color=color, ms=3,
+                      label=f"cloud {cloud.color_index}", drawstyle="steps-pre")
+        else:
+            ax_z.plot(times_us[start_j:-1], z_mm[start_j:-1], "o", color=color, ms=3)
+            ax_z.plot(times_us[-1:], z_mm[-1:], "x", color=color, ms=5, mew=1.5)
+            ax_m.plot(times_us[start_j:], m_arr[start_j:], "-", color=color, ms=3,
+                      label=f"cloud {cloud.color_index}", drawstyle="steps-pre")
+            ax_m.plot(times_us[start_j:-1], m_arr[start_j:-1], "o", color=color, ms=3)
+            ax_m.plot(times_us[-1:], m_arr[-1:], "x", color=color, ms=5, mew=1.5)
 
     for t_co in clearout_times:
         ax_z.axvline(t_co * 1e6, color="tab:green", lw=0.6, alpha=0.6, linestyle="--")
