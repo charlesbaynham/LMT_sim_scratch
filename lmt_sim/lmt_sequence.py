@@ -488,7 +488,9 @@ def _plot_spacetime(sequence, clouds, clearout_times):
 
     for cloud in clouds:
         color = colors[cloud.color_index % len(colors)]
-        times_us, z_mm, m_times_us, m_arr, is_ground, m_is_ground = build_plot_trace(cloud)
+        times_us, z_mm, m_times_us, m_arr, is_ground, m_is_ground = build_plot_trace(
+            cloud
+        )
         label_added = False
         for j in range(len(times_us) - 1):
             ls = "-" if is_ground[j + 1] else ":"
