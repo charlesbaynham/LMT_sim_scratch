@@ -415,7 +415,7 @@ def _plot_spacetime(clouds, clearout_times):
         m_arr = np.asarray(cloud.m)
         label_added = False
         for j in range(len(times_us) - 1):
-            ls = "-" if cloud.is_ground[j] else ":"
+            ls = "-" if cloud.is_ground[j + 1] else ":"
             lbl = f"cloud {i}" if not label_added else None
             ax_z.plot(times_us[j : j + 2], z_mm[j : j + 2], ls, color=color, lw=1.5, label=lbl)
             label_added = True
