@@ -16,6 +16,7 @@ class Pulse:
     label: str
     rabi_frequency: float
     duration: float
+    beam_waist: float = 1e6  # "infinite" by default
 
     def __post_init__(self):
         if self.k not in (-1, +1):
@@ -202,15 +203,18 @@ def run_pulse_sequence_in_borde_representation(
                 current_detuning_hz = new_detuning_hz
 
             # Do the pulse interaction
-            state = sim.pulse_interaction_in_borde_representation(
-                state,
-                pulse_detuning=event.detuning_hz,
-                t_pulse=event.duration,
-                pulse_rabi_freq=event.rabi_frequency,
-                pulse_phase=event.phi,
-                k_sign=event.k,
-                k_wavevector=sim.K_WAVEVECTOR,
-                vz=initial_velocity_z,
+            state = (
+                sim.do_gaussian_pulse(  # FIXME WIP from here - done, but needs testing
+                    state,
+                    beam_waist=event.beam_waist,
+                    pulse_detuning=event.detuning_hz,
+                    t_pulse=event.duration,
+                    on_axis_rabi_freq=event.rabi_frequency,
+                    pulse_phase=event.phi,
+                    k_sign=event.k,
+                    k_wavevector=sim.K_WAVEVECTOR,
+                    vz=initial_velocity_z,
+                )
             )
 
         elif isinstance(event, Clearout):
