@@ -244,8 +244,7 @@ def run_pulse_sequence_in_borde_representation(
 
 
 def calculate_excited_fraction_for_pulse_sequence(
-    pulse_sequence,
-    initial_velocity_z=0.0,
+    pulse_sequence, velocity=(0.0, 0.0, 0.0), position=(0.0, 0.0, 0.0)
 ):
     """Calculate final excited-state fraction for a sequence without clearout."""
     import lmt_sim.lmt_simulation as sim
@@ -255,12 +254,21 @@ def calculate_excited_fraction_for_pulse_sequence(
             "calculate_excited_fraction_for_pulse_sequence does not support Clearout events"
         )
 
-    state = sim.make_atom_states(initial_velocity_z=initial_velocity_z)
+    vx, vy, vz = velocity
+    x, y, z = position
+    state = sim.make_atom_states(
+        velocity_x=vx,
+        velocity_y=vy,
+        initial_velocity_z=vz,
+        position_x=x,
+        position_y=y,
+        position_z=z,
+    )
 
     result = run_pulse_sequence_in_lab_frame(
         state,
         pulse_sequence,
-        initial_velocity_z=initial_velocity_z,
+        initial_velocity_z=vz,
     )
 
     if result is None:
