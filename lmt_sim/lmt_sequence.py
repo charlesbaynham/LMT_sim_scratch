@@ -107,6 +107,7 @@ def run_pulse_sequence_in_lab_frame(
     state,
     pulse_sequence,
     initial_velocity_z=0.0,
+    discard_threshold=1e-9,
     rng=None,
 ):
     """
@@ -147,6 +148,7 @@ def run_pulse_sequence_in_lab_frame(
         state,
         pulse_sequence,
         initial_velocity_z=initial_velocity_z,
+        discard_threshold=discard_threshold,
         rng=rng,
     )
     if result is None:
@@ -171,9 +173,15 @@ def run_pulse_sequence_in_borde_representation(
     state,
     pulse_sequence,
     initial_velocity_z=0.0,
+    discard_threshold=1e-9,
     rng=None,
 ):
-    """Run a pulse sequence while staying in the Borde representation."""
+    """Run a pulse sequence while staying in the Borde representation.
+
+    If a state ends up representing less then discard_threshold of the total
+    (i.e. its mod(amplitude) <= sqrt(discard_threshold)), it is discarded the
+    wavefunction renormalised.
+    """
 
     for event in pulse_sequence:
         if not isinstance(event, (Pulse, Clearout, Freefall)):
@@ -216,6 +224,9 @@ def run_pulse_sequence_in_borde_representation(
                     vz=initial_velocity_z,
                 )
             )
+
+            # If any states are below the discard threshold, discard them and renormalise
+            state = sim.discard_and_renormalise_state_vector(state, discard_threshold)
 
         elif isinstance(event, Clearout):
             # If it's a clearout, do the projection and abort if the atom is

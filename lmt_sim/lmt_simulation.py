@@ -648,3 +648,26 @@ def do_clearout(state: AtomState, rng=None):
         amplitudes=state.amplitudes[keep] * (1.0 / np.sqrt(p_e)),
         internal_is_ground=state.internal_is_ground[keep],
     )
+
+
+def discard_and_renormalise_state_vector(state: AtomState, discard_threshold: float):
+    """
+    Discard states with amplitude^2 <= discard_threshold and renormalise.
+    """
+
+    mod_squared_amplitude = np.abs(state.amplitudes) ** 2
+    keep_mask = mod_squared_amplitude > discard_threshold
+    if not np.any(keep_mask):
+        raise ValueError("All states discarded, increase discard_threshold")
+
+    new_amplitudes = state.amplitudes[keep_mask] * (
+        1.0 / np.sqrt(np.sum(np.abs(state.amplitudes[keep_mask]) ** 2))
+    )
+    new_state = AtomState(
+        m_values=state.m_values[keep_mask],
+        positions=state.positions[keep_mask],
+        velocities=state.velocities[keep_mask],
+        amplitudes=new_amplitudes,
+        internal_is_ground=state.internal_is_ground[keep_mask],
+    )
+    return new_state
