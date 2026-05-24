@@ -19,6 +19,7 @@ from lmt_sim.lmt_simulation import (
     T_PI,
     TRANSITION_FREQUENCY,
     calculate_ground_and_excited_probabilities,
+    discard_and_renormalise_state_vector,
     do_clearout,
     make_atom_states,
     propagate_states_in_borde_representation,
@@ -230,6 +231,10 @@ def legacy_run_mz_sequence_in_borde_representation(
         )
         current_time += event.duration
 
+    # Match the production runner, which discards near-zero branches after each
+    # pulse. The pruned branches carry ~1e-12 of the probability, so a single
+    # discard at the end reproduces the same surviving rows.
+    state = discard_and_renormalise_state_vector(state, 1e-9)
     return state, detuning_hz, current_time
 
 
@@ -313,6 +318,8 @@ def legacy_run_mz_sequence_with_clearout_in_borde_representation(
     )
     current_time += T_PI / 2
 
+    # Match the production runner's per-pulse discard (see note above).
+    state = discard_and_renormalise_state_vector(state, 1e-9)
     return state, detuning_hz, current_time
 
 
@@ -556,7 +563,7 @@ def test_pulse_sequence_interface_matches_legacy_results(
 
     new_result = calculate_excited_fraction_for_pulse_sequence(
         pulse_sequence,
-        initial_velocity_z=initial_velocity_z,
+        velocity=(0.0, 0.0, initial_velocity_z),
     )
     legacy_result = legacy_calc_mz_excitation(
         phi=phi,
