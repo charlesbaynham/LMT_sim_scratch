@@ -126,7 +126,8 @@ def run_pulse_sequence_in_lab_frame(
         pulse.detuning_hz for pulse in pulse_sequence if isinstance(pulse, Pulse)
     ]
     if len(detunings_hz) == 0:
-        logger.warning("No pulses in sequence, defaulting to zero detuning")
+        # Freefall-only or clearout-only sequences are valid; use the
+        # zero-detuning lab/Borde frame without logging noisy warnings.
         current_detuning_hz = 0.0
     else:
         current_detuning_hz = detunings_hz[0]
