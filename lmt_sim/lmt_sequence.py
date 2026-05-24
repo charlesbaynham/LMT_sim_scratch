@@ -170,20 +170,22 @@ def run_pulse_sequence_in_lab_frame(
     return state, current_detuning_hz, current_time
 
 
-def run_pulse_sequence_in_borde_representation(
+def iter_pulse_sequence_in_borde_representation(
     state,
     pulse_sequence,
     initial_velocity_z=0.0,
     discard_threshold=1e-9,
     rng=None,
 ):
-    """Run a pulse sequence while staying in the Borde representation.
+    """Yield ``(state, current_detuning_hz, current_time)`` before the first
+    event and after each event of ``pulse_sequence``.
 
-    If a state ends up representing less then discard_threshold of the total
-    (i.e. its mod(amplitude) <= sqrt(discard_threshold)), it is discarded the
-    wavefunction renormalised.
+    Source of truth for the per-event loop -- ``run_pulse_sequence_in_borde_representation``
+    is a thin wrapper that exhausts this generator and returns the final tuple.
+
+    Stops early (without a final yield) if a ``Clearout`` removes the atom;
+    consumers can detect this by counting yields against ``len(pulse_sequence) + 1``.
     """
-
     for event in pulse_sequence:
         if not isinstance(event, (Pulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
@@ -194,7 +196,8 @@ def run_pulse_sequence_in_borde_representation(
     current_detuning_hz = detunings_hz[0] if len(detunings_hz) > 0 else 0.0
     current_time = 0.0
 
-    # Process the sequence event by event
+    yield state, current_detuning_hz, current_time
+
     for event in pulse_sequence:
         if isinstance(event, Pulse):
             # If it's a Pulse, apply it to the state. This includes
@@ -235,7 +238,7 @@ def run_pulse_sequence_in_borde_representation(
             # must do it later
             result = sim.do_clearout(state, rng=rng)
             if result is None:
-                return None
+                return
             state = result
 
         if (
@@ -252,7 +255,38 @@ def run_pulse_sequence_in_borde_representation(
 
         current_time += event.duration
 
-    return state, current_detuning_hz, current_time
+        yield state, current_detuning_hz, current_time
+
+
+def run_pulse_sequence_in_borde_representation(
+    state,
+    pulse_sequence,
+    initial_velocity_z=0.0,
+    discard_threshold=1e-9,
+    rng=None,
+):
+    """Run a pulse sequence while staying in the Borde representation.
+
+    If a state ends up representing less then discard_threshold of the total
+    (i.e. its mod(amplitude) <= sqrt(discard_threshold)), it is discarded the
+    wavefunction renormalised.
+
+    Returns the final ``(state, detuning, time)`` tuple, or ``None`` if a
+    ``Clearout`` removed the atom mid-sequence.
+    """
+    n_expected = len(pulse_sequence) + 1
+    last = None
+    n = 0
+    for last in iter_pulse_sequence_in_borde_representation(
+        state, pulse_sequence,
+        initial_velocity_z=initial_velocity_z,
+        discard_threshold=discard_threshold,
+        rng=rng,
+    ):
+        n += 1
+    if n < n_expected:
+        return None
+    return last
 
 
 def calculate_excited_fraction_for_pulse_sequence(

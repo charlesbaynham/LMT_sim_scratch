@@ -22,7 +22,7 @@ from tqdm import tqdm
 
 import lmt_sim.lmt_simulation as sim
 from lmt_sim.lmt_simulation import make_atom_states
-from lmt_sim.lmt_sequence import Pulse, Clearout, Freefall
+from lmt_sim.lmt_sequence import iter_pulse_sequence_in_borde_representation
 
 
 def collect_branches(state):
@@ -79,78 +79,18 @@ def pixel_grid(branch_arrays, *, n_x=21, n_z=48,
     return x_edges, z_edges
 
 
-def _iter_event_states(initial_state, pulse_sequence, *,
-                       initial_velocity_z=0.0, discard_threshold=1e-9, rng=None):
-    """Yield the Bordé-frame state before the first event and after each event.
-
-    Mirrors the inner loop of ``run_pulse_sequence_in_borde_representation`` so
-    we can snapshot intermediates without re-running every prefix.  Stays in
-    the Bordé frame the whole time -- safe for ``collect_branches``, which only
-    cares about per-(m, internal) weights (invariant under the frame change).
-    """
-    detunings = [ev.detuning_hz for ev in pulse_sequence if isinstance(ev, Pulse)]
-    current_det = detunings[0] if detunings else 0.0
-    current_t = 0.0
-
-    # t=0, z=0 makes the lab->Bordé transform a no-op on a fresh initial state,
-    # but call it for completeness in case the caller passes something different.
-    state = sim.transform_state_vector(
-        initial_state,
-        omega_laser=2 * np.pi * (sim.TRANSITION_FREQUENCY + current_det),
-        t=0.0, z=0.0, vz=initial_velocity_z, inverse=False,
-    )
-    yield state
-
-    for event in pulse_sequence:
-        if isinstance(event, Pulse):
-            if event.detuning_hz != current_det:
-                state = sim.change_laser_frequency_in_borde_representation(
-                    state,
-                    new_detuning_hz=event.detuning_hz,
-                    old_detuning_hz=current_det,
-                    time=current_t,
-                )
-                current_det = event.detuning_hz
-            state = sim.do_gaussian_pulse(
-                state,
-                beam_waist=event.beam_waist,
-                pulse_detuning=event.detuning_hz,
-                t_pulse=event.duration,
-                on_axis_rabi_freq=event.rabi_frequency,
-                pulse_phase=event.phi,
-                k_sign=event.k,
-                k_wavevector=sim.K_WAVEVECTOR,
-                vz=initial_velocity_z,
-            )
-            state = sim.discard_and_renormalise_state_vector(state, discard_threshold)
-        elif isinstance(event, Clearout):
-            result = sim.do_clearout(state, rng=rng)
-            if result is None:
-                return  # atom fully cleared; iteration ends
-            state = result
-
-        if isinstance(event, (Freefall, Clearout)) and event.duration > 0.0:
-            state = sim.propagate_states_in_borde_representation(
-                state,
-                time_of_propegation=event.duration,
-                detuning_hz=current_det,
-                vz=initial_velocity_z,
-                k_wavevector=sim.K_WAVEVECTOR,
-            )
-
-        current_t += event.duration
-        yield state
-
-
 def collect_filmstrip(pulse_sequence, velocities, *,
                       c0=1.0, c1=0.0,
                       discard_threshold=1e-9,
                       progress=True, desc="Filmstrip"):
     """Snapshot the ensemble after every event of ``pulse_sequence``.
 
-    For each atom velocity, the sequence is run once and the state is captured
-    after every event.  Each snapshot's branches are added to per-snapshot
-    ground/excited buckets.
+    For each atom velocity, the sequence is run once via
+    ``iter_pulse_sequence_in_borde_representation`` and a snapshot is taken
+    after every event.  The yielded states are in the Bordé frame but that's
+    fine for ``collect_branches`` -- the frame-change phase factor is the same
+    for every row in a ``(m, internal)`` group, so ``|sum amplitudes|^2`` is
+    identical to the lab frame.
 
     Returns
     -------
@@ -165,8 +105,9 @@ def collect_filmstrip(pulse_sequence, velocities, *,
     iterator = tqdm(velocities, desc=desc) if progress else velocities
     for v in iterator:
         initial = make_atom_states(initial_velocity_z=v, c0=c0, c1=c1)
-        for i, state in enumerate(_iter_event_states(
-            initial, pulse_sequence, initial_velocity_z=v,
+        for i, (state, _, _) in enumerate(iter_pulse_sequence_in_borde_representation(
+            initial, pulse_sequence,
+            initial_velocity_z=v,
             discard_threshold=discard_threshold,
         )):
             g, e = collect_branches(state)
