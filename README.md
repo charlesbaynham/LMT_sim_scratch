@@ -1,7 +1,7 @@
 # LMT simulation scratch
 
 Simulation of large-momentum-transfer (LMT) atom interferometer pulse sequences
-for Rb-87, including a Bordé-representation pulse/propagation engine
+for Sr-87, including a Bordé-representation pulse/propagation engine
 (`lmt_sim/lmt_simulation.py`), a sequence layer (`lmt_sim/lmt_sequence.py`), and
 synthetic camera imaging (`lmt_sim/imaging.py`). Design notes live in `docs/`.
 
@@ -39,7 +39,7 @@ same warning is repeated at the top of `lmt_sim/imaging.py`.
 ### Placeholder blur size (`SINGLE_ATOM_WAVEPACKET_SIGMA_M ≈ 10 µm`)
 
 As a stand-in for the (untracked) wave-packet extent at readout, images are
-blurred by a single-atom Gaussian. Rough estimate for Rb-87 released from the
+blurred by a single-atom Gaussian. Rough estimate for Sr-87 released from the
 low harmonic-oscillator levels (n = 0..10) of an optical trap with ~10 µm beam
 waist (trap frequency ~1 kHz):
 

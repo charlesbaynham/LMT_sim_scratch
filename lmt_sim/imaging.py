@@ -53,7 +53,7 @@ from lmt_sim.lmt_sequence import iter_pulse_sequence_in_borde_representation
 # Rough single-atom wave-packet size to blur each image by, standing in for the
 # real (untracked) spatial extent of an atom's wave packet at readout.
 #
-# Estimate (Rb-87): an atom released from the low harmonic-oscillator levels
+# Estimate (Sr-87): an atom released from the low harmonic-oscillator levels
 # (n = 0..10) of an optical trap with ~10 um beam waist starts at an in-trap
 # position spread of sigma_0 ~ 0.2-1.1 um.  The uncertainty principle then fixes
 # a velocity spread sigma_v = hbar / (2 m sigma_0), so after ~4 ms of free fall
