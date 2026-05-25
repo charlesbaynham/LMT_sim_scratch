@@ -1,6 +1,6 @@
 # LMT Atom Interferometer Simulation
 
-**Note for agents:** `claude.md` is a symlink to this file. To persist changes, edit `AGENTS.md` directly.
+**Note for agents:** `CLAUDE.md` is a symlink to this file. To persist changes, edit `AGENTS.md` directly.
 
 ## IMPORTANT: Do not bypass intentional guards
 
