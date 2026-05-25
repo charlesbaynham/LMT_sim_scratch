@@ -1,5 +1,7 @@
 # LMT Atom Interferometer Simulation
 
+**Note for agents:** `CLAUDE.md` is a symlink to this file. To persist changes, edit `AGENTS.md` directly.
+
 ## IMPORTANT: Do not bypass intentional guards
 
 This codebase contains deliberate error guards — `ValueError`, `NotImplementedError`, assertion failures, and similar checks — that mark **known physics limitations**. These are tripwires, not bugs to fix.
