@@ -540,6 +540,43 @@ def test_compute_spacetime_trajectory_alternating_k_lmt():
     assert cloud.is_ground == expected_is_ground
 
 
+def test_compute_spacetime_trajectory_pi_over_two_split_is_pulse_area_invariant_on_resonance():
+    sequence_fast = [
+        Pulse(
+            k=+1,
+            detuning_hz=RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="fast bs1",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI / 2,
+        )
+    ]
+    sequence_slow = [
+        Pulse(
+            k=+1,
+            detuning_hz=RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="slow bs1",
+            rabi_frequency=RABI_FREQ / 100,
+            duration=T_PI * 50,
+        )
+    ]
+
+    fast_clouds, _ = compute_spacetime_trajectory(sequence_fast)
+    slow_clouds, _ = compute_spacetime_trajectory(sequence_slow)
+
+    assert len(fast_clouds) == 2
+    assert len(slow_clouds) == 2
+    assert sorted((cloud.m[-1], cloud.is_ground[-1]) for cloud in fast_clouds) == [
+        (0, True),
+        (1, False),
+    ]
+    assert sorted((cloud.m[-1], cloud.is_ground[-1]) for cloud in slow_clouds) == [
+        (0, True),
+        (1, False),
+    ]
+
+
 @pytest.mark.parametrize(
     ("phi", "detuning_hz", "initial_velocity_z", "time_between_pulses"),
     [
