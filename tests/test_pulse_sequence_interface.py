@@ -496,6 +496,34 @@ def test_compute_spacetime_trajectory_plot_places_pulse_step_at_midpoint(monkeyp
     assert np.allclose(m_vline_xs, [0.0, end_us])
 
 
+def test_compute_spacetime_trajectory_max_branches_plots_before_raising(monkeypatch):
+    sequence = [
+        Pulse(
+            k=+1,
+            detuning_hz=RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="split",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI / 2,
+        )
+    ]
+    plot_calls = []
+
+    def record_plot(sequence_arg, clouds_arg, clearout_times_arg):
+        plot_calls.append((sequence_arg, clouds_arg, clearout_times_arg))
+
+    monkeypatch.setattr("lmt_sim.lmt_sequence._plot_spacetime", record_plot)
+
+    with pytest.raises(RuntimeError, match="exceeded max_branches"):
+        compute_spacetime_trajectory(sequence, max_branches=1, plot=True)
+
+    assert len(plot_calls) == 1
+    plotted_sequence, plotted_clouds, plotted_clearout_times = plot_calls[0]
+    assert plotted_sequence is sequence
+    assert len([cloud for cloud in plotted_clouds if cloud.alive]) == 2
+    assert plotted_clearout_times == []
+
+
 def test_compute_spacetime_trajectory_mach_zehnder():
     sequence = build_mach_zehnder_pulse_sequence()
     clouds, clearout_times = compute_spacetime_trajectory(sequence)

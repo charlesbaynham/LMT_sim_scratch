@@ -338,7 +338,9 @@ def _transition_probability(m, is_ground, pulse):
     return float((2 * omega_ab / Omega) ** 2 * np.sin(Omega * pulse.duration / 2) ** 2)
 
 
-def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
+def compute_spacetime_trajectory(
+    sequence, *, flip_threshold=0.75, max_branches=None, plot=False
+):
     """Infer intended spacetime trajectory by simulating an ideal atom.
 
     Walks the sequence with a stationary, on-axis atom in the ground state and
@@ -350,6 +352,8 @@ def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
     sequence : list[Pulse | Clearout | Freefall]
     flip_threshold : float
         Probability >= this → flip; <= 1-this → no-op; between → split.
+    max_branches : int | None
+        Maximum allowed number of live branches. ``None`` disables the limit.
     plot : bool
         If True, produce a spacetime/momentum figure.
 
@@ -388,6 +392,20 @@ def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
     for event in sequence:
         if not isinstance(event, (Pulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
+    if max_branches is not None and max_branches < 1:
+        raise ValueError("max_branches must be positive or None")
+
+    def enforce_max_branches():
+        if max_branches is None:
+            return
+        live_branch_count = sum(cloud.alive for cloud in clouds)
+        if live_branch_count > max_branches:
+            if plot:
+                _plot_spacetime(sequence, clouds, clearout_times)
+            raise RuntimeError(
+                "compute_spacetime_trajectory exceeded max_branches: "
+                f"{live_branch_count} live branches > {max_branches}"
+            )
 
     t = 0.0
     clouds = [Cloud(times=[0.0], z=[0.0], m=[0], is_ground=[True], labels=[""])]
@@ -458,7 +476,8 @@ def compute_spacetime_trajectory(sequence, *, flip_threshold=0.75, plot=False):
                 flipper.is_ground.append(not flipper.is_ground[-1])
                 flipper.labels.append(event.label)
                 new_clouds.extend([drifter, flipper])
-        clouds = new_clouds
+            clouds = new_clouds
+            enforce_max_branches()
 
     if plot:
         _plot_spacetime(sequence, clouds, clearout_times)
