@@ -31,7 +31,6 @@ import numpy as np
 from lmt_sim.lmt_sequence import Clearout, Freefall, Pulse
 from lmt_sim.lmt_simulation import RECOIL_FREQUENCY_HZ
 
-
 # Experiment defaults, copied verbatim from icl_experiments/repository/lib/constants.py
 CLOCK_SHELVING_PULSE_TIME = 380e-6
 SHELVING_PULSE_CLEAROUT_DURATION = 2200e-6
