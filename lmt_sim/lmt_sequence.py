@@ -17,6 +17,10 @@ class Pulse:
     rabi_frequency: float
     duration: float
     beam_waist: float = 1e6  # "infinite" by default
+    # Probe (light) shift coefficient in 1/Hz. The effective detuning during the
+    # pulse is shifted by probe_shift_coefficient * rabi_frequency**2 Hz (the
+    # Rabi-squared / intensity scaling of a light shift). Default 0.0 disables it.
+    probe_shift_coefficient: float = 0.0
 
     def __post_init__(self):
         if self.k not in (-1, +1):
@@ -226,6 +230,7 @@ def iter_pulse_sequence_in_borde_representation(
                     k_sign=event.k,
                     k_wavevector=sim.K_WAVEVECTOR,
                     vz=initial_velocity_z,
+                    probe_shift_coefficient=event.probe_shift_coefficient,
                 )
             )
 
@@ -333,7 +338,12 @@ def _transition_probability(m, is_ground, pulse):
     # delta_rec = hbar*K²/(2M) = K*RECOIL_VELOCITY/2
     delta_rec = sim.K_WAVEVECTOR * sim.RECOIL_VELOCITY / 2
     # Bordé eq 7: ((m_g + k)^2 - m_g^2) = 2*m_g*k + 1  (since k^2 = 1)
-    Omega_3 = 2 * np.pi * pulse.detuning_hz - (2 * m_ground * k + 1) * delta_rec
+    # Include the probe (light) shift so the inferred trajectory matches the
+    # actual pulse: shift scales with intensity, i.e. rabi_frequency**2.
+    effective_detuning = (
+        pulse.detuning_hz + pulse.probe_shift_coefficient * pulse.rabi_frequency**2
+    )
+    Omega_3 = 2 * np.pi * effective_detuning - (2 * m_ground * k + 1) * delta_rec
     Omega = np.sqrt(Omega_3**2 + 4 * omega_ab**2)
     return float((2 * omega_ab / Omega) ** 2 * np.sin(Omega * pulse.duration / 2) ** 2)
 

@@ -294,6 +294,7 @@ def pulse_interaction_in_borde_representation(
     k_sign=+1,
     k_wavevector=K_WAVEVECTOR,
     vz: float = 0.0,
+    probe_shift_coefficient: float = 0.0,
 ):
     """
     Apply a laser pulse in the Borde representation
@@ -323,6 +324,13 @@ def pulse_interaction_in_borde_representation(
         Wavevector magnitude, by default K_WAVEVECTOR
     vz : float, optional
         Reference z-velocity (v_0) used for Borde phase calculations, by default 0.0
+    probe_shift_coefficient : float, optional
+        Probe (light) shift coefficient in 1/Hz, by default 0.0. While the pulse
+        is on, the effective detuning is shifted by
+        ``probe_shift_coefficient * rabi_freq**2`` Hz (per row). The Rabi-squared
+        scaling reflects the light shift being proportional to laser intensity
+        (Rabi ∝ field ∝ sqrt(intensity)). The shift is added to the laser
+        detuning and applies only during the pulse, not during free evolution.
 
     Returns
     -------
@@ -368,7 +376,11 @@ def pulse_interaction_in_borde_representation(
 
         # Borde uses omega_ab = pi * RABI_FREQ, angular frequencies in rad/s
         omega_ab = np.pi * rabi_arr[idx]
-        omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_detuning)
+        # Probe (light) shift: scales with intensity, i.e. Rabi**2.
+        effective_detuning = (
+            pulse_detuning + probe_shift_coefficient * rabi_arr[idx] ** 2
+        )
+        omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + effective_detuning)
 
         A, B, C, D = _calculate_interaction_constants(
             omega_laser,
@@ -526,6 +538,7 @@ def do_gaussian_pulse(
     k_wavevector=K_WAVEVECTOR,
     vz=0.0,
     wavelength=TRANSITION_WAVELENGTH,
+    probe_shift_coefficient=0.0,
 ):
     """Apply a laser pulse with a full 3-D Gaussian (TEM00) intensity profile.
 
@@ -558,6 +571,11 @@ def do_gaussian_pulse(
     wavelength : float, optional
         Laser wavelength in metres, by default TRANSITION_WAVELENGTH.
         Used to compute the Rayleigh range z_R = pi * w0^2 / wavelength.
+    probe_shift_coefficient : float, optional
+        Probe (light) shift coefficient in 1/Hz, by default 0.0. Shifts the
+        effective detuning by ``probe_shift_coefficient * rabi_freq**2`` Hz per
+        row (Rabi-squared, i.e. intensity, scaling). Because the Rabi frequency
+        is per-row for a Gaussian beam, the probe shift is naturally per-row too.
 
     Returns
     -------
@@ -578,6 +596,7 @@ def do_gaussian_pulse(
         k_sign=k_sign,
         k_wavevector=k_wavevector,
         vz=vz,
+        probe_shift_coefficient=probe_shift_coefficient,
     )
 
 
