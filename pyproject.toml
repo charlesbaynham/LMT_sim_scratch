@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "lmt-sim-scratch"
 version = "0.1.0"
@@ -21,3 +25,7 @@ dev = [
     "pytest",
     "sympy",
 ]
+
+[tool.setuptools.packages.find]
+include = ["lmt_sim*"]
+exclude = ["notebooks*"]
