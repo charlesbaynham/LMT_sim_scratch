@@ -31,7 +31,9 @@ RECOIL_VELOCITY = constants.hbar * K_WAVEVECTOR / MASS_ATOM
 # as (2m ± 1) * RECOIL_FREQUENCY_HZ.
 RECOIL_FREQUENCY_HZ = constants.hbar * K_WAVEVECTOR**2 / (2 * MASS_ATOM) / (2 * np.pi)
 
-
+GRAVITY_DOPPLER_PER_SEC_HZ = (
+    TRANSITION_FREQUENCY * constants.g / constants.c
+)
 @dataclass(frozen=True)
 class AtomState:
     m_values: np.ndarray
