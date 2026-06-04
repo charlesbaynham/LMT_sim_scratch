@@ -1,0 +1,16 @@
+image: ghcr.io/astral-sh/uv:python3.13-bookworm
+
+stages:
+  - test
+
+variables:
+  UV_FROZEN: "1"
+
+pytest:
+  stage: test
+  script:
+    - uv sync --frozen --group dev --no-install-project --python 3.13
+    - uv run --python 3.13 pytest -q
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
