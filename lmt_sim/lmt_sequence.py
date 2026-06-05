@@ -219,19 +219,17 @@ def iter_pulse_sequence_in_borde_representation(
                 current_detuning_hz = new_detuning_hz
 
             # Do the pulse interaction
-            state = (
-                sim.do_gaussian_pulse(  # FIXME WIP from here - done, but needs testing
-                    state,
-                    beam_waist=event.beam_waist,
-                    pulse_detuning=event.detuning_hz,
-                    t_pulse=event.duration,
-                    on_axis_rabi_freq=event.rabi_frequency,
-                    pulse_phase=event.phi,
-                    k_sign=event.k,
-                    k_wavevector=sim.K_WAVEVECTOR,
-                    vz=initial_velocity_z,
-                    probe_shift_coefficient=event.probe_shift_coefficient,
-                )
+            state = sim.do_gaussian_pulse(
+                state,
+                beam_waist=event.beam_waist,
+                pulse_detuning=event.detuning_hz,
+                t_pulse=event.duration,
+                on_axis_rabi_freq=event.rabi_frequency,
+                pulse_phase=event.phi,
+                k_sign=event.k,
+                k_wavevector=sim.K_WAVEVECTOR,
+                vz=initial_velocity_z,
+                probe_shift_coefficient=event.probe_shift_coefficient,
             )
 
             # If any states are below the discard threshold, discard them and renormalise
@@ -283,7 +281,8 @@ def run_pulse_sequence_in_borde_representation(
     last = None
     n = 0
     for last in iter_pulse_sequence_in_borde_representation(
-        state, pulse_sequence,
+        state,
+        pulse_sequence,
         initial_velocity_z=initial_velocity_z,
         discard_threshold=discard_threshold,
         rng=rng,
@@ -354,7 +353,8 @@ def build_sequence_from_lab_pulse_dump(
     durations_mu,
     opll_hz,
     beam_hz,
-    *,
+    probe_induced_alpha_up=3.02682e-07,
+    probe_induced_alpha_down=3.34563e-07,
     pi_pulse_threshold_s=50e-6,
 ):
     if pi_pulse_threshold_s <= 0.0:
@@ -382,7 +382,8 @@ def build_sequence_from_lab_pulse_dump(
 
     beam_sign = np.where(is_up, 1.0, -1.0)
     total_laser_frequency_hz = (
-        total_laser_frequency_hz - sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps * beam_sign
+        total_laser_frequency_hz
+        - sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps * beam_sign
     )
 
     centre_freq_hz = total_laser_frequency_hz[0] - sim.RECOIL_FREQUENCY_HZ
@@ -409,15 +410,6 @@ def build_sequence_from_lab_pulse_dump(
         else:
             rabi_freq_hz = 1 / (4 * this_duration)
 
-        # Probe-induced (AC-Stark) shift coefficient alpha: each pulse's
-        # resonance is shifted by alpha * rabi_frequency**2 Hz. Inferred from the
-        # measured up-beam recoil ladder (380 us pi velocity-selection, 95 us pi,
-        # 55 us pi mirrors). Differencing the pulse detunings cancels the unknown
-        # unperturbed transition frequency; the long-baseline (380 us, 55 us) pair
-        # gives alpha ~ -1.9e-5 Hz^-1, with the (95 us, 55 us) and (380 us, 95 us)
-        # pairs bracketing it at -1.3e-5 and -3.3e-5.
-        probe_induced_shift_coefficient = -1.9e-5
-
         sequence.append(
             Pulse(
                 k=+1 if this_is_up else -1,
@@ -426,12 +418,15 @@ def build_sequence_from_lab_pulse_dump(
                 label="LMT",
                 rabi_frequency=rabi_freq_hz,
                 duration=this_duration,
-                probe_shift_coefficient=probe_induced_shift_coefficient
+                probe_shift_coefficient=(
+                    probe_induced_alpha_up if this_is_up else probe_induced_alpha_down
+                ),
             )
         )
         t_now += this_duration
- 
+
     return sequence
+
 
 def compute_spacetime_trajectory(
     sequence, *, flip_threshold=0.75, max_branches=None, plot=False

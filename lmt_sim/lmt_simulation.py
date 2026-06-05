@@ -31,9 +31,9 @@ RECOIL_VELOCITY = constants.hbar * K_WAVEVECTOR / MASS_ATOM
 # as (2m ± 1) * RECOIL_FREQUENCY_HZ.
 RECOIL_FREQUENCY_HZ = constants.hbar * K_WAVEVECTOR**2 / (2 * MASS_ATOM) / (2 * np.pi)
 
-GRAVITY_DOPPLER_PER_SEC_HZ = (
-    TRANSITION_FREQUENCY * constants.g / constants.c
-)
+GRAVITY_DOPPLER_PER_SEC_HZ = TRANSITION_FREQUENCY * constants.g / constants.c
+
+
 @dataclass(frozen=True)
 class AtomState:
     m_values: np.ndarray
@@ -296,7 +296,7 @@ def pulse_interaction_in_borde_representation(
     vz: float = 0.0,
     probe_shift_coefficient: float = 0.0,
 ):
-    """
+    r"""
     Apply a laser pulse in the Borde representation
 
     Each pulse couples |a, m> (ground, momentum m) to |b, m+1> (excited,
@@ -304,6 +304,16 @@ def pulse_interaction_in_borde_representation(
 
     Since we track each state independently (so that we can consider spatial
     overlap) this doubles the size of the state vector each pulse.
+
+    The paramaterisation of the probe_shift_coefficient $\alpha$ is
+    $$
+    \omega_\text{probe} = \alpha_\mathrm{beam} \Omega^2
+    $$
+    where $\omega_\text{probe}$ is the probe (light) shift in radians per second and $\Omega$
+    is the Rabi frequency in the same units. $\alpha$ is therefore in units of inverse angular
+    frequency. Everywhere else we work in SI units (i.e. Hz) so watch out for this
+    conversion - it's chosen for consistancy with the measurement. The shift is added to the laser
+    detuning and applies only during the pulse, not during free evolution.
 
     Parameters
     ----------
@@ -325,13 +335,7 @@ def pulse_interaction_in_borde_representation(
     vz : float, optional
         Reference z-velocity (v_0) used for Borde phase calculations, by default 0.0
     probe_shift_coefficient : float, optional
-        Probe (light) shift coefficient in 1/Hz, by default 0.0. While the pulse
-        is on, the effective detuning is shifted by
-        ``probe_shift_coefficient * rabi_freq**2`` Hz (per row). The Rabi-squared
-        scaling reflects the light shift being proportional to laser intensity
-        (Rabi ∝ field ∝ sqrt(intensity)). The shift is added to the laser
-        detuning and applies only during the pulse, not during free evolution.
-
+        Probe (light) shift coefficient in 1/(rad/s), by default 0.0.
     Returns
     -------
     AtomState
@@ -377,10 +381,10 @@ def pulse_interaction_in_borde_representation(
         # Borde uses omega_ab = pi * RABI_FREQ, angular frequencies in rad/s
         omega_ab = np.pi * rabi_arr[idx]
         # Probe (light) shift: scales with intensity, i.e. Rabi**2.
-        effective_detuning = (
-            pulse_detuning + probe_shift_coefficient * rabi_arr[idx] ** 2
+        effective_detuning_hz = (
+            pulse_detuning + 2 * np.pi * probe_shift_coefficient * rabi_arr[idx] ** 2
         )
-        omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + effective_detuning)
+        omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + effective_detuning_hz)
 
         A, B, C, D = _calculate_interaction_constants(
             omega_laser,
