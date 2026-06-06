@@ -352,7 +352,9 @@ def build_sequence_from_lab_pulse_dump(
     start_times_mu,
     durations_mu,
     opll_hz,
-    beam_hz,
+    switch_hz,
+    delivery_hz=None,
+    delivery_setpoint=None,
     probe_induced_alpha_up=3.02682e-07,
     probe_induced_alpha_down=3.34563e-07,
     pi_pulse_threshold_s=50e-6,
@@ -360,25 +362,47 @@ def build_sequence_from_lab_pulse_dump(
     if pi_pulse_threshold_s <= 0.0:
         raise ValueError("pi_pulse_threshold_s must be positive")
 
+    if delivery_hz is None:
+        logger.warning(
+            "No delivery_hz provided; this will be deprecated in future versions."
+        )
+
+    if delivery_setpoint is None:
+        logger.warning(
+            "No delivery_setpoint provided; this will be deprecated in future versions."
+        )
+
     is_up = np.asarray(is_up, dtype=bool)
     start_times_mu = np.asarray(start_times_mu, dtype=float)
     durations_mu = np.asarray(durations_mu, dtype=float)
     opll_hz = np.asarray(opll_hz, dtype=float)
-    beam_hz = np.asarray(beam_hz, dtype=float)
+    switch_hz = np.asarray(switch_hz, dtype=float)
 
     lengths = {
         len(is_up),
         len(start_times_mu),
         len(durations_mu),
         len(opll_hz),
-        len(beam_hz),
+        len(switch_hz),
     }
+
+    if delivery_hz is not None:
+        delivery_hz = np.asarray(delivery_hz, dtype=float)
+        lengths.add(len(delivery_hz))
+    if delivery_setpoint is not None:
+        delivery_setpoint = np.asarray(delivery_setpoint, dtype=float)
+        lengths.add(len(delivery_setpoint))
+
+    # FIXME must do something with the setpoint info
+
     if len(lengths) != 1:
         raise ValueError("Lab pulse dump arrays must all have the same length")
 
     timestamps = start_times_mu * 1e-9
     durations = durations_mu * 1e-9
-    total_laser_frequency_hz = opll_hz + beam_hz
+    total_laser_frequency_hz = opll_hz + switch_hz
+    if delivery_hz is not None:
+        total_laser_frequency_hz = total_laser_frequency_hz + delivery_hz
 
     beam_sign = np.where(is_up, 1.0, -1.0)
     total_laser_frequency_hz = (
@@ -386,7 +410,17 @@ def build_sequence_from_lab_pulse_dump(
         - sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps * beam_sign
     )
 
-    centre_freq_hz = total_laser_frequency_hz[0] - sim.RECOIL_FREQUENCY_HZ
+    # Assume that the first pulse is on resonance
+    rabi_freq_first_pulse = (
+        1 / (2 * durations[0])
+        if durations[0] > pi_pulse_threshold_s
+        else 2 * np.pi / (4 * durations[0])
+    )
+
+    probe_shift_hz = 2 * np.pi * probe_induced_alpha_up * rabi_freq_first_pulse**2
+    centre_freq_hz = total_laser_frequency_hz[0] - (
+        sim.RECOIL_FREQUENCY_HZ + probe_shift_hz
+    )
 
     sequence = []
     t_now = 0.0
