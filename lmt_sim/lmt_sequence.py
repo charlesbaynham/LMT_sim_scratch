@@ -353,8 +353,8 @@ def build_sequence_from_lab_pulse_dump(
     durations_mu,
     opll_hz,
     switch_hz,
-    delivery_hz=None,
-    delivery_setpoint=None,
+    delivery_hz,
+    delivery_setpoint,
     probe_induced_alpha_up=3.02682e-07,
     probe_induced_alpha_down=3.34563e-07,
     pi_pulse_threshold_s=50e-6,
@@ -362,21 +362,13 @@ def build_sequence_from_lab_pulse_dump(
     if pi_pulse_threshold_s <= 0.0:
         raise ValueError("pi_pulse_threshold_s must be positive")
 
-    if delivery_hz is None:
-        logger.warning(
-            "No delivery_hz provided; this will be deprecated in future versions."
-        )
-
-    if delivery_setpoint is None:
-        logger.warning(
-            "No delivery_setpoint provided; this will be deprecated in future versions."
-        )
-
     is_up = np.asarray(is_up, dtype=bool)
     start_times_mu = np.asarray(start_times_mu, dtype=float)
     durations_mu = np.asarray(durations_mu, dtype=float)
     opll_hz = np.asarray(opll_hz, dtype=float)
     switch_hz = np.asarray(switch_hz, dtype=float)
+    delivery_hz = np.asarray(delivery_hz, dtype=float)
+    delivery_setpoint = np.asarray(delivery_setpoint, dtype=float)
 
     lengths = {
         len(is_up),
@@ -384,14 +376,9 @@ def build_sequence_from_lab_pulse_dump(
         len(durations_mu),
         len(opll_hz),
         len(switch_hz),
+        len(delivery_hz),
+        len(delivery_setpoint),
     }
-
-    if delivery_hz is not None:
-        delivery_hz = np.asarray(delivery_hz, dtype=float)
-        lengths.add(len(delivery_hz))
-    if delivery_setpoint is not None:
-        delivery_setpoint = np.asarray(delivery_setpoint, dtype=float)
-        lengths.add(len(delivery_setpoint))
 
     # FIXME must do something with the setpoint info
 
