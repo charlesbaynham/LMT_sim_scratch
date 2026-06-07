@@ -71,13 +71,17 @@ def test_zero_coefficient_is_backward_compatible():
 
 
 def test_probe_shift_equivalent_to_detuning_shift():
-    """A probe shift is identical to bumping the bare detuning by coeff*Rabi**2."""
+    """A probe shift is identical to lowering the bare detuning by coeff*Rabi**2.
+
+    The shift is subtracted (no factor of 2*pi): the recorded detuning sits above
+    the bare resonance by this amount, so removing it recovers the bare ladder.
+    """
     detuning = RECOIL_FREQUENCY_HZ
     coeff = PROBE_COEFF_1KHZ
     shift_hz = coeff * RABI_FREQ**2  # 1000 Hz
 
     shifted = _do_pulse(detuning, probe_shift_coefficient=coeff)
-    bumped = _do_pulse(detuning + shift_hz, probe_shift_coefficient=0.0)
+    bumped = _do_pulse(detuning - shift_hz, probe_shift_coefficient=0.0)
 
     assert np.allclose(shifted.amplitudes, bumped.amplitudes)
 
@@ -117,7 +121,7 @@ def test_probe_shift_at_sequence_level():
     )
 
     seq_shift = [Pulse(detuning_hz=detuning, probe_shift_coefficient=coeff, **common)]
-    seq_bump = [Pulse(detuning_hz=detuning + shift_hz, **common)]
+    seq_bump = [Pulse(detuning_hz=detuning - shift_hz, **common)]
 
     frac_shift = calculate_excited_fraction_for_pulse_sequence(seq_shift)
     frac_bump = calculate_excited_fraction_for_pulse_sequence(seq_bump)

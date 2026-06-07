@@ -18,8 +18,9 @@ class Pulse:
     duration: float
     beam_waist: float = 1e6  # "infinite" by default
     # Probe (light) shift coefficient in 1/Hz. The effective detuning during the
-    # pulse is shifted by probe_shift_coefficient * rabi_frequency**2 Hz (the
-    # Rabi-squared / intensity scaling of a light shift). Default 0.0 disables it.
+    # pulse is reduced by probe_shift_coefficient * rabi_frequency**2 Hz (the
+    # Rabi-squared / intensity scaling of a light shift; no factor of 2*pi).
+    # Default 0.0 disables it.
     probe_shift_coefficient: float = 0.0
 
     def __post_init__(self):
@@ -338,9 +339,10 @@ def _transition_probability(m, is_ground, pulse):
     delta_rec = sim.K_WAVEVECTOR * sim.RECOIL_VELOCITY / 2
     # Bordé eq 7: ((m_g + k)^2 - m_g^2) = 2*m_g*k + 1  (since k^2 = 1)
     # Include the probe (light) shift so the inferred trajectory matches the
-    # actual pulse: shift scales with intensity, i.e. rabi_frequency**2.
+    # actual pulse: shift scales with intensity, i.e. rabi_frequency**2. Subtracted
+    # to match the propagator (the recorded detuning sits above bare resonance).
     effective_detuning = (
-        pulse.detuning_hz + pulse.probe_shift_coefficient * pulse.rabi_frequency**2
+        pulse.detuning_hz - pulse.probe_shift_coefficient * pulse.rabi_frequency**2
     )
     Omega_3 = 2 * np.pi * effective_detuning - (2 * m_ground * k + 1) * delta_rec
     Omega = np.sqrt(Omega_3**2 + 4 * omega_ab**2)
@@ -355,8 +357,8 @@ def build_sequence_from_lab_pulse_dump(
     switch_hz,
     delivery_hz,
     delivery_setpoint,
-    probe_induced_alpha_up=2.889e-06,
-    probe_induced_alpha_down=2.889e-06,
+    probe_induced_alpha_up=1.8153e-05,
+    probe_induced_alpha_down=1.8153e-05,
     pi_pulse_threshold_s=50e-6,
     initial_velocity_z=0.0,
 ):
@@ -410,7 +412,7 @@ def build_sequence_from_lab_pulse_dump(
         else 2 * np.pi / (4 * durations[0])
     )
 
-    probe_shift_hz = 2 * np.pi * probe_induced_alpha_up * rabi_freq_first_pulse**2
+    probe_shift_hz = probe_induced_alpha_up * rabi_freq_first_pulse**2
     centre_freq_hz = total_laser_frequency_hz[0] - (
         sim.RECOIL_FREQUENCY_HZ + probe_shift_hz
     )
