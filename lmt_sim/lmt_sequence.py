@@ -358,6 +358,7 @@ def build_sequence_from_lab_pulse_dump(
     probe_induced_alpha_up=3.02682e-07,
     probe_induced_alpha_down=3.34563e-07,
     pi_pulse_threshold_s=50e-6,
+    initial_velocity_z=0.0,
 ):
     if pi_pulse_threshold_s <= 0.0:
         raise ValueError("pi_pulse_threshold_s must be positive")
@@ -392,10 +393,15 @@ def build_sequence_from_lab_pulse_dump(
         total_laser_frequency_hz = total_laser_frequency_hz + delivery_hz
 
     beam_sign = np.where(is_up, 1.0, -1.0)
-    total_laser_frequency_hz = (
-        total_laser_frequency_hz
-        - sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps * beam_sign
+    # Doppler shift seen by each beam from the atom's velocity. The velocity at
+    # time t is v(t) = initial_velocity_z + g * t, so the Doppler (v/lambda)
+    # splits into a constant initial-velocity part and the time-dependent
+    # gravity part. Both enter with opposite sign for the up vs down beam.
+    initial_velocity_doppler_hz = initial_velocity_z / sim.TRANSITION_WAVELENGTH
+    velocity_doppler_hz = (
+        initial_velocity_doppler_hz + sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps
     )
+    total_laser_frequency_hz = total_laser_frequency_hz - velocity_doppler_hz * beam_sign
 
     # Assume that the first pulse is on resonance
     rabi_freq_first_pulse = (
