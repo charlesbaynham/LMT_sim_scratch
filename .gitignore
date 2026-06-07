@@ -9,6 +9,11 @@
 *.pkl
 hifais_data/
 
+# Claude / vendored deps
+.claude/worktrees
+.claude/settings.local.json
+vendor/
+
 # Editors / OS
 .vscode/
 .direnv

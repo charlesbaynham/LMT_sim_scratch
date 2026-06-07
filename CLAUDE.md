@@ -1,7 +1,5 @@
 # LMT Atom Interferometer Simulation
 
-**Note for agents:** `CLAUDE.md` is a symlink to this file. To persist changes, edit `AGENTS.md` directly.
-
 ## IMPORTANT: Do not bypass intentional guards
 
 This codebase contains deliberate error guards — `ValueError`, `NotImplementedError`, assertion failures, and similar checks — that mark **known physics limitations**. These are tripwires, not bugs to fix.
@@ -27,6 +25,24 @@ Minimal working example of a Large Momentum Transfer (LMT) atom interferometer s
 ## Environment
 
 This is python code, managed by UV. Call "uv sync" at the start of your session and prefix calls with `uv run xxx`.
+
+## Vendored dependencies
+
+This repo uses a Claude Code `SessionStart` hook (configured in `.claude/settings.json`) to
+vendor a pinned copy of `icl_experiments` from GitLab into `vendor/icl_experiments/`.
+The clone uses the public HTTPS URL:
+
+- `https://gitlab.com/aion-physics/code/artiq/experiment-repositories/icl_experiments.git`
+- pinned to commit `cec25f6d3e7d9d92455d77d8eeb0ff8a6927c521`
+
+The hook runs automatically at the start of each Claude session. If it fails (e.g. you are
+offline), run it manually:
+
+```bash
+python3 .claude/hooks/clone_icl_experiments.py
+```
+
+`vendor/` is ignored by Git so the cloned repository is not committed.
 
 ## Architecture
 
