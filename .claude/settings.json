@@ -10,6 +10,16 @@
                         "statusMessage": "Cloning vendored icl_experiments into vendor/..."
                     }
                 ]
+            },
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "command -v uv >/dev/null 2>&1 && uv sync 2>/dev/null || true",
+                        "timeout": 120,
+                        "statusMessage": "Syncing Python dependencies with uv..."
+                    }
+                ]
             }
         ]
     }
