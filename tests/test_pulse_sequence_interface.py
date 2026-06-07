@@ -11,6 +11,7 @@ from lmt_sim.lmt_sequence import (
     run_pulse_sequence_in_borde_representation,
     build_mach_zehnder_pulse_sequence,
     build_sequence_from_lab_pulse_dump,
+    calibrate_probe_shift_and_velocity_from_dump,
 )
 from lmt_sim.lmt_simulation import (
     AtomState,
@@ -911,3 +912,72 @@ def test_build_sequence_logical_not_flips_beams():
     flipped_ks = [event.k for event in flipped if isinstance(event, Pulse)]
     assert base_ks == [1, -1]
     assert flipped_ks == [-1, 1]
+
+
+def _second_pulse_detuning(dump):
+    sequence = build_sequence_from_lab_pulse_dump(**dump)
+    pulses = [event for event in sequence if isinstance(event, Pulse)]
+    return pulses[1].detuning_hz
+
+
+def test_aom_frequencies_are_subtracted_opll_is_added():
+    """The switch and delivery AOMs lower the optical frequency at the atom, so
+    a per-pulse increase in either must DECREASE that pulse's detuning -- the
+    opposite sign to the OPLL, which adds. Verified absolutely against the
+    BIPM Sr-87 line (only +opll-switch-delivery lands on resonance)."""
+    # Use two up pulses so beam direction is identical and the first-pulse
+    # anchor cancels: only the pulse-2 offset survives.
+    base = dict(
+        is_up=np.array([True, True]),
+        start_times_mu=np.array([0.0, 1_000_000.0]),
+        durations_mu=np.array([95_000.0, 95_000.0]),
+        opll_hz=np.array([80e6, 80e6]),
+        switch_hz=np.array([200e6, 200e6]),
+        delivery_hz=np.array([99e6, 99e6]),
+        delivery_setpoint=np.array([2.0, 2.0]),
+    )
+    ref = _second_pulse_detuning(base)
+
+    bump_opll = dict(base, opll_hz=np.array([80e6, 80e6 + 1e3]))
+    bump_switch = dict(base, switch_hz=np.array([200e6, 200e6 + 1e3]))
+    bump_delivery = dict(base, delivery_hz=np.array([99e6, 99e6 + 1e3]))
+
+    # OPLL adds: +1 kHz on pulse 2 -> +1 kHz detuning.
+    assert _second_pulse_detuning(bump_opll) - ref == pytest.approx(1e3)
+    # Switch and delivery subtract: +1 kHz on pulse 2 -> -1 kHz detuning.
+    assert _second_pulse_detuning(bump_switch) - ref == pytest.approx(-1e3)
+    assert _second_pulse_detuning(bump_delivery) - ref == pytest.approx(-1e3)
+
+
+def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder():
+    """The auto-calibration is a hacky self-consistent fit: it must warn, and
+    the (alpha, v0) it returns must place every pulse on the integer recoil
+    ladder once its probe shift is removed."""
+    # A small synthetic LMT-like dump: alternating up/down pulses climbing the
+    # ladder, with the experiment's switch offsets (+1.5 kHz up, +5.8 kHz down)
+    # and two different up-beam pulse lengths so alpha is identifiable.
+    is_up = np.array([True, False, True, False, True])
+    durations_mu = np.array([380_000.0, 68_000.0, 54_999.0, 68_000.0, 54_999.0])
+    switch_hz = np.where(is_up, 200e6 + 1.5e3, 200e6 + 5.8e3)
+    dump = dict(
+        is_up=is_up,
+        start_times_mu=np.array([0.0, 1e6, 2e6, 3e6, 4e6]),
+        durations_mu=durations_mu,
+        opll_hz=np.full(5, 80e6),
+        switch_hz=switch_hz,
+        delivery_hz=np.full(5, 99.4853e6),
+        delivery_setpoint=np.full(5, 2.0),
+    )
+
+    with pytest.warns(UserWarning, match="HACKY"):
+        alpha, v0 = calibrate_probe_shift_and_velocity_from_dump(**dump)
+
+    sequence = build_sequence_from_lab_pulse_dump(
+        **dump, probe_induced_alpha_up=alpha, probe_induced_alpha_down=alpha,
+        initial_velocity_z=v0,
+    )
+    for event in sequence:
+        if isinstance(event, Pulse):
+            effective = event.detuning_hz - alpha * event.rabi_frequency**2
+            rungs = effective / RECOIL_FREQUENCY_HZ
+            assert abs(rungs - round(rungs)) < 0.05

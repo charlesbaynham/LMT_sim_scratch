@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import logging
+import warnings
 
 import numpy as np
 import lmt_sim.lmt_simulation as sim
@@ -407,9 +408,24 @@ def build_sequence_from_lab_pulse_dump(
 
     timestamps = start_times_mu * 1e-9
     durations = durations_mu * 1e-9
-    total_laser_frequency_hz = opll_hz + switch_hz
+    # Optical-frequency budget at the atom (knowledge of the lab infrastructure
+    # lives here, not in the simulation engine).
+    #
+    # The switch and delivery AOMs are both on the frequency-SUBTRACTING order:
+    # the light reaching the atom is the clock laser MINUS each AOM drive
+    # frequency. The OPLL offset, by contrast, ADDS: the dump records OPLL
+    # numbers relative to the bare 698 reference *before* the OPLL is applied,
+    # so it must be added back in here.
+    #
+    # This was verified absolutely against the BIPM Sr-87 clock line: starting
+    # from the wavemeter clock-laser frequency, only ``+ opll - switch -
+    # delivery`` lands on resonance (to <1 MHz, within wavemeter accuracy);
+    # every other sign choice is >=80 MHz off. Getting the switch sign wrong
+    # flips the up/down switch-detuning differential and throws the down beam
+    # off the recoil ladder by ~2 recoils.
+    total_laser_frequency_hz = opll_hz - switch_hz
     if delivery_hz is not None:
-        total_laser_frequency_hz = total_laser_frequency_hz + delivery_hz
+        total_laser_frequency_hz = total_laser_frequency_hz - delivery_hz
 
     # is_up is guaranteed boolean here (validated and cast above), so np.where
     # and the ``if this_is_up`` branches below select up vs down unambiguously.
@@ -474,6 +490,138 @@ def build_sequence_from_lab_pulse_dump(
         t_now += this_duration
 
     return sequence
+
+
+def calibrate_probe_shift_and_velocity_from_dump(
+    is_up,
+    start_times_mu,
+    durations_mu,
+    opll_hz,
+    switch_hz,
+    delivery_hz,
+    delivery_setpoint,
+    pi_pulse_threshold_s=50e-6,
+):
+    r"""Infer ``(probe_shift_alpha, initial_velocity_z)`` from a lab pulse dump.
+
+    .. warning::
+
+        This is a **hacky stop-gap**. It reverse-engineers two physical
+        constants by *assuming the experiment was correctly tuned* -- i.e. that
+        every pulse was meant to sit on the integer recoil ladder -- and then
+        fitting whatever offsets make that true. It is a self-fulfilling
+        calibration, not a measurement. These numbers should instead come from
+        **real, independent calibrations**: the probe (AC-Stark) coefficient
+        from a dedicated light-shift-vs-intensity measurement, and the
+        initial velocity from the measured launch dynamics / time-of-flight.
+        A loud :class:`UserWarning` is emitted every time this runs so it can
+        never quietly masquerade as a real calibration.
+
+    The derivation mirrors what was previously done by hand:
+
+    * ``alpha`` (probe-shift coefficient, 1/Hz): the up-beam pulses share one
+      beam, so after removing the probe shift ``alpha * rabi**2`` their
+      effective detunings must differ only by an integer number of recoils.
+      Comparing the reference up pulse with the up pulse of most-different Rabi
+      frequency isolates ``alpha`` from the recoil ladder.
+
+    * ``v0`` (initial z-velocity, m/s): with ``alpha`` applied to both beams,
+      any residual constant offset between the up and down ladders is the
+      differential Doppler shift ``2 * v0 / lambda`` (the beams counter-
+      propagate). Solving for ``v0`` lands the down pulses back on the up
+      ladder.
+
+    .. note::
+
+        ``v0`` is only determined **modulo one recoil-velocity quantum**
+        (``recoil * lambda / 2``): a whole-recoil error in ``v0`` is
+        indistinguishable from placing the down pulses one rung over. The
+        branch nearest zero is chosen. This integer ambiguity is one more
+        reason to use a real velocity measurement instead.
+
+    Parameters match :func:`build_sequence_from_lab_pulse_dump`.
+
+    Returns
+    -------
+    (float, float)
+        ``(probe_shift_alpha, initial_velocity_z)`` ready to feed straight into
+        :func:`build_sequence_from_lab_pulse_dump` as
+        ``probe_induced_alpha_up = probe_induced_alpha_down = probe_shift_alpha``
+        and ``initial_velocity_z``.
+    """
+    warnings.warn(
+        "calibrate_probe_shift_and_velocity_from_dump is a HACKY self-consistent "
+        "fit: it assumes every pulse was meant to be on the recoil ladder and "
+        "backs out alpha and v0 to force that. These are NOT measurements. "
+        "Replace with real light-shift and launch-velocity calibrations.",
+        UserWarning,
+        stacklevel=2,
+    )
+
+    recoil = sim.RECOIL_FREQUENCY_HZ
+    wavelength = sim.TRANSITION_WAVELENGTH
+
+    # Build with the probe shift and initial-velocity Doppler switched OFF so the
+    # recorded (centre-anchored) detunings are exposed directly. The AOM-sign
+    # convention is whatever build_sequence_from_lab_pulse_dump uses -- this
+    # calibration is consistent with it by construction.
+    bare_sequence = build_sequence_from_lab_pulse_dump(
+        is_up=is_up,
+        start_times_mu=start_times_mu,
+        durations_mu=durations_mu,
+        opll_hz=opll_hz,
+        switch_hz=switch_hz,
+        delivery_hz=delivery_hz,
+        delivery_setpoint=delivery_setpoint,
+        probe_induced_alpha_up=0.0,
+        probe_induced_alpha_down=0.0,
+        pi_pulse_threshold_s=pi_pulse_threshold_s,
+        initial_velocity_z=0.0,
+    )
+    pulses = [event for event in bare_sequence if isinstance(event, Pulse)]
+    up_pulses = [(p.detuning_hz, p.rabi_frequency) for p in pulses if p.k == +1]
+    down_pulses = [(p.detuning_hz, p.rabi_frequency) for p in pulses if p.k == -1]
+
+    if len(up_pulses) < 2:
+        raise ValueError(
+            "Need at least two up-beam pulses with different Rabi frequencies "
+            "to infer the probe-shift coefficient."
+        )
+
+    # --- alpha: from two up pulses with the largest Rabi**2 separation ---
+    det_ref, rabi_ref = up_pulses[0]
+    det_alt, rabi_alt = max(
+        up_pulses[1:], key=lambda dr: abs(dr[1] ** 2 - rabi_ref**2)
+    )
+    if rabi_alt**2 == rabi_ref**2:
+        raise ValueError(
+            "All up-beam pulses share the same Rabi frequency; cannot separate "
+            "the probe shift from the recoil ladder."
+        )
+    # After stark-correction the two up pulses differ by an integer number of
+    # recoils; that integer is robust because the residual stark term is < 1
+    # recoil.
+    ladder_separation_hz = round((det_alt - det_ref) / recoil) * recoil
+    probe_shift_alpha = ((det_alt - det_ref) - ladder_separation_hz) / (
+        rabi_alt**2 - rabi_ref**2
+    )
+
+    # --- v0: residual up/down ladder offset is the differential Doppler ---
+    def ladder_residual_hz(detuning_hz, rabi_frequency):
+        effective = detuning_hz - probe_shift_alpha * rabi_frequency**2
+        return effective - round(effective / recoil) * recoil
+
+    if down_pulses:
+        mean_down_residual_hz = float(
+            np.mean([ladder_residual_hz(d, r) for d, r in down_pulses])
+        )
+        # build subtracts velocity_doppler * beam_sign, so turning on v0 shifts
+        # the down-beam detunings by +2*v0/lambda; pick v0 to zero the residual.
+        initial_velocity_z = -mean_down_residual_hz * wavelength / 2.0
+    else:
+        initial_velocity_z = 0.0
+
+    return probe_shift_alpha, initial_velocity_z
 
 
 def compute_spacetime_trajectory(
