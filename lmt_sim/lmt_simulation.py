@@ -307,13 +307,14 @@ def pulse_interaction_in_borde_representation(
 
     The paramaterisation of the probe_shift_coefficient $\alpha$ is
     $$
-    \omega_\text{probe} = \alpha_\mathrm{beam} \Omega^2
+    \delta_\text{probe} = \alpha_\mathrm{beam} \Omega^2
     $$
-    where $\omega_\text{probe}$ is the probe (light) shift in radians per second and $\Omega$
-    is the Rabi frequency in the same units. $\alpha$ is therefore in units of inverse angular
-    frequency. Everywhere else we work in SI units (i.e. Hz) so watch out for this
-    conversion - it's chosen for consistancy with the measurement. The shift is added to the laser
-    detuning and applies only during the pulse, not during free evolution.
+    where $\delta_\text{probe}$ is the probe (light) shift in Hz and $\Omega$ is the
+    Rabi frequency in Hz. $\alpha$ is therefore in units of inverse frequency (1/Hz).
+    There is no factor of $2\pi$: everything here is in Hz. The shift is subtracted
+    from the laser detuning (the lab tunes the laser above the bare resonance to
+    compensate the light shift, so removing it recovers the bare recoil ladder) and
+    applies only during the pulse, not during free evolution.
 
     Parameters
     ----------
@@ -335,7 +336,8 @@ def pulse_interaction_in_borde_representation(
     vz : float, optional
         Reference z-velocity (v_0) used for Borde phase calculations, by default 0.0
     probe_shift_coefficient : float, optional
-        Probe (light) shift coefficient in 1/(rad/s), by default 0.0.
+        Probe (light) shift coefficient in 1/Hz, by default 0.0. The effective
+        detuning is reduced by ``probe_shift_coefficient * rabi_freq**2`` Hz.
     Returns
     -------
     AtomState
@@ -380,9 +382,11 @@ def pulse_interaction_in_borde_representation(
 
         # Borde uses omega_ab = pi * RABI_FREQ, angular frequencies in rad/s
         omega_ab = np.pi * rabi_arr[idx]
-        # Probe (light) shift: scales with intensity, i.e. Rabi**2.
+        # Probe (light) shift: scales with intensity, i.e. Rabi**2. Subtracted
+        # because the recorded detuning sits above the bare resonance by this
+        # amount (the lab tunes the laser up to compensate the light shift).
         effective_detuning_hz = (
-            pulse_detuning + 2 * np.pi * probe_shift_coefficient * rabi_arr[idx] ** 2
+            pulse_detuning - probe_shift_coefficient * rabi_arr[idx] ** 2
         )
         omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + effective_detuning_hz)
 
@@ -576,7 +580,7 @@ def do_gaussian_pulse(
         Laser wavelength in metres, by default TRANSITION_WAVELENGTH.
         Used to compute the Rayleigh range z_R = pi * w0^2 / wavelength.
     probe_shift_coefficient : float, optional
-        Probe (light) shift coefficient in 1/Hz, by default 0.0. Shifts the
+        Probe (light) shift coefficient in 1/Hz, by default 0.0. Reduces the
         effective detuning by ``probe_shift_coefficient * rabi_freq**2`` Hz per
         row (Rabi-squared, i.e. intensity, scaling). Because the Rabi frequency
         is per-row for a Gaussian beam, the probe shift is naturally per-row too.
