@@ -355,8 +355,8 @@ def build_sequence_from_lab_pulse_dump(
     switch_hz,
     delivery_hz,
     delivery_setpoint,
-    probe_induced_alpha_up=3.02682e-07,
-    probe_induced_alpha_down=3.34563e-07,
+    probe_induced_alpha_up=2.889e-06,
+    probe_induced_alpha_down=2.889e-06,
     pi_pulse_threshold_s=50e-6,
     initial_velocity_z=0.0,
 ):
