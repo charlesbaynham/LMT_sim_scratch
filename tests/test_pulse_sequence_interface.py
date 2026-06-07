@@ -94,6 +94,44 @@ def calc_mz_excitation(
         return excited_prob / (ground_prob + excited_prob)
 
 
+# ---------------------------------------------------------------------------
+# Low-level Bordé-frame primitives shared by the hand-rolled "legacy" baselines
+# below. These deliberately wrap only the low-level simulation primitives (never
+# the production runner) so the baselines remain an independent reference to
+# compare the high-level API against.
+# ---------------------------------------------------------------------------
+
+
+def _legacy_to_borde(state, detuning_hz, vz, t=0.0, inverse=False):
+    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
+    return transform_state_vector(
+        state, omega_laser=omega_laser, t=t, z=0.0, vz=vz, inverse=inverse
+    )
+
+
+def _legacy_pulse(state, detuning_hz, t_pulse, phase, vz, rabi_freq=RABI_FREQ, k_sign=+1):
+    return pulse_interaction_in_borde_representation(
+        state,
+        pulse_detuning=detuning_hz,
+        t_pulse=t_pulse,
+        pulse_rabi_freq=rabi_freq,
+        pulse_phase=phase,
+        k_sign=k_sign,
+        k_wavevector=K_WAVEVECTOR,
+        vz=vz,
+    )
+
+
+def _legacy_propagate(state, dt, detuning_hz, vz):
+    return propagate_states_in_borde_representation(
+        state,
+        time_of_propegation=dt,
+        detuning_hz=detuning_hz,
+        vz=vz,
+        k_wavevector=K_WAVEVECTOR,
+    )
+
+
 def legacy_calc_mz_excitation(
     phi,
     detuning_hz=RECOIL_FREQUENCY_HZ,
@@ -101,82 +139,33 @@ def legacy_calc_mz_excitation(
     time_between_pulses=200e-6,
 ):
     state = make_atom_states(initial_velocity_z=initial_velocity_z)
-
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
     current_time = 0.0
 
-    state = transform_state_vector(
-        state,
-        omega_laser=omega_laser,
-        t=current_time,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=False,
-    )
+    state = _legacy_to_borde(state, detuning_hz, initial_velocity_z, t=current_time)
 
-    state = pulse_interaction_in_borde_representation(
-        state,
-        pulse_detuning=detuning_hz,
-        t_pulse=T_PI / 2,
-        pulse_rabi_freq=RABI_FREQ,
-        pulse_phase=0.0,
-        k_sign=+1,
-        k_wavevector=K_WAVEVECTOR,
-        vz=initial_velocity_z,
-    )
+    state = _legacy_pulse(state, detuning_hz, T_PI / 2, 0.0, initial_velocity_z)
     current_time += T_PI / 2
 
     if time_between_pulses > 0.0:
-        state = propagate_states_in_borde_representation(
-            state,
-            time_of_propegation=time_between_pulses,
-            detuning_hz=detuning_hz,
-            vz=initial_velocity_z,
-            k_wavevector=K_WAVEVECTOR,
+        state = _legacy_propagate(
+            state, time_between_pulses, detuning_hz, initial_velocity_z
         )
         current_time += time_between_pulses
 
-    state = pulse_interaction_in_borde_representation(
-        state,
-        pulse_detuning=detuning_hz,
-        t_pulse=T_PI,
-        pulse_rabi_freq=RABI_FREQ,
-        pulse_phase=phi,
-        k_sign=+1,
-        k_wavevector=K_WAVEVECTOR,
-        vz=initial_velocity_z,
-    )
+    state = _legacy_pulse(state, detuning_hz, T_PI, phi, initial_velocity_z)
     current_time += T_PI
 
     if time_between_pulses > 0.0:
-        state = propagate_states_in_borde_representation(
-            state,
-            time_of_propegation=time_between_pulses,
-            detuning_hz=detuning_hz,
-            vz=initial_velocity_z,
-            k_wavevector=K_WAVEVECTOR,
+        state = _legacy_propagate(
+            state, time_between_pulses, detuning_hz, initial_velocity_z
         )
         current_time += time_between_pulses
 
-    state = pulse_interaction_in_borde_representation(
-        state,
-        pulse_detuning=detuning_hz,
-        t_pulse=T_PI / 2,
-        pulse_rabi_freq=RABI_FREQ,
-        pulse_phase=4 * phi,
-        k_sign=+1,
-        k_wavevector=K_WAVEVECTOR,
-        vz=initial_velocity_z,
-    )
+    state = _legacy_pulse(state, detuning_hz, T_PI / 2, 4 * phi, initial_velocity_z)
     current_time += T_PI / 2
 
-    state = transform_state_vector(
-        state,
-        omega_laser=omega_laser,
-        t=current_time,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=True,
+    state = _legacy_to_borde(
+        state, detuning_hz, initial_velocity_z, t=current_time, inverse=True
     )
 
     ground_prob, excited_prob = calculate_ground_and_excited_probabilities(state)
@@ -196,38 +185,25 @@ def legacy_run_mz_sequence_in_borde_representation(
         time_between_pulses=time_between_pulses,
     )
 
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
-    state = transform_state_vector(
-        state,
-        omega_laser=omega_laser,
-        t=0.0,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=False,
-    )
+    state = _legacy_to_borde(state, detuning_hz, initial_velocity_z)
     current_time = 0.0
 
     for event in pulse_sequence:
         if isinstance(event, Freefall):
-            state = propagate_states_in_borde_representation(
-                state,
-                time_of_propegation=event.duration,
-                detuning_hz=detuning_hz,
-                vz=initial_velocity_z,
-                k_wavevector=K_WAVEVECTOR,
+            state = _legacy_propagate(
+                state, event.duration, detuning_hz, initial_velocity_z
             )
             current_time += event.duration
             continue
 
-        state = pulse_interaction_in_borde_representation(
+        state = _legacy_pulse(
             state,
-            pulse_detuning=event.detuning_hz,
-            t_pulse=event.duration,
-            pulse_rabi_freq=event.rabi_frequency,
-            pulse_phase=event.phi,
+            event.detuning_hz,
+            event.duration,
+            event.phi,
+            initial_velocity_z,
+            rabi_freq=event.rabi_frequency,
             k_sign=event.k,
-            k_wavevector=K_WAVEVECTOR,
-            vz=initial_velocity_z,
         )
         current_time += event.duration
 
@@ -246,49 +222,19 @@ def legacy_run_mz_sequence_with_clearout_in_borde_representation(
     time_between_pulses=200e-6,
 ):
     state = make_atom_states(initial_velocity_z=initial_velocity_z)
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
-    state = transform_state_vector(
-        state,
-        omega_laser=omega_laser,
-        t=0.0,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=False,
-    )
+    state = _legacy_to_borde(state, detuning_hz, initial_velocity_z)
     current_time = 0.0
 
-    state = pulse_interaction_in_borde_representation(
-        state,
-        pulse_detuning=detuning_hz,
-        t_pulse=T_PI / 2,
-        pulse_rabi_freq=RABI_FREQ,
-        pulse_phase=0.0,
-        k_sign=+1,
-        k_wavevector=K_WAVEVECTOR,
-        vz=initial_velocity_z,
-    )
+    state = _legacy_pulse(state, detuning_hz, T_PI / 2, 0.0, initial_velocity_z)
     current_time += T_PI / 2
 
     if time_between_pulses > 0.0:
-        state = propagate_states_in_borde_representation(
-            state,
-            time_of_propegation=time_between_pulses,
-            detuning_hz=detuning_hz,
-            vz=initial_velocity_z,
-            k_wavevector=K_WAVEVECTOR,
+        state = _legacy_propagate(
+            state, time_between_pulses, detuning_hz, initial_velocity_z
         )
         current_time += time_between_pulses
 
-    state = pulse_interaction_in_borde_representation(
-        state,
-        pulse_detuning=detuning_hz,
-        t_pulse=T_PI,
-        pulse_rabi_freq=RABI_FREQ,
-        pulse_phase=phi,
-        k_sign=+1,
-        k_wavevector=K_WAVEVECTOR,
-        vz=initial_velocity_z,
-    )
+    state = _legacy_pulse(state, detuning_hz, T_PI, phi, initial_velocity_z)
     current_time += T_PI
 
     result = do_clearout(state, rng=rng)
@@ -297,25 +243,12 @@ def legacy_run_mz_sequence_with_clearout_in_borde_representation(
     state = result
 
     if time_between_pulses > 0.0:
-        state = propagate_states_in_borde_representation(
-            state,
-            time_of_propegation=time_between_pulses,
-            detuning_hz=detuning_hz,
-            vz=initial_velocity_z,
-            k_wavevector=K_WAVEVECTOR,
+        state = _legacy_propagate(
+            state, time_between_pulses, detuning_hz, initial_velocity_z
         )
         current_time += time_between_pulses
 
-    state = pulse_interaction_in_borde_representation(
-        state,
-        pulse_detuning=detuning_hz,
-        t_pulse=T_PI / 2,
-        pulse_rabi_freq=RABI_FREQ,
-        pulse_phase=4 * phi,
-        k_sign=+1,
-        k_wavevector=K_WAVEVECTOR,
-        vz=initial_velocity_z,
-    )
+    state = _legacy_pulse(state, detuning_hz, T_PI / 2, 4 * phi, initial_velocity_z)
     current_time += T_PI / 2
 
     # Match the production runner's per-pulse discard (see note above).

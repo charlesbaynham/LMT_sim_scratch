@@ -331,22 +331,27 @@ def calculate_excited_fraction_for_pulse_sequence(
 
 
 def _transition_probability(m, is_ground, pulse):
-    """Rabi transition probability for a stationary on-axis atom at momentum class m."""
+    """Rabi transition probability for a stationary on-axis atom at momentum class m.
+
+    Reuses the same interaction propagator as the full simulation: the
+    transition probability is |B|^2 of the Bordé 2x2 matrix. The probe (light)
+    shift is folded in so the inferred trajectory matches the actual pulse.
+    """
     k = pulse.k
     m_ground = m if is_ground else m - k
     omega_ab = np.pi * pulse.rabi_frequency
-    # delta_rec = hbar*K²/(2M) = K*RECOIL_VELOCITY/2
-    delta_rec = sim.K_WAVEVECTOR * sim.RECOIL_VELOCITY / 2
-    # Bordé eq 7: ((m_g + k)^2 - m_g^2) = 2*m_g*k + 1  (since k^2 = 1)
-    # Include the probe (light) shift so the inferred trajectory matches the
-    # actual pulse: shift scales with intensity, i.e. rabi_frequency**2. Subtracted
-    # to match the propagator (the recorded detuning sits above bare resonance).
-    effective_detuning = (
-        pulse.detuning_hz - pulse.probe_shift_coefficient * pulse.rabi_frequency**2
+    effective_detuning = sim._effective_detuning_hz(
+        pulse.detuning_hz, pulse.probe_shift_coefficient, pulse.rabi_frequency
     )
-    Omega_3 = 2 * np.pi * effective_detuning - (2 * m_ground * k + 1) * delta_rec
-    Omega = np.sqrt(Omega_3**2 + 4 * omega_ab**2)
-    return float((2 * omega_ab / Omega) ** 2 * np.sin(Omega * pulse.duration / 2) ** 2)
+    _, B, _, _ = sim._calculate_interaction_constants(
+        effective_detuning,
+        pulse.duration,
+        omega_ab,
+        k_sign=k,
+        vz=0.0,
+        m_ground=m_ground,
+    )
+    return float(abs(B) ** 2)
 
 
 def build_sequence_from_lab_pulse_dump(
