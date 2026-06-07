@@ -148,14 +148,28 @@ def transform_state_vector(
     return replace(state, amplitudes=transform * state.amplitudes)
 
 
-def _calculate_propagation_constants(
+def _effective_detuning_hz(detuning_hz, probe_shift_coefficient, rabi_freq):
+    """Laser detuning corrected for the intensity-dependent probe (light) shift.
+
+    The shift scales with intensity, i.e. ``rabi_freq**2``. It is subtracted
+    because the recorded detuning sits above the bare resonance by this amount
+    (the lab tunes the laser up to compensate the light shift).
+    """
+    return detuning_hz - probe_shift_coefficient * rabi_freq**2
+
+
+def _borde_frame_constants(
     detuning_hz,
     k_sign=+1,
     k=K_WAVEVECTOR,
     vz=0.0,
     m_ground=0,
 ):
-    omega_0 = 2 * np.pi * TRANSITION_FREQUENCY
+    """Single source of truth for the Bordé recoil-shifted detunings (Eqs. 7-8).
+
+    Shared by free-fall propagation and pulse interaction so the recoil-shift
+    formula lives in exactly one place.
+    """
     Delta = 2 * np.pi * detuning_hz
     delta_recoil = constants.hbar * k**2 / (2 * MASS_ATOM)
 
@@ -176,7 +190,7 @@ def _calculate_propagation_constants(
 
 
 def _calculate_interaction_constants(
-    omega_laser,
+    detuning_hz,
     t_pulse,
     omega_ab,
     k_sign=+1,
@@ -184,15 +198,8 @@ def _calculate_interaction_constants(
     vz=0.0,
     m_ground=0,
 ):
-    omega_0 = 2 * np.pi * TRANSITION_FREQUENCY
-    Delta = omega_laser - omega_0
-    delta_recoil = constants.hbar * k**2 / (2 * MASS_ATOM)
-
-    # Equation 7: Omega_3 = Delta - k_sign*k*vz - [(m+k_sign)^2 - m^2]*delta_recoil
-    Omega_3 = (
-        Delta
-        - k_sign * k * vz
-        - ((m_ground + k_sign) ** 2 - m_ground**2) * delta_recoil
+    _, _, _, Omega_3 = _borde_frame_constants(
+        detuning_hz, k_sign=k_sign, k=k, vz=vz, m_ground=m_ground
     )
 
     # Eq 12: Generalized Rabi frequency
@@ -254,7 +261,7 @@ def propagate_states_in_borde_representation(
         else:
             m_ground = state.m_values[idx] - k_sign
 
-        Delta, delta_recoil, Omega_0_val, Omega_3 = _calculate_propagation_constants(
+        Delta, delta_recoil, Omega_0_val, Omega_3 = _borde_frame_constants(
             detuning_hz,
             k=k_wavevector,
             vz=vz,
@@ -382,16 +389,12 @@ def pulse_interaction_in_borde_representation(
 
         # Borde uses omega_ab = pi * RABI_FREQ, angular frequencies in rad/s
         omega_ab = np.pi * rabi_arr[idx]
-        # Probe (light) shift: scales with intensity, i.e. Rabi**2. Subtracted
-        # because the recorded detuning sits above the bare resonance by this
-        # amount (the lab tunes the laser up to compensate the light shift).
-        effective_detuning_hz = (
-            pulse_detuning - probe_shift_coefficient * rabi_arr[idx] ** 2
+        effective_detuning_hz = _effective_detuning_hz(
+            pulse_detuning, probe_shift_coefficient, rabi_arr[idx]
         )
-        omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + effective_detuning_hz)
 
         A, B, C, D = _calculate_interaction_constants(
-            omega_laser,
+            effective_detuning_hz,
             t_pulse,
             omega_ab,
             k=k_wavevector,
