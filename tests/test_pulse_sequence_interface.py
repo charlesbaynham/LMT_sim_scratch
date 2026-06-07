@@ -10,6 +10,7 @@ from lmt_sim.lmt_sequence import (
     run_pulse_sequence_in_lab_frame,
     run_pulse_sequence_in_borde_representation,
     build_mach_zehnder_pulse_sequence,
+    build_sequence_from_lab_pulse_dump,
 )
 from lmt_sim.lmt_simulation import (
     AtomState,
@@ -865,3 +866,48 @@ def test_build_lmt_real_sequence_has_positive_total_duration():
     assert total_duration > 0.0
     assert any(isinstance(event, Freefall) for event in sequence)
     assert any(isinstance(event, Clearout) for event in sequence)
+
+
+def _minimal_lab_dump(is_up):
+    """A minimal valid lab pulse dump (two pulses) for builder tests."""
+    return dict(
+        is_up=is_up,
+        start_times_mu=np.array([0.0, 1_000_000.0]),
+        durations_mu=np.array([95_000.0, 95_000.0]),
+        opll_hz=np.array([80e6, 80e6]),
+        switch_hz=np.zeros(2),
+        delivery_hz=np.zeros(2),
+        delivery_setpoint=np.array([2.0, 2.0]),
+    )
+
+
+@pytest.mark.parametrize(
+    "is_up",
+    [[1, 0], np.array([1, 0]), np.array([True, False])],
+)
+def test_build_sequence_accepts_boolean_like_is_up(is_up):
+    """0/1 ints, integer arrays and boolean arrays all map to the same beams."""
+    sequence = build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(is_up))
+    pulse_ks = [event.k for event in sequence if isinstance(event, Pulse)]
+    assert pulse_ks == [1, -1]
+
+
+def test_build_sequence_rejects_non_boolean_is_up():
+    """``~`` on an integer array yields [-2, -1]; this must fail loudly rather
+    than silently coercing to all-True (all up beams)."""
+    bad_is_up = ~np.array([1, 0])  # -> [-2, -1]
+    with pytest.raises(ValueError, match="boolean array"):
+        build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(bad_is_up))
+
+
+def test_build_sequence_logical_not_flips_beams():
+    """The supported beam flip (boolean array / np.logical_not) swaps up<->down."""
+    is_up = np.array([True, False])
+    base = build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(is_up))
+    flipped = build_sequence_from_lab_pulse_dump(
+        **_minimal_lab_dump(np.logical_not(is_up))
+    )
+    base_ks = [event.k for event in base if isinstance(event, Pulse)]
+    flipped_ks = [event.k for event in flipped if isinstance(event, Pulse)]
+    assert base_ks == [1, -1]
+    assert flipped_ks == [-1, 1]

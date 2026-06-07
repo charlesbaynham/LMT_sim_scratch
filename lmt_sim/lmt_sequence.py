@@ -370,7 +370,19 @@ def build_sequence_from_lab_pulse_dump(
     if pi_pulse_threshold_s <= 0.0:
         raise ValueError("pi_pulse_threshold_s must be positive")
 
-    is_up = np.asarray(is_up, dtype=bool)
+    # is_up is a boolean beam mask (True = up beam, False = down). Validate
+    # before casting so an accidental bitwise-NOT of an integer array
+    # (e.g. ``~np.array([1, 0])`` -> ``[-2, -1]``) fails loudly here instead of
+    # being silently coerced to all-True. To flip beams, pass a boolean array or
+    # use np.logical_not -- never ``~`` on an integer array.
+    is_up_input = np.asarray(is_up)
+    if is_up_input.dtype != bool and not np.all(np.isin(is_up_input, (0, 1))):
+        raise ValueError(
+            "is_up must be a boolean array (or contain only 0/1); got values "
+            f"{np.unique(is_up_input)}. To flip beams use np.logical_not or a "
+            "boolean array, not ~ on an integer array."
+        )
+    is_up = is_up_input.astype(bool)
     start_times_mu = np.asarray(start_times_mu, dtype=float)
     durations_mu = np.asarray(durations_mu, dtype=float)
     opll_hz = np.asarray(opll_hz, dtype=float)
@@ -399,6 +411,8 @@ def build_sequence_from_lab_pulse_dump(
     if delivery_hz is not None:
         total_laser_frequency_hz = total_laser_frequency_hz + delivery_hz
 
+    # is_up is guaranteed boolean here (validated and cast above), so np.where
+    # and the ``if this_is_up`` branches below select up vs down unambiguously.
     beam_sign = np.where(is_up, 1.0, -1.0)
     # Doppler shift seen by each beam from the atom's velocity. The velocity at
     # time t is v(t) = initial_velocity_z + g * t, so the Doppler (v/lambda)
