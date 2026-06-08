@@ -436,20 +436,22 @@ def build_sequence_from_lab_pulse_dump(
     # TODO: This should be handled in icl_experiments
     total_laser_frequency_hz = opll_hz - switch_hz - delivery_hz
 
-    # The overall offset is arbitrary, so normalise to the first pulse for convenience
-    total_laser_frequency_hz -= total_laser_frequency_hz[0]
-
     # Convert boolean "is_up" into +-1 for the k_vector. This might become a vector later
     beam_sign = np.where(is_up, +1.0, -1.0)
 
-    # Doppler shift seen by each beam from the atom's velocity. This number is
-    # the difference between what the atom experiences and the UP beam's
-    # frequency. In other words, if this number is positive, the atom is falling
-    # towards the ground and blue-shifting the up beam
-    up_beam_doppler_hz = (
-        -initial_velocity_z / sim.TRANSITION_WAVELENGTH
+    # Move the recorded lab-frame laser frequencies into the freely falling
+    # atom frame before defining the centre frequency. Anchoring first and then
+    # adding a beam-signed Doppler term flips the gravity chirp sign.
+    velocity_doppler_hz = (
+        initial_velocity_z / sim.TRANSITION_WAVELENGTH
         + sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps
     )
+    effective_laser_frequency_hz = (
+        total_laser_frequency_hz - velocity_doppler_hz * beam_sign
+    )
+
+    # The overall offset is arbitrary, so normalise to the first pulse for convenience.
+    effective_laser_frequency_hz -= effective_laser_frequency_hz[0]
 
     # Assume that the first pulse is on resonance
     rabi_freq_first_pulse = (
@@ -462,7 +464,6 @@ def build_sequence_from_lab_pulse_dump(
     first_pulse_probe_shift_hz = (
         probe_induced_alpha_up if is_up[0] else probe_induced_alpha_down
     ) * rabi_freq_first_pulse**2
-    first_pulse_doppler_shift_hz = up_beam_doppler_hz[0] * beam_sign[0]
     first_pulse_atom_frame_detuning_hz = sim.RECOIL_FREQUENCY_HZ
 
     # This is the unperturbed transition frequency for a hypothetical m=0 -> m=0
@@ -471,22 +472,15 @@ def build_sequence_from_lab_pulse_dump(
     # from us actually driving the m=0 -> m=1 transition. We assume that the
     # first pulse in any sequence is a pi pulse that drives the ground state m=0
     # to the excited state m=+1, i.e. a velocity selection pulse.
-    centre_freq_hz = total_laser_frequency_hz[0] + first_pulse_doppler_shift_hz - first_pulse_atom_frame_detuning_hz - first_pulse_probe_shift_hz
-    
-    
-
-    # Now we calculate the detuning of all the beams due only to gravity. The simulation will handle the probe-induced Stark shift.
-    # TODO: wrap the gravity Doppler shift into the main sim
-
-    # We define the UP beam as having k = +1, so gravity causes the up beam to
-    # be BLUE-shifted
-    effective_laser_detuning_hz = (
-        # Recentre to the new centre freq:
-        (total_laser_frequency_hz - centre_freq_hz)
-        # Add the effect of the Doppler shift to bring the detunings into the
-        # freely-falling frame:
-        + (up_beam_doppler_hz * beam_sign  )  
+    centre_freq_hz = (
+        effective_laser_frequency_hz[0]
+        - first_pulse_atom_frame_detuning_hz
+        - first_pulse_probe_shift_hz
     )
+
+    # The simulation still handles the probe-induced Stark shift during the
+    # pulse, so here we only set the frame-corrected laser detuning.
+    effective_laser_detuning_hz = effective_laser_frequency_hz - centre_freq_hz
 
     sequence_timestamps = []
     sequence = []
@@ -632,12 +626,10 @@ def calibrate_probe_shift_and_velocity_from_dump(
                 if first_up_detuning_hz is None:
                     first_up_detuning_hz = e.detuning_hz
                     first_up_rabi_freq_hz = e.rabi_frequency
-                    first_up_timestamp = t + e.duration / 2
             elif e.k == -1:
                 if first_down_detuning_hz is None:
                     first_down_detuning_hz = e.detuning_hz
                     first_down_rabi_freq_hz = e.rabi_frequency
-                    first_down_timestamp = t + e.duration / 2
 
     # Also get the up pulses with the largest and smallest rabi freq
 
@@ -699,12 +691,13 @@ def calibrate_probe_shift_and_velocity_from_dump(
     # transition.
     #
     # From the down beam's perspective this is the m=-1 state, so we assume that
-    # the first DOWN pulse is resonant on the m=-1 -> m=-2
+    # the first DOWN pulse is resonant on the m=-1 -> m=-2 transition.
     #
-    # This means that the difference between the first up and the first down
-    # pulse should be four recoil frequencies, after correction for the probe
-    # shift and the Doppler shift. This allow us to extract the Doppler shift
-    # only.
+    # With the bare sequence built at v0 = 0, gravity is already folded into the
+    # reported detunings. Changing v0 therefore shifts only the down-beam pulses
+    # relative to the up-beam anchor, by 2 * v0 / lambda. We pin v0 by forcing
+    # the first down pulse onto the next rung, 4 recoils above the first up
+    # pulse, after correcting the probe shift difference.
 
     if first_down_detuning_hz is None:
         # The initial velocity is irrelevant
@@ -713,15 +706,12 @@ def calibrate_probe_shift_and_velocity_from_dump(
         first_up_probe_shift_hz = probe_shift_alpha * first_up_rabi_freq_hz**2  # type: ignore
         first_down_probe_shift_hz = probe_shift_alpha * first_down_rabi_freq_hz**2  # type: ignore
 
-        delta_f_laser = first_up_detuning_hz - first_down_detuning_hz  # type: ignore
+        target_first_down_detuning_hz = first_up_detuning_hz + 4 * sim.RECOIL_FREQUENCY_HZ  # type: ignore
         delta_f_probe = first_up_probe_shift_hz - first_down_probe_shift_hz
-        t_sum = first_up_timestamp + first_down_timestamp  # type: ignore
-
         initial_velocity_z = (
             0.5
             * sim.TRANSITION_WAVELENGTH
-            * (4 * sim.RECOIL_FREQUENCY_HZ - delta_f_laser - delta_f_probe)
-            - sim.GRAVITY_G * t_sum
+            * (target_first_down_detuning_hz - first_down_detuning_hz - delta_f_probe)  # type: ignore
         )
 
     return probe_shift_alpha, initial_velocity_z

@@ -159,6 +159,7 @@ def _effective_detuning_hz(detuning_hz, probe_shift_coefficient, rabi_freq):
     because the recorded detuning sits above the bare resonance by this amount
     (the lab tunes the laser up to compensate the light shift).
     """
+    # FIXME this seems wrong!
     return detuning_hz - probe_shift_coefficient * rabi_freq**2
 
 

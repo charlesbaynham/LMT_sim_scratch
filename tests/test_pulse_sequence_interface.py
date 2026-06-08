@@ -15,6 +15,7 @@ from lmt_sim.lmt_sequence import (
 )
 from lmt_sim.lmt_simulation import (
     AtomState,
+    GRAVITY_DOPPLER_PER_SEC_HZ,
     K_WAVEVECTOR,
     RABI_FREQ,
     RECOIL_FREQUENCY_HZ,
@@ -878,8 +879,8 @@ def test_build_sequence_rejects_non_boolean_is_up():
 def test_build_sequence_logical_not_flips_beams():
     """The supported beam flip (boolean array / np.logical_not) swaps up<->down."""
     is_up = np.array([True, False])
-    base = build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(is_up))
-    flipped = build_sequence_from_lab_pulse_dump(
+    _, base = build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(is_up))
+    _, flipped = build_sequence_from_lab_pulse_dump(
         **_minimal_lab_dump(np.logical_not(is_up))
     )
     base_ks = [event.k for event in base if isinstance(event, Pulse)]
@@ -921,6 +922,29 @@ def test_aom_frequencies_are_subtracted_opll_is_added():
     # Switch and delivery subtract: +1 kHz on pulse 2 -> -1 kHz detuning.
     assert _second_pulse_detuning(bump_switch) - ref == pytest.approx(-1e3)
     assert _second_pulse_detuning(bump_delivery) - ref == pytest.approx(-1e3)
+
+
+def test_up_pulses_get_main_sign_gravity_doppler_chirp():
+    """Two identical up pulses should drift with main's gravity-chirp sign."""
+    dump = dict(
+        is_up=np.array([True, True]),
+        start_times_mu=np.array([0.0, 1_000_000.0]),
+        durations_mu=np.array([95_000.0, 95_000.0]),
+        opll_hz=np.array([80e6, 80e6]),
+        switch_hz=np.zeros(2),
+        delivery_hz=np.zeros(2),
+        delivery_setpoint=np.array([2.0, 2.0]),
+        probe_induced_alpha_up=0.0,
+        probe_induced_alpha_down=0.0,
+        initial_velocity_z=0.0,
+    )
+
+    _, sequence = build_sequence_from_lab_pulse_dump(**dump)
+    pulses = [event for event in sequence if isinstance(event, Pulse)]
+
+    assert pulses[1].detuning_hz - pulses[0].detuning_hz == pytest.approx(
+        -GRAVITY_DOPPLER_PER_SEC_HZ * 1e-3
+    )
 
 
 def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder():
