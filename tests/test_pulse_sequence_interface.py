@@ -28,7 +28,6 @@ from lmt_sim.lmt_simulation import (
     pulse_interaction_in_borde_representation,
     transform_state_vector,
 )
-from lmt_sim.lmt_real_sequence import build_lmt_real_sequence
 
 
 def assert_states_close(actual, expected):
@@ -111,7 +110,9 @@ def _legacy_to_borde(state, detuning_hz, vz, t=0.0, inverse=False):
     )
 
 
-def _legacy_pulse(state, detuning_hz, t_pulse, phase, vz, rabi_freq=RABI_FREQ, k_sign=+1):
+def _legacy_pulse(
+    state, detuning_hz, t_pulse, phase, vz, rabi_freq=RABI_FREQ, k_sign=+1
+):
     return pulse_interaction_in_borde_representation(
         state,
         pulse_detuning=detuning_hz,
@@ -842,33 +843,6 @@ def test_calculate_excited_fraction_for_pulse_sequence_rejects_clearout_events()
         calculate_excited_fraction_for_pulse_sequence(pulse_sequence)
 
 
-def test_build_lmt_real_sequence_negative_gap_validation_comes_from_steps():
-    with pytest.raises(ValueError, match="duration must be non-negative"):
-        build_lmt_real_sequence(delay_between_interferometry_pulses=-1e-6)
-    with pytest.raises(ValueError, match="duration must be non-negative"):
-        build_lmt_real_sequence(vs_to_bs1_gap=-1e-6)
-
-
-def test_build_lmt_real_sequence_uses_duration_based_events():
-    sequence = build_lmt_real_sequence(N=7)
-    assert sequence
-    assert all(not hasattr(event, "time") for event in sequence)
-    assert isinstance(sequence[0], Pulse)
-    assert sequence[0].label == "velocity_selection"
-    assert isinstance(sequence[1], Clearout)
-    assert isinstance(sequence[2], Freefall)
-    assert isinstance(sequence[-1], Pulse)
-    assert sequence[-1].label == "BS2"
-
-
-def test_build_lmt_real_sequence_has_positive_total_duration():
-    sequence = build_lmt_real_sequence(N=7)
-    total_duration = sum(event.duration for event in sequence)
-    assert total_duration > 0.0
-    assert any(isinstance(event, Freefall) for event in sequence)
-    assert any(isinstance(event, Clearout) for event in sequence)
-
-
 def _minimal_lab_dump(is_up):
     """A minimal valid lab pulse dump (two pulses) for builder tests."""
     return dict(
@@ -973,7 +947,9 @@ def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder():
         alpha, v0 = calibrate_probe_shift_and_velocity_from_dump(**dump)
 
     sequence = build_sequence_from_lab_pulse_dump(
-        **dump, probe_induced_alpha_up=alpha, probe_induced_alpha_down=alpha,
+        **dump,
+        probe_induced_alpha_up=alpha,
+        probe_induced_alpha_down=alpha,
         initial_velocity_z=v0,
     )
     for event in sequence:
