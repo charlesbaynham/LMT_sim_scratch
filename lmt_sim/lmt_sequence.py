@@ -331,8 +331,11 @@ def calculate_excited_fraction_for_pulse_sequence(
     return excited_prob / (ground_prob + excited_prob)
 
 
-def _transition_probability(m, is_ground, pulse):
-    """Rabi transition probability for a stationary on-axis atom at momentum class m.
+def _transition_probability(m, is_ground, pulse: Pulse):
+    """
+    Rabi transition probability for a stationary on-axis atom at momentum class m.
+
+    "Stationary" here means that the m=0 state is stationary - obviously an atom with non-zero m is not stationary. 
 
     Reuses the same interaction propagator as the full simulation: the
     transition probability is |B|^2 of the Bordé 2x2 matrix. The probe (light)
@@ -368,6 +371,27 @@ def build_sequence_from_lab_pulse_dump(
     pi_pulse_threshold_s=50e-6,
     initial_velocity_z=0.0,
 ):
+    """
+    Parse the "pulse record" arrays that the experiment spits out to define the
+    pulse sequences that were fired
+
+    This code is tightly coupled to icl_experiments and must be updated in
+    lockstep. The rest of this repository is a physics simulator only - this
+    function is the only place where experiemnt-specific knowledge is allowed to
+    live.
+
+    Note that the simulation code currently works in the freely falling frame,
+    and assumes a zero starting velocity. We therefore compensate out the
+    Doppler effect here when the pulse sequence is built. This is non ideal
+    since the Doppler shift is very much physics, so it would be better to treat
+    this with all the rest of the physics. 
+
+    Our sign convention is that positive z is upwards, gravity therefore
+    accelerates in the -1 direction. The UP beam is the one that propegates from
+    bottom to top. Its k vector has direction [0,0,+1], i.e. along the positive
+    z direction
+    """
+
     if pi_pulse_threshold_s <= 0.0:
         raise ValueError("pi_pulse_threshold_s must be positive")
 
@@ -410,7 +434,8 @@ def build_sequence_from_lab_pulse_dump(
     durations = durations_mu * 1e-9
 
     # The OPLL offsets the Sirah from the ECDL and we lock to the positive side.
-    # The delivery and switch AOMs all use the -1st order
+    # The delivery and switch AOMs all use the -1st order.
+    # This "total laser frequency" is defined in the lab rest frame.
     total_laser_frequency_hz = opll_hz - switch_hz - delivery_hz
 
     # Convert boolean "is_up" into +-1 for the k_vector. This might become a vector later
@@ -424,8 +449,11 @@ def build_sequence_from_lab_pulse_dump(
     velocity_doppler_hz = (
         initial_velocity_doppler_hz + sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps
     )
+
+    # We define the UP beam as having k = +1, so gravity causes the up beam to
+    # be BLUE-shifted
     total_laser_frequency_hz = (
-        total_laser_frequency_hz - velocity_doppler_hz * beam_sign
+        total_laser_frequency_hz + velocity_doppler_hz * beam_sign
     )
 
     # Assume that the first pulse is on resonance
@@ -435,10 +463,22 @@ def build_sequence_from_lab_pulse_dump(
         else 2 * np.pi / (4 * durations[0])
     )
 
-    probe_shift_hz = probe_induced_alpha_up * rabi_freq_first_pulse**2
+    if is_up[0]:
+        probe_shift_hz = probe_induced_alpha_up * rabi_freq_first_pulse**2
+    else:
+        probe_shift_hz = probe_induced_alpha_down * rabi_freq_first_pulse**2
+
+    # This is the unperturbed transition frequency for a hypothetical m=0 -> m=0
+    # transition. To get it, we must subtract the probe shift that the atom was
+    # experiencing during the pulse, and also subtract the detuning resultant
+    # from us actually driving the m=0 -> m=1 transition. We assume that the
+    # first pulse in any sequence is a pi pulse that drives the ground state m=0
+    # to the excited state m=+1, i.e. a velocity selection pulse.
     centre_freq_hz = total_laser_frequency_hz[0] - (
         sim.RECOIL_FREQUENCY_HZ + probe_shift_hz
     )
+
+    total_laser_frequency_hz = total_laser_frequency_hz - centre_freq_hz
 
     sequence = []
     t_now = 0.0
@@ -463,6 +503,10 @@ def build_sequence_from_lab_pulse_dump(
             rabi_freq_hz = 1 / (4 * this_duration)
 
         sequence.append(
+            # Note that we simple report the laser frequency to the simulation
+            # and rely on it to sort out the probe shift etc. This method needs
+            # only think about it when using the initial pulse to determing the
+            # resonance frequency
             Pulse(
                 k=+1 if this_is_up else -1,
                 detuning_hz=this_total_laser_hz - centre_freq_hz,
