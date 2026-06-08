@@ -408,28 +408,14 @@ def build_sequence_from_lab_pulse_dump(
 
     timestamps = start_times_mu * 1e-9
     durations = durations_mu * 1e-9
-    # Optical-frequency budget at the atom (knowledge of the lab infrastructure
-    # lives here, not in the simulation engine).
-    #
-    # The switch and delivery AOMs are both on the frequency-SUBTRACTING order:
-    # the light reaching the atom is the clock laser MINUS each AOM drive
-    # frequency. The OPLL offset, by contrast, ADDS: the dump records OPLL
-    # numbers relative to the bare 698 reference *before* the OPLL is applied,
-    # so it must be added back in here.
-    #
-    # This was verified absolutely against the BIPM Sr-87 clock line: starting
-    # from the wavemeter clock-laser frequency, only ``+ opll - switch -
-    # delivery`` lands on resonance (to <1 MHz, within wavemeter accuracy);
-    # every other sign choice is >=80 MHz off. Getting the switch sign wrong
-    # flips the up/down switch-detuning differential and throws the down beam
-    # off the recoil ladder by ~2 recoils.
-    total_laser_frequency_hz = opll_hz - switch_hz
-    if delivery_hz is not None:
-        total_laser_frequency_hz = total_laser_frequency_hz - delivery_hz
 
-    # is_up is guaranteed boolean here (validated and cast above), so np.where
-    # and the ``if this_is_up`` branches below select up vs down unambiguously.
-    beam_sign = np.where(is_up, 1.0, -1.0)
+    # The OPLL offsets the Sirah from the ECDL and we lock to the positive side.
+    # The delivery and switch AOMs all use the -1st order
+    total_laser_frequency_hz = opll_hz - switch_hz - delivery_hz
+
+    # Convert boolean "is_up" into +-1 for the k_vector. This might become a vector later
+    beam_sign = np.where(is_up, +1.0, -1.0)
+
     # Doppler shift seen by each beam from the atom's velocity. The velocity at
     # time t is v(t) = initial_velocity_z + g * t, so the Doppler (v/lambda)
     # splits into a constant initial-velocity part and the time-dependent
@@ -438,7 +424,9 @@ def build_sequence_from_lab_pulse_dump(
     velocity_doppler_hz = (
         initial_velocity_doppler_hz + sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps
     )
-    total_laser_frequency_hz = total_laser_frequency_hz - velocity_doppler_hz * beam_sign
+    total_laser_frequency_hz = (
+        total_laser_frequency_hz - velocity_doppler_hz * beam_sign
+    )
 
     # Assume that the first pulse is on resonance
     rabi_freq_first_pulse = (
@@ -590,9 +578,7 @@ def calibrate_probe_shift_and_velocity_from_dump(
 
     # --- alpha: from two up pulses with the largest Rabi**2 separation ---
     det_ref, rabi_ref = up_pulses[0]
-    det_alt, rabi_alt = max(
-        up_pulses[1:], key=lambda dr: abs(dr[1] ** 2 - rabi_ref**2)
-    )
+    det_alt, rabi_alt = max(up_pulses[1:], key=lambda dr: abs(dr[1] ** 2 - rabi_ref**2))
     if rabi_alt**2 == rabi_ref**2:
         raise ValueError(
             "All up-beam pulses share the same Rabi frequency; cannot separate "
