@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from lmt_sim.lmt_sequence import (
+    _addressed_momentum_classes,
     compute_spacetime_trajectory,
     Clearout,
     Freefall,
@@ -375,9 +376,14 @@ def test_compute_spacetime_trajectory_plot_places_pulse_step_at_midpoint(monkeyp
         def __init__(self):
             self.plot_calls = []
             self.vline_calls = []
+            self.broken_barh_calls = []
 
         def plot(self, x, y, *args, **kwargs):
             self.plot_calls.append((np.asarray(x), np.asarray(y), args, kwargs))
+            return []
+
+        def broken_barh(self, *args, **kwargs):
+            self.broken_barh_calls.append((args, kwargs))
             return []
 
         def axvline(self, *args, **kwargs):
@@ -421,15 +427,50 @@ def test_compute_spacetime_trajectory_plot_places_pulse_step_at_midpoint(monkeyp
     assert any(np.allclose(xs, [0.0, midpoint_us]) for xs in z_segment_xs)
     assert any(np.allclose(xs, [midpoint_us, end_us]) for xs in z_segment_xs)
 
-    m_trace_xs = [call[0] for call in ax_m.plot_calls if len(call[0]) >= 3]
-    assert any(
-        np.allclose(xs, [0.0, midpoint_us, midpoint_us, end_us]) for xs in m_trace_xs
-    )
+    m_segment_xs = [call[0] for call in ax_m.plot_calls if len(call[0]) == 2]
+    assert any(np.allclose(xs, [0.0, midpoint_us]) for xs in m_segment_xs)
+    assert any(np.allclose(xs, [midpoint_us, midpoint_us]) for xs in m_segment_xs)
+    assert any(np.allclose(xs, [midpoint_us, end_us]) for xs in m_segment_xs)
 
     z_vline_xs = sorted(float(args[0]) for args, _ in ax_z.vline_calls)
     m_vline_xs = sorted(float(args[0]) for args, _ in ax_m.vline_calls)
     assert np.allclose(z_vline_xs, [0.0, end_us])
     assert np.allclose(m_vline_xs, [0.0, end_us])
+
+    addressed_ranges = [args[0] for args, _ in ax_m.broken_barh_calls]
+    addressed_centres = sorted(
+        yrange[0] + yrange[1] / 2 for args, _ in ax_m.broken_barh_calls for yrange in [args[1]]
+    )
+    assert addressed_ranges == [[(0.0, end_us)], [(0.0, end_us)]]
+    assert np.allclose(addressed_centres, [0.0, 1.0])
+
+
+def test_addressed_momentum_classes_follow_beam_sign():
+    pulse = Pulse(
+        k=-1,
+        detuning_hz=3 * RECOIL_FREQUENCY_HZ,
+        phi=0.0,
+        label="down-resonant",
+        rabi_frequency=RABI_FREQ,
+        duration=T_PI,
+    )
+
+    assert np.allclose(_addressed_momentum_classes(pulse), [-1.0, -2.0])
+
+
+def test_addressed_momentum_classes_use_effective_detuning():
+    probe_shift_coefficient = 1.0e-5
+    pulse = Pulse(
+        k=+1,
+        detuning_hz=RECOIL_FREQUENCY_HZ + probe_shift_coefficient * RABI_FREQ**2,
+        phi=0.0,
+        label="probe-shifted",
+        rabi_frequency=RABI_FREQ,
+        duration=T_PI,
+        probe_shift_coefficient=probe_shift_coefficient,
+    )
+
+    assert np.allclose(_addressed_momentum_classes(pulse), [0.0, 1.0])
 
 
 def test_compute_spacetime_trajectory_max_branches_plots_before_raising(monkeypatch):
