@@ -5,6 +5,7 @@ import warnings
 import numpy as np
 import lmt_sim.lmt_simulation as sim
 from lmt_sim.lmt_simulation import RABI_FREQ, T_PI
+from scipy import constants
 
 logger = logging.getLogger(__name__)
 
@@ -561,24 +562,18 @@ def calibrate_probe_shift_and_velocity_from_dump(
         A loud :class:`UserWarning` is emitted every time this runs so it can
         never quietly masquerade as a real calibration.
 
-    The derivation mirrors what was previously done by hand:
+
 
     * ``alpha`` (probe-shift coefficient, 1/Hz): the up-beam pulses share one
       beam, so after removing the probe shift ``alpha * rabi**2`` their
-      effective detunings must differ only by an integer number of recoils.
+      effective detunings must differ only by an integer number of recoils (assuming the experimental sequence is correct - this is the hacky bit).
       Comparing the reference up pulse with the up pulse of most-different Rabi
-      frequency isolates ``alpha`` from the recoil ladder.
+      frequency lets us deduce a value for ``alpha``.
 
     * ``v0`` (initial z-velocity, m/s): the two beams counter-propagate, so a
       nonzero ``v0`` shifts the down-beam detunings by ``2 * v0 / lambda``
       relative to the up-anchored centre. We pin ``v0`` by **assuming the first
-      down pulse is resonant** on the same ``m_g = 0`` transition the build
-      already anchors the first up pulse to (resonance ``+1`` recoil for either
-      beam). That single condition fixes ``v0`` directly -- there is no
-      recoil-branch ambiguity, and in particular it avoids the failure mode
-      where minimising a mod-recoil residual parks the down pulses on the
-      *even* integers (half a rung off resonance), which silently kills the
-      launch.
+      down pulse is resonant**.
 
     Parameters match :func:`build_sequence_from_lab_pulse_dump`.
 
@@ -599,9 +594,6 @@ def calibrate_probe_shift_and_velocity_from_dump(
         stacklevel=2,
     )
 
-    recoil = sim.RECOIL_FREQUENCY_HZ
-    wavelength = sim.TRANSITION_WAVELENGTH
-
     # Build with the probe shift and initial-velocity Doppler switched OFF so the
     # recorded (centre-anchored) detunings are exposed directly. The AOM-sign
     # convention is whatever build_sequence_from_lab_pulse_dump uses -- this
@@ -619,9 +611,40 @@ def calibrate_probe_shift_and_velocity_from_dump(
         pi_pulse_threshold_s=pi_pulse_threshold_s,
         initial_velocity_z=0.0,
     )
-    pulses = [event for event in bare_sequence if isinstance(event, Pulse)]
-    up_pulses = [(p.detuning_hz, p.rabi_frequency) for p in pulses if p.k == +1]
-    down_pulses = [(p.detuning_hz, p.rabi_frequency) for p in pulses if p.k == -1]
+
+    # Loop through the events, extracting the rabi freq, detuning and timestamp of the first pulses
+
+    first_up_detuning_hz = None
+    first_up_rabi_freq_hz = None
+    first_up_timestamp = None
+    first_down_detuning_hz = None
+    first_down_rabi_freq_hz = None
+    first_down_timestamp = None
+
+    timestamp = 0.0
+    for e in bare_sequence:
+        if isinstance(e, (Freefall, Clearout)):
+            pass
+        elif isinstance(e, Pulse):
+            if e.k == +1:
+                if first_up_detuning_hz is None:
+                    first_up_detuning_hz = e.detuning_hz
+                    first_up_rabi_freq_hz = e.rabi_frequency
+                    first_up_timestamp = timestamp + e.duration / 2
+            elif e.k == -1:
+                if first_down_detuning_hz is None:
+                    first_down_detuning_hz = e.detuning_hz
+                    first_down_rabi_freq_hz = e.rabi_frequency
+                    first_down_timestamp = timestamp + e.duration / 2
+
+        timestamp += e.duration
+
+    # Also get all the rabi freq / detuning combos for the up pulses
+    up_pulses = set()
+    for e in bare_sequence:
+        if isinstance(e, Pulse):
+            if e.k == +1:
+                up_pulses.add((e.detuning_hz, e.rabi_frequency))
 
     if len(up_pulses) < 2:
         raise ValueError(
@@ -630,8 +653,10 @@ def calibrate_probe_shift_and_velocity_from_dump(
         )
 
     # --- alpha: from two up pulses with the largest Rabi**2 separation ---
-    det_ref, rabi_ref = up_pulses[0]
-    det_alt, rabi_alt = max(up_pulses[1:], key=lambda dr: abs(dr[1] ** 2 - rabi_ref**2))
+    det_ref, rabi_ref = list(up_pulses)[0]
+    det_alt, rabi_alt = max(
+        list(up_pulses)[1:], key=lambda dr: abs(dr[1] ** 2 - rabi_ref**2)
+    )
     if rabi_alt**2 == rabi_ref**2:
         raise ValueError(
             "All up-beam pulses share the same Rabi frequency; cannot separate "
@@ -640,32 +665,45 @@ def calibrate_probe_shift_and_velocity_from_dump(
     # After stark-correction the two up pulses differ by an integer number of
     # recoils; that integer is robust because the residual stark term is < 1
     # recoil.
-    ladder_separation_hz = round((det_alt - det_ref) / recoil) * recoil
+    ladder_separation_hz = (
+        round((det_alt - det_ref) / sim.RECOIL_FREQUENCY_HZ) * sim.RECOIL_FREQUENCY_HZ
+    )
     probe_shift_alpha = ((det_alt - det_ref) - ladder_separation_hz) / (
         rabi_alt**2 - rabi_ref**2
     )
 
     # --- v0: anchor on the FIRST down pulse being resonant ---
+
     # The build already assumes the first (up) pulse is resonant on the m_g=0
-    # transition (+1 recoil). We make the exact parallel assumption for the
-    # first DOWN pulse: it is resonant on the same m_g=0 transition, whose
-    # resonance is also +1 recoil (rung = 2*m_g*k + 1 = +1 at m_g=0, for either
-    # beam). Turning on v0 shifts every down-beam detuning by +2*v0/lambda
-    # relative to the up-anchored centre, so v0 follows directly from that one
-    # pulse -- no averaging, and no recoil-branch ambiguity. (The previous
-    # "nearest integer over all down pulses" rule chose v0 ~ 0, which left the
-    # down pulses on the EVEN integers, i.e. half a rung off resonance, and the
-    # launch never happened.)
-    if down_pulses:
-        first_down_detuning_hz, first_down_rabi_hz = down_pulses[0]
-        first_down_effective_hz = (
-            first_down_detuning_hz - probe_shift_alpha * first_down_rabi_hz**2
-        )
-        initial_velocity_z = (
-            (recoil - first_down_effective_hz) * wavelength / 2.0
-        )
-    else:
+    # transition.
+    #
+    # From the down beam's perspective this is the m=-1 state, so we assume that
+    # the first DOWN pulse is resonant on the m=-1 -> m=-2
+    #
+    # This means that the difference between the first up and the first down
+    # pulse should be four recoil frequencies, after correction for the probe
+    # shift and the Doppler shift. This allow us to extract the Doppler shift
+    # only.
+
+    if first_down_detuning_hz is None:
+        # The initial velocity is irrelevant
         initial_velocity_z = 0.0
+    else:
+        detuning_hz = first_up_detuning_hz - first_down_detuning_hz  # type: ignore
+
+        first_up_probe_shift_hz = probe_shift_alpha * first_up_rabi_freq_hz**2  # type: ignore
+        first_down_probe_shift_hz = probe_shift_alpha * first_down_rabi_freq_hz**2  # type: ignore
+
+        delta_f_laser = first_up_detuning_hz - first_down_detuning_hz  # type: ignore
+        delta_f_probe = first_up_probe_shift_hz - first_down_probe_shift_hz
+        t_sum = first_up_timestamp + first_down_timestamp  # type: ignore
+
+        initial_velocity_z = (
+            0.5
+            * sim.TRANSITION_WAVELENGTH
+            * (4 * sim.RECOIL_FREQUENCY_HZ - delta_f_laser - delta_f_probe)
+            - constants.g * t_sum
+        )
 
     return probe_shift_alpha, initial_velocity_z
 
