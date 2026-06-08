@@ -442,13 +442,13 @@ def build_sequence_from_lab_pulse_dump(
     # Convert boolean "is_up" into +-1 for the k_vector. This might become a vector later
     beam_sign = np.where(is_up, +1.0, -1.0)
 
-    # Doppler shift seen by each beam from the atom's velocity. The velocity at
-    # time t is v(t) = initial_velocity_z + g * t, so the Doppler (v/lambda)
-    # splits into a constant initial-velocity part and the time-dependent
-    # gravity part. Both enter with opposite sign for the up vs down beam.
-    initial_velocity_doppler_hz = initial_velocity_z / sim.TRANSITION_WAVELENGTH
-    velocity_doppler_hz = (
-        initial_velocity_doppler_hz + sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps
+    # Doppler shift seen by each beam from the atom's velocity. This number is
+    # the difference between what the atom experiences and the UP beam's
+    # frequency. In other words, if this number is positive, the atom is falling
+    # towards the ground and blue-shifting the up beam
+    up_beam_doppler_hz = (
+        -initial_velocity_z / sim.TRANSITION_WAVELENGTH
+        + sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps
     )
 
     # Assume that the first pulse is on resonance
@@ -462,7 +462,7 @@ def build_sequence_from_lab_pulse_dump(
     first_pulse_probe_shift_hz = (
         probe_induced_alpha_up if is_up[0] else probe_induced_alpha_down
     ) * rabi_freq_first_pulse**2
-    first_pulse_doppler_shift_hz = velocity_doppler_hz[0] * beam_sign[0]
+    first_pulse_doppler_shift_hz = up_beam_doppler_hz[0] * beam_sign[0]
     first_pulse_atom_frame_detuning_hz = sim.RECOIL_FREQUENCY_HZ
 
     # This is the unperturbed transition frequency for a hypothetical m=0 -> m=0
@@ -473,7 +473,7 @@ def build_sequence_from_lab_pulse_dump(
     # to the excited state m=+1, i.e. a velocity selection pulse.
     centre_freq_hz = total_laser_frequency_hz[0] - (
         first_pulse_probe_shift_hz
-        + first_pulse_doppler_shift_hz
+        - first_pulse_doppler_shift_hz
         + first_pulse_atom_frame_detuning_hz
     )
 
@@ -483,9 +483,11 @@ def build_sequence_from_lab_pulse_dump(
     # We define the UP beam as having k = +1, so gravity causes the up beam to
     # be BLUE-shifted
     effective_laser_detuning_hz = (
-        (total_laser_frequency_hz - centre_freq_hz)  # Recentre to the new centre freq
-        - velocity_doppler_hz
-        * beam_sign  # Subtract the per-pulse Doppler shift to bring the detunings into the freely-falling frame
+        # Recentre to the new centre freq:
+        (total_laser_frequency_hz - centre_freq_hz)
+        # Add the effect of the Doppler shift to bring the detunings into the
+        # freely-falling frame:
+        + up_beam_doppler_hz * beam_sign
     )
 
     sequence_timestamps = []
@@ -639,24 +641,35 @@ def calibrate_probe_shift_and_velocity_from_dump(
                     first_down_rabi_freq_hz = e.rabi_frequency
                     first_down_timestamp = t + e.duration / 2
 
-
-
     # Also get the up pulses with the largest and smallest rabi freq
-    
-    
-    # --- alpha: from two up pulses with the largest Rabi**2 separation ---
-    ind_min_rabi = np.argmin([e.rabi_frequency if isinstance(e, Pulse) and e.k == +1 else np.inf for e in bare_sequence])
-    ind_max_rabi = np.argmax([e.rabi_frequency if isinstance(e, Pulse) and e.k == +1 else -np.inf for e in bare_sequence])
 
+    # --- alpha: from two up pulses with the largest Rabi**2 separation ---
+    ind_min_rabi = np.argmin(
+        [
+            e.rabi_frequency if isinstance(e, Pulse) and e.k == +1 else np.inf
+            for e in bare_sequence
+        ]
+    )
+    ind_max_rabi = np.argmax(
+        [
+            e.rabi_frequency if isinstance(e, Pulse) and e.k == +1 else -np.inf
+            for e in bare_sequence
+        ]
+    )
 
     rabi_min = bare_sequence[ind_min_rabi].rabi_frequency
-    rabi_min_detuning =  bare_sequence[ind_min_rabi].detuning_hz
-    rabi_min_timestamp = bare_sequence_timestamps[ind_min_rabi] + bare_sequence[ind_min_rabi].duration/2
-    
+    rabi_min_detuning = bare_sequence[ind_min_rabi].detuning_hz
+    rabi_min_timestamp = (
+        bare_sequence_timestamps[ind_min_rabi]
+        + bare_sequence[ind_min_rabi].duration / 2
+    )
+
     rabi_max = bare_sequence[ind_max_rabi].rabi_frequency
-    rabi_max_detuning =  bare_sequence[ind_max_rabi].detuning_hz
-    rabi_max_timestamp = bare_sequence_timestamps[ind_max_rabi] + bare_sequence[ind_max_rabi].duration/2
-    
+    rabi_max_detuning = bare_sequence[ind_max_rabi].detuning_hz
+    rabi_max_timestamp = (
+        bare_sequence_timestamps[ind_max_rabi]
+        + bare_sequence[ind_max_rabi].duration / 2
+    )
 
     if rabi_min == rabi_max:
         raise ValueError(
@@ -665,16 +678,22 @@ def calibrate_probe_shift_and_velocity_from_dump(
         )
 
     f_pulse_difference = rabi_max_detuning - rabi_min_detuning
-    f_doppler_difference = constants.g * (rabi_max_timestamp - rabi_min_timestamp) / sim.TRANSITION_WAVELENGTH
-        
-    # After Doppler and stark shift correction the two up pulses should differ by an integer number of pulses. This allows us to pin down the stark shift contribution, on the assumption that the probe induced shift is less than the recoil shift
-    f_difference_probe_and_ladder_only = f_pulse_difference + f_doppler_difference
 
-    ladder_separation_hz = round((f_difference_probe_and_ladder_only) / sim.RECOIL_FREQUENCY_HZ) * sim.RECOIL_FREQUENCY_HZ
-    residual_probe_shift_hz = f_difference_probe_and_ladder_only - ladder_separation_hz
+    # The free-fall Doppler shift was already removed by
+    # build_sequence_from_lab_pulse_dump, so this difference is only because of
+    # the probe-induced Stark shift + the true detuning in the atom frame. The
+    # two up pulses should therefore differ by an integer number of pulses. This
+    # allows us to pin down the stark shift contribution, on the assumption that
+    # the probe induced shift is less than the recoil shift
+    
+
+    ladder_separation_hz = (
+        round((f_pulse_difference) / sim.RECOIL_FREQUENCY_HZ)
+        * sim.RECOIL_FREQUENCY_HZ
+    )
+    residual_probe_shift_hz = f_pulse_difference - ladder_separation_hz
 
     probe_shift_alpha = residual_probe_shift_hz / (rabi_max**2 - rabi_min**2)
-
 
     # --- v0: anchor on the FIRST down pulse being resonant ---
 
@@ -704,7 +723,7 @@ def calibrate_probe_shift_and_velocity_from_dump(
             0.5
             * sim.TRANSITION_WAVELENGTH
             * (4 * sim.RECOIL_FREQUENCY_HZ - delta_f_laser - delta_f_probe)
-            - constants.g * t_sum
+            - sim.GRAVITY_G * t_sum
         )
 
     return probe_shift_alpha, initial_velocity_z
