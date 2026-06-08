@@ -430,11 +430,11 @@ def build_sequence_from_lab_pulse_dump(
     timestamps = start_times_mu * 1e-9
     durations = durations_mu * 1e-9
 
-    # The OPLL offsets the Sirah from the ECDL and we lock to the positive side.
+    # The OPLL offsets the Sirah from the ECDL and we lock to the negative side.
     # The delivery and switch AOMs all use the -1st order.
     # This "total laser frequency" is defined in the lab rest frame.
     # TODO: This should be handled in icl_experiments
-    total_laser_frequency_hz = opll_hz - switch_hz - delivery_hz
+    total_laser_frequency_hz = -opll_hz - switch_hz - delivery_hz
 
     # The overall offset is arbitrary, so normalise to the first pulse for convenience
     total_laser_frequency_hz -= total_laser_frequency_hz[0]
