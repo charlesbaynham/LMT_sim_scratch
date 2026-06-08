@@ -335,7 +335,7 @@ def _transition_probability(m, is_ground, pulse: Pulse):
     """
     Rabi transition probability for a stationary on-axis atom at momentum class m.
 
-    "Stationary" here means that the m=0 state is stationary - obviously an atom with non-zero m is not stationary. 
+    "Stationary" here means that the m=0 state is stationary - obviously an atom with non-zero m is not stationary.
 
     Reuses the same interaction propagator as the full simulation: the
     transition probability is |B|^2 of the Bordé 2x2 matrix. The probe (light)
@@ -384,7 +384,7 @@ def build_sequence_from_lab_pulse_dump(
     and assumes a zero starting velocity. We therefore compensate out the
     Doppler effect here when the pulse sequence is built. This is non ideal
     since the Doppler shift is very much physics, so it would be better to treat
-    this with all the rest of the physics. 
+    this with all the rest of the physics.
 
     Our sign convention is that positive z is upwards, gravity therefore
     accelerates in the -1 direction. The UP beam is the one that propegates from
@@ -402,11 +402,7 @@ def build_sequence_from_lab_pulse_dump(
     # use np.logical_not -- never ``~`` on an integer array.
     is_up_input = np.asarray(is_up)
     if is_up_input.dtype != bool and not np.all(np.isin(is_up_input, (0, 1))):
-        raise ValueError(
-            "is_up must be a boolean array (or contain only 0/1); got values "
-            f"{np.unique(is_up_input)}. To flip beams use np.logical_not or a "
-            "boolean array, not ~ on an integer array."
-        )
+        raise ValueError("is_up must be a boolean array (or contain only 0/1)")
     is_up = is_up_input.astype(bool)
     start_times_mu = np.asarray(start_times_mu, dtype=float)
     durations_mu = np.asarray(durations_mu, dtype=float)
@@ -436,7 +432,11 @@ def build_sequence_from_lab_pulse_dump(
     # The OPLL offsets the Sirah from the ECDL and we lock to the positive side.
     # The delivery and switch AOMs all use the -1st order.
     # This "total laser frequency" is defined in the lab rest frame.
+    # TODO: This should be handled in icl_experiments
     total_laser_frequency_hz = opll_hz - switch_hz - delivery_hz
+
+    # The overall offset is arbitrary, so normalise to the first pulse for convenience
+    total_laser_frequency_hz -= total_laser_frequency_hz[0]
 
     # Convert boolean "is_up" into +-1 for the k_vector. This might become a vector later
     beam_sign = np.where(is_up, +1.0, -1.0)
@@ -450,12 +450,6 @@ def build_sequence_from_lab_pulse_dump(
         initial_velocity_doppler_hz + sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps
     )
 
-    # We define the UP beam as having k = +1, so gravity causes the up beam to
-    # be BLUE-shifted
-    total_laser_frequency_hz = (
-        total_laser_frequency_hz + velocity_doppler_hz * beam_sign
-    )
-
     # Assume that the first pulse is on resonance
     rabi_freq_first_pulse = (
         1 / (2 * durations[0])
@@ -463,10 +457,12 @@ def build_sequence_from_lab_pulse_dump(
         else 2 * np.pi / (4 * durations[0])
     )
 
-    if is_up[0]:
-        probe_shift_hz = probe_induced_alpha_up * rabi_freq_first_pulse**2
-    else:
-        probe_shift_hz = probe_induced_alpha_down * rabi_freq_first_pulse**2
+    # Get the shifts of the first pulse
+    first_pulse_probe_shift_hz = (
+        probe_induced_alpha_up if is_up[0] else probe_induced_alpha_down
+    ) * rabi_freq_first_pulse**2
+    first_pulse_doppler_shift_hz = velocity_doppler_hz[0] * beam_sign[0]
+    first_pulse_atom_frame_detuning_hz = sim.RECOIL_FREQUENCY_HZ
 
     # This is the unperturbed transition frequency for a hypothetical m=0 -> m=0
     # transition. To get it, we must subtract the probe shift that the atom was
@@ -475,19 +471,35 @@ def build_sequence_from_lab_pulse_dump(
     # first pulse in any sequence is a pi pulse that drives the ground state m=0
     # to the excited state m=+1, i.e. a velocity selection pulse.
     centre_freq_hz = total_laser_frequency_hz[0] - (
-        sim.RECOIL_FREQUENCY_HZ + probe_shift_hz
+        first_pulse_probe_shift_hz
+        + first_pulse_doppler_shift_hz
+        + first_pulse_atom_frame_detuning_hz
     )
 
-    total_laser_frequency_hz = total_laser_frequency_hz - centre_freq_hz
+    # Now we calculate the detuning of all the beams due only to gravity. The simulation will handle the probe-induced Stark shift.
+    # TODO: wrap the gravity Doppler shift into the main sim
+
+    # We define the UP beam as having k = +1, so gravity causes the up beam to
+    # be BLUE-shifted
+    effective_laser_detuning_hz = (
+        (total_laser_frequency_hz - centre_freq_hz)  # Recentre to the new centre freq
+        - velocity_doppler_hz
+        * beam_sign  # Subtract the per-pulse Doppler shift to bring the detunings into the freely-falling frame
+    )
 
     sequence = []
     t_now = 0.0
 
-    for this_is_up, this_timestamp, this_duration, this_total_laser_hz in zip(
+    for (
+        this_is_up,
+        this_timestamp,
+        this_duration,
+        this_effective_laser_detuning_hz,
+    ) in zip(
         is_up,
         timestamps,
         durations,
-        total_laser_frequency_hz,
+        effective_laser_detuning_hz,
     ):
         if this_timestamp < t_now:
             raise ValueError(
@@ -503,13 +515,13 @@ def build_sequence_from_lab_pulse_dump(
             rabi_freq_hz = 1 / (4 * this_duration)
 
         sequence.append(
-            # Note that we simple report the laser frequency to the simulation
+            # Note that we simply report the laser frequency to the simulation
             # and rely on it to sort out the probe shift etc. This method needs
             # only think about it when using the initial pulse to determing the
             # resonance frequency
             Pulse(
                 k=+1 if this_is_up else -1,
-                detuning_hz=this_total_laser_hz - centre_freq_hz,
+                detuning_hz=this_effective_laser_detuning_hz,
                 phi=0.0,
                 label="LMT",
                 rabi_frequency=rabi_freq_hz,
