@@ -1015,6 +1015,10 @@ def _plot_spacetime(sequence, clouds, clearout_times):
     pulse_labels = {+1: "k=+1 pulse", -1: "k=−1 pulse"}
     pulse_edge_alpha = 0.45
     pulse_edge_lw = 0.6
+    # Half-height (in v_recoil units) of the highlighted bar marking the velocity
+    # class each pulse addresses.
+    v_class_half_height = 0.05
+    v_class_label_added = False
     t_event = 0.0
     for event in sequence:
         if isinstance(event, Pulse):
@@ -1044,6 +1048,32 @@ def _plot_spacetime(sequence, clouds, clearout_times):
                 )
             lbl = None  # only add to one axis
             pulse_fill_added[event.k] = True
+
+            # Highlight the velocity class this pulse addresses on the v_recoil
+            # panel. Resonance (Bordé Omega_3 = 0, stationary vz=0 atom) gives
+            # eff_detuning = (2*m_g*k + 1)*RECOIL_FREQUENCY_HZ, so the resonant
+            # ground-state class is m = k*(eff_detuning/f_rec - 1)/2. The k factor
+            # flips the addressed velocity sign between the +k and -k beams, which
+            # is the differing Doppler shift seen by the two beams.
+            eff_detuning_hz = sim._effective_detuning_hz(
+                event.detuning_hz,
+                event.probe_shift_coefficient,
+                event.rabi_frequency,
+            )
+            m_addressed = (
+                event.k * (eff_detuning_hz / sim.RECOIL_FREQUENCY_HZ - 1) / 2
+            )
+            v_lbl = "addressed v-class" if not v_class_label_added else None
+            ax_m.fill_between(
+                [t_start_us, t_end_us],
+                m_addressed - v_class_half_height,
+                m_addressed + v_class_half_height,
+                color=pulse_colors[event.k],
+                alpha=0.55,
+                lw=0,
+                label=v_lbl,
+            )
+            v_class_label_added = True
         t_event += event.duration
 
     ax_z.plot([], [], "-", color="gray", lw=1.5, label="|g> (solid)")
@@ -1063,6 +1093,7 @@ def _plot_spacetime(sequence, clouds, clearout_times):
         f"v_recoil = {sim.RECOIL_VELOCITY * 1e3:.2f} mm/s; "
         + f"|m|_max = {int(np.abs(all_m).max()) if all_m else 0}"
     )
+    ax_m.legend(loc="upper left")
     ax_m.grid(True, alpha=0.3)
 
 
