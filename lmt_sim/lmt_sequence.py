@@ -601,7 +601,7 @@ def calibrate_probe_shift_and_velocity_from_dump(
     # recorded (centre-anchored) detunings are exposed directly. The AOM-sign
     # convention is whatever build_sequence_from_lab_pulse_dump uses -- this
     # calibration is consistent with it by construction.
-    sequence_timestamps, bare_sequence = build_sequence_from_lab_pulse_dump(
+    bare_sequence_timestamps, bare_sequence = build_sequence_from_lab_pulse_dump(
         is_up=is_up,
         start_times_mu=start_times_mu,
         durations_mu=durations_mu,
@@ -624,7 +624,7 @@ def calibrate_probe_shift_and_velocity_from_dump(
     first_down_rabi_freq_hz = None
     first_down_timestamp = None
 
-    for t, e in zip(sequence_timestamps, bare_sequence):
+    for t, e in zip(bare_sequence_timestamps, bare_sequence):
         if isinstance(e, (Freefall, Clearout)):
             pass
         elif isinstance(e, Pulse):
@@ -645,16 +645,18 @@ def calibrate_probe_shift_and_velocity_from_dump(
     
     
     # --- alpha: from two up pulses with the largest Rabi**2 separation ---
-    ind_min_rabi = np.argmin([e.rabi_frequency for e in bare_sequence if isinstance(e, Pulse) and e.k == +1])
-    ind_max_rabi = np.argmax([e.rabi_frequency for e in bare_sequence if isinstance(e, Pulse) and e.k == +1])
+    ind_min_rabi = np.argmin([e.rabi_frequency if isinstance(e, Pulse) and e.k == +1 else np.inf for e in bare_sequence])
+    ind_max_rabi = np.argmax([e.rabi_frequency if isinstance(e, Pulse) and e.k == +1 else -np.inf for e in bare_sequence])
 
 
     rabi_min = bare_sequence[ind_min_rabi].rabi_frequency
-    rabi_min_timestamp = sequence_timestamps[ind_min_rabi] + bare_sequence[ind_min_rabi].duration/2
-    rabi_min_detuning =  sequence_timestamps[ind_min_rabi].detuning_hz
+    rabi_min_detuning =  bare_sequence[ind_min_rabi].detuning_hz
+    rabi_min_timestamp = bare_sequence_timestamps[ind_min_rabi] + bare_sequence[ind_min_rabi].duration/2
+    
     rabi_max = bare_sequence[ind_max_rabi].rabi_frequency
-    rabi_max_timestamp = sequence_timestamps[ind_max_rabi] + bare_sequence[ind_max_rabi].duration/2
-    rabi_max_detuning =  sequence_timestamps[ind_max_rabi].detuning_hz
+    rabi_max_detuning =  bare_sequence[ind_max_rabi].detuning_hz
+    rabi_max_timestamp = bare_sequence_timestamps[ind_max_rabi] + bare_sequence[ind_max_rabi].duration/2
+    
 
     if rabi_min == rabi_max:
         raise ValueError(
@@ -666,7 +668,7 @@ def calibrate_probe_shift_and_velocity_from_dump(
     f_doppler_difference = constants.g * (rabi_max_timestamp - rabi_min_timestamp) / sim.TRANSITION_WAVELENGTH
         
     # After Doppler and stark shift correction the two up pulses should differ by an integer number of pulses. This allows us to pin down the stark shift contribution, on the assumption that the probe induced shift is less than the recoil shift
-    f_difference_probe_and_ladder_only = f_pulse_difference - f_doppler_difference
+    f_difference_probe_and_ladder_only = f_pulse_difference + f_doppler_difference
 
     ladder_separation_hz = round((f_difference_probe_and_ladder_only) / sim.RECOIL_FREQUENCY_HZ) * sim.RECOIL_FREQUENCY_HZ
     residual_probe_shift_hz = f_difference_probe_and_ladder_only - ladder_separation_hz
