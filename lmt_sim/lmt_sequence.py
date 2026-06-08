@@ -488,6 +488,7 @@ def build_sequence_from_lab_pulse_dump(
         * beam_sign  # Subtract the per-pulse Doppler shift to bring the detunings into the freely-falling frame
     )
 
+    sequence_timestamps = []
     sequence = []
     t_now = 0.0
 
@@ -507,6 +508,7 @@ def build_sequence_from_lab_pulse_dump(
                 f"Pulse timestamps must be non-decreasing. Got {this_timestamp} < {t_now}."
             )
         if this_timestamp > t_now:
+            sequence_timestamps.append(t_now)
             sequence.append(Freefall(duration=this_timestamp - t_now))
             t_now = this_timestamp
 
@@ -515,6 +517,7 @@ def build_sequence_from_lab_pulse_dump(
         else:
             rabi_freq_hz = 1 / (4 * this_duration)
 
+        sequence_timestamps.append(this_timestamp)
         sequence.append(
             # Note that we simply report the laser frequency to the simulation
             # and rely on it to sort out the probe shift etc. This method needs
@@ -534,7 +537,7 @@ def build_sequence_from_lab_pulse_dump(
         )
         t_now += this_duration
 
-    return sequence
+    return np.array(sequence_timestamps), sequence
 
 
 def calibrate_probe_shift_and_velocity_from_dump(
@@ -598,7 +601,7 @@ def calibrate_probe_shift_and_velocity_from_dump(
     # recorded (centre-anchored) detunings are exposed directly. The AOM-sign
     # convention is whatever build_sequence_from_lab_pulse_dump uses -- this
     # calibration is consistent with it by construction.
-    bare_sequence = build_sequence_from_lab_pulse_dump(
+    sequence_timestamps, bare_sequence = build_sequence_from_lab_pulse_dump(
         is_up=is_up,
         start_times_mu=start_times_mu,
         durations_mu=durations_mu,
@@ -621,8 +624,7 @@ def calibrate_probe_shift_and_velocity_from_dump(
     first_down_rabi_freq_hz = None
     first_down_timestamp = None
 
-    timestamp = 0.0
-    for e in bare_sequence:
+    for t, e in zip(sequence_timestamps, bare_sequence):
         if isinstance(e, (Freefall, Clearout)):
             pass
         elif isinstance(e, Pulse):
@@ -630,47 +632,47 @@ def calibrate_probe_shift_and_velocity_from_dump(
                 if first_up_detuning_hz is None:
                     first_up_detuning_hz = e.detuning_hz
                     first_up_rabi_freq_hz = e.rabi_frequency
-                    first_up_timestamp = timestamp + e.duration / 2
+                    first_up_timestamp = t + e.duration / 2
             elif e.k == -1:
                 if first_down_detuning_hz is None:
                     first_down_detuning_hz = e.detuning_hz
                     first_down_rabi_freq_hz = e.rabi_frequency
-                    first_down_timestamp = timestamp + e.duration / 2
+                    first_down_timestamp = t + e.duration / 2
 
-        timestamp += e.duration
 
-    # Also get all the rabi freq / detuning combos for the up pulses
-    up_pulses = set()
-    for e in bare_sequence:
-        if isinstance(e, Pulse):
-            if e.k == +1:
-                up_pulses.add((e.detuning_hz, e.rabi_frequency))
 
-    if len(up_pulses) < 2:
-        raise ValueError(
-            "Need at least two up-beam pulses with different Rabi frequencies "
-            "to infer the probe-shift coefficient."
-        )
-
+    # Also get the up pulses with the largest and smallest rabi freq
+    
+    
     # --- alpha: from two up pulses with the largest Rabi**2 separation ---
-    det_ref, rabi_ref = list(up_pulses)[0]
-    det_alt, rabi_alt = max(
-        list(up_pulses)[1:], key=lambda dr: abs(dr[1] ** 2 - rabi_ref**2)
-    )
-    if rabi_alt**2 == rabi_ref**2:
+    ind_min_rabi = np.argmin([e.rabi_frequency for e in bare_sequence if isinstance(e, Pulse) and e.k == +1])
+    ind_max_rabi = np.argmax([e.rabi_frequency for e in bare_sequence if isinstance(e, Pulse) and e.k == +1])
+
+
+    rabi_min = bare_sequence[ind_min_rabi].rabi_frequency
+    rabi_min_timestamp = sequence_timestamps[ind_min_rabi] + bare_sequence[ind_min_rabi].duration/2
+    rabi_min_detuning =  sequence_timestamps[ind_min_rabi].detuning_hz
+    rabi_max = bare_sequence[ind_max_rabi].rabi_frequency
+    rabi_max_timestamp = sequence_timestamps[ind_max_rabi] + bare_sequence[ind_max_rabi].duration/2
+    rabi_max_detuning =  sequence_timestamps[ind_max_rabi].detuning_hz
+
+    if rabi_min == rabi_max:
         raise ValueError(
             "All up-beam pulses share the same Rabi frequency; cannot separate "
             "the probe shift from the recoil ladder."
         )
-    # After stark-correction the two up pulses differ by an integer number of
-    # recoils; that integer is robust because the residual stark term is < 1
-    # recoil.
-    ladder_separation_hz = (
-        round((det_alt - det_ref) / sim.RECOIL_FREQUENCY_HZ) * sim.RECOIL_FREQUENCY_HZ
-    )
-    probe_shift_alpha = ((det_alt - det_ref) - ladder_separation_hz) / (
-        rabi_alt**2 - rabi_ref**2
-    )
+
+    f_pulse_difference = rabi_max_detuning - rabi_min_detuning
+    f_doppler_difference = constants.g * (rabi_max_timestamp - rabi_min_timestamp) / sim.TRANSITION_WAVELENGTH
+        
+    # After Doppler and stark shift correction the two up pulses should differ by an integer number of pulses. This allows us to pin down the stark shift contribution, on the assumption that the probe induced shift is less than the recoil shift
+    f_difference_probe_and_ladder_only = f_pulse_difference - f_doppler_difference
+
+    ladder_separation_hz = round((f_difference_probe_and_ladder_only) / sim.RECOIL_FREQUENCY_HZ) * sim.RECOIL_FREQUENCY_HZ
+    residual_probe_shift_hz = f_difference_probe_and_ladder_only - ladder_separation_hz
+
+    probe_shift_alpha = residual_probe_shift_hz / (rabi_max**2 - rabi_min**2)
+
 
     # --- v0: anchor on the FIRST down pulse being resonant ---
 
@@ -689,8 +691,6 @@ def calibrate_probe_shift_and_velocity_from_dump(
         # The initial velocity is irrelevant
         initial_velocity_z = 0.0
     else:
-        detuning_hz = first_up_detuning_hz - first_down_detuning_hz  # type: ignore
-
         first_up_probe_shift_hz = probe_shift_alpha * first_up_rabi_freq_hz**2  # type: ignore
         first_down_probe_shift_hz = probe_shift_alpha * first_down_rabi_freq_hz**2  # type: ignore
 

@@ -862,7 +862,7 @@ def _minimal_lab_dump(is_up):
 )
 def test_build_sequence_accepts_boolean_like_is_up(is_up):
     """0/1 ints, integer arrays and boolean arrays all map to the same beams."""
-    sequence = build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(is_up))
+    _, sequence = build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(is_up))
     pulse_ks = [event.k for event in sequence if isinstance(event, Pulse)]
     assert pulse_ks == [1, -1]
 
@@ -889,7 +889,7 @@ def test_build_sequence_logical_not_flips_beams():
 
 
 def _second_pulse_detuning(dump):
-    sequence = build_sequence_from_lab_pulse_dump(**dump)
+    _, sequence = build_sequence_from_lab_pulse_dump(**dump)
     pulses = [event for event in sequence if isinstance(event, Pulse)]
     return pulses[1].detuning_hz
 
@@ -946,7 +946,7 @@ def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder():
     with pytest.warns(UserWarning, match="HACKY"):
         alpha, v0 = calibrate_probe_shift_and_velocity_from_dump(**dump)
 
-    sequence = build_sequence_from_lab_pulse_dump(
+    _, sequence = build_sequence_from_lab_pulse_dump(
         **dump,
         probe_induced_alpha_up=alpha,
         probe_induced_alpha_down=alpha,
