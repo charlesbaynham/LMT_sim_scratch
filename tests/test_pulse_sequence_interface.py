@@ -438,11 +438,9 @@ def test_compute_spacetime_trajectory_plot_places_pulse_step_at_midpoint(monkeyp
     assert np.allclose(m_vline_xs, [0.0, end_us])
 
     addressed_ranges = [args[0] for args, _ in ax_m.broken_barh_calls]
-    addressed_centres = sorted(
-        yrange[0] + yrange[1] / 2 for args, _ in ax_m.broken_barh_calls for yrange in [args[1]]
-    )
-    assert addressed_ranges == [[(0.0, end_us)], [(0.0, end_us)]]
-    assert np.allclose(addressed_centres, [0.0, 1.0])
+    addressed_y_ranges = [args[1] for args, _ in ax_m.broken_barh_calls]
+    assert addressed_ranges == [[(0.0, end_us)]]
+    assert np.allclose(addressed_y_ranges, [(-0.05, 1.1)])
 
 
 def test_addressed_momentum_classes_follow_beam_sign():

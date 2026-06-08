@@ -895,10 +895,10 @@ def _plot_spacetime(sequence, clouds, clearout_times):
     import matplotlib.pyplot as plt
 
     colors = plt.cm.tab10.colors
-    addressed_bar_height = 0.1
-    addressed_bar_alpha = {True: 0.32, False: 0.18}
+    addressed_bar_padding = 0.05
+    addressed_bar_alpha = 0.24
     fig, (ax_z, ax_m) = plt.subplots(
-        2, 1, figsize=(13, 9), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
+        2, 1, figsize=(13, 15), sharex=True, gridspec_kw={"height_ratios": [3, 2]}
     )
 
     def build_plot_trace(cloud):
@@ -1041,6 +1041,8 @@ def _plot_spacetime(sequence, clouds, clearout_times):
             t_width_us = event.duration * 1e6
             t_end_us = (t_event + event.duration) * 1e6
             m_ground, m_excited = _addressed_momentum_classes(event)
+            m_low = min(m_ground, m_excited)
+            m_high = max(m_ground, m_excited)
             lbl = pulse_labels[event.k] if not pulse_fill_added[event.k] else None
             for ax in (ax_z, ax_m):
                 ax.axvspan(
@@ -1063,22 +1065,18 @@ def _plot_spacetime(sequence, clouds, clearout_times):
                     lw=pulse_edge_lw,
                     alpha=pulse_edge_alpha,
                 )
-            for addressed_m, addressed_is_ground in (
-                (m_ground, True),
-                (m_excited, False),
-            ):
-                ax_m.broken_barh(
-                    [(t_start_us, t_width_us)],
-                    (
-                        addressed_m - addressed_bar_height / 2,
-                        addressed_bar_height,
-                    ),
-                    facecolors=pulse_colors[event.k],
-                    edgecolors=pulse_colors[event.k],
-                    linewidth=pulse_edge_lw,
-                    alpha=addressed_bar_alpha[addressed_is_ground],
-                    zorder=1.5,
-                )
+            ax_m.broken_barh(
+                [(t_start_us, t_width_us)],
+                (
+                    m_low - addressed_bar_padding,
+                    (m_high - m_low) + 2 * addressed_bar_padding,
+                ),
+                facecolors=pulse_colors[event.k],
+                edgecolors=pulse_colors[event.k],
+                linewidth=pulse_edge_lw,
+                alpha=addressed_bar_alpha,
+                zorder=1.5,
+            )
             lbl = None  # only add to one axis
             pulse_fill_added[event.k] = True
         t_event += event.duration
