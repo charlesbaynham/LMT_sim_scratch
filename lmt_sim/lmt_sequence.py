@@ -569,19 +569,16 @@ def calibrate_probe_shift_and_velocity_from_dump(
       Comparing the reference up pulse with the up pulse of most-different Rabi
       frequency isolates ``alpha`` from the recoil ladder.
 
-    * ``v0`` (initial z-velocity, m/s): with ``alpha`` applied to both beams,
-      any residual constant offset between the up and down ladders is the
-      differential Doppler shift ``2 * v0 / lambda`` (the beams counter-
-      propagate). Solving for ``v0`` lands the down pulses back on the up
-      ladder.
-
-    .. note::
-
-        ``v0`` is only determined **modulo one recoil-velocity quantum**
-        (``recoil * lambda / 2``): a whole-recoil error in ``v0`` is
-        indistinguishable from placing the down pulses one rung over. The
-        branch nearest zero is chosen. This integer ambiguity is one more
-        reason to use a real velocity measurement instead.
+    * ``v0`` (initial z-velocity, m/s): the two beams counter-propagate, so a
+      nonzero ``v0`` shifts the down-beam detunings by ``2 * v0 / lambda``
+      relative to the up-anchored centre. We pin ``v0`` by **assuming the first
+      down pulse is resonant** on the same ``m_g = 0`` transition the build
+      already anchors the first up pulse to (resonance ``+1`` recoil for either
+      beam). That single condition fixes ``v0`` directly -- there is no
+      recoil-branch ambiguity, and in particular it avoids the failure mode
+      where minimising a mod-recoil residual parks the down pulses on the
+      *even* integers (half a rung off resonance), which silently kills the
+      launch.
 
     Parameters match :func:`build_sequence_from_lab_pulse_dump`.
 
@@ -648,18 +645,25 @@ def calibrate_probe_shift_and_velocity_from_dump(
         rabi_alt**2 - rabi_ref**2
     )
 
-    # --- v0: residual up/down ladder offset is the differential Doppler ---
-    def ladder_residual_hz(detuning_hz, rabi_frequency):
-        effective = detuning_hz - probe_shift_alpha * rabi_frequency**2
-        return effective - round(effective / recoil) * recoil
-
+    # --- v0: anchor on the FIRST down pulse being resonant ---
+    # The build already assumes the first (up) pulse is resonant on the m_g=0
+    # transition (+1 recoil). We make the exact parallel assumption for the
+    # first DOWN pulse: it is resonant on the same m_g=0 transition, whose
+    # resonance is also +1 recoil (rung = 2*m_g*k + 1 = +1 at m_g=0, for either
+    # beam). Turning on v0 shifts every down-beam detuning by +2*v0/lambda
+    # relative to the up-anchored centre, so v0 follows directly from that one
+    # pulse -- no averaging, and no recoil-branch ambiguity. (The previous
+    # "nearest integer over all down pulses" rule chose v0 ~ 0, which left the
+    # down pulses on the EVEN integers, i.e. half a rung off resonance, and the
+    # launch never happened.)
     if down_pulses:
-        mean_down_residual_hz = float(
-            np.mean([ladder_residual_hz(d, r) for d, r in down_pulses])
+        first_down_detuning_hz, first_down_rabi_hz = down_pulses[0]
+        first_down_effective_hz = (
+            first_down_detuning_hz - probe_shift_alpha * first_down_rabi_hz**2
         )
-        # build subtracts velocity_doppler * beam_sign, so turning on v0 shifts
-        # the down-beam detunings by +2*v0/lambda; pick v0 to zero the residual.
-        initial_velocity_z = -mean_down_residual_hz * wavelength / 2.0
+        initial_velocity_z = (
+            (recoil - first_down_effective_hz) * wavelength / 2.0
+        )
     else:
         initial_velocity_z = 0.0
 
