@@ -980,12 +980,13 @@ def _plot_spacetime(sequence, clouds, clearout_times):
                 ls,
                 color=color,
                 lw=1.5,
-                label=lbl,
+                label=lbl
             )
             m_label_added = True
         if cloud.alive:
-            ax_z.plot(times_us * 1e6, z_mm * 1e3, "o", color=color, ms=3)
-            ax_m.plot(m_times_us * 1e6, m_arr, "o", color=color, ms=3)
+            pass
+            # ax_z.plot(times_us * 1e6, z_mm * 1e3, "o", color=color, ms=3)
+            # ax_m.plot(m_times_us * 1e6, m_arr, "o", color=color, ms=3)
         else:
             ax_z.plot(times_us[:-1] * 1e6, z_mm[:-1] * 1e3, "o", color=color, ms=3)
             ax_z.plot(
