@@ -471,11 +471,9 @@ def build_sequence_from_lab_pulse_dump(
     # from us actually driving the m=0 -> m=1 transition. We assume that the
     # first pulse in any sequence is a pi pulse that drives the ground state m=0
     # to the excited state m=+1, i.e. a velocity selection pulse.
-    centre_freq_hz = total_laser_frequency_hz[0] - (
-        first_pulse_probe_shift_hz
-        - first_pulse_doppler_shift_hz
-        + first_pulse_atom_frame_detuning_hz
-    )
+    centre_freq_hz = total_laser_frequency_hz[0] + first_pulse_doppler_shift_hz - first_pulse_atom_frame_detuning_hz - first_pulse_probe_shift_hz
+    
+    
 
     # Now we calculate the detuning of all the beams due only to gravity. The simulation will handle the probe-induced Stark shift.
     # TODO: wrap the gravity Doppler shift into the main sim
@@ -487,7 +485,7 @@ def build_sequence_from_lab_pulse_dump(
         (total_laser_frequency_hz - centre_freq_hz)
         # Add the effect of the Doppler shift to bring the detunings into the
         # freely-falling frame:
-        + up_beam_doppler_hz * beam_sign
+        + (up_beam_doppler_hz * beam_sign  )  
     )
 
     sequence_timestamps = []
