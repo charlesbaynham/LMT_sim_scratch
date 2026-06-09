@@ -18,6 +18,23 @@ Examples of guards to respect (not exhaustive):
 - `ValueError: All pulses must currently use the same detuning for Bordé-frame propagation` in `lmt_sim/lmt_sequence.py` — changing laser frequency between pulses requires frame corrections not yet implemented
 - `TODO: Convert to the integral of laser phase` in `transform_state_vector` — the frame transformation is not valid for time-varying laser frequency
 
+## IMPORTANT: Notebooks must never have stale outputs
+
+A notebook's stored outputs must always match its current code. **Never commit a
+notebook whose outputs are out of sync with its cells.** A notebook is only ever
+allowed to be in one of two states:
+
+- **No output** — all cells cleared, or
+- **Correct output** — freshly re-executed top-to-bottom so the saved outputs
+  reflect the current code.
+
+Whenever you change a notebook, re-execute it in place and save the regenerated
+outputs before committing (e.g. with `nbclient`, then `nbformat.write`). It is
+not enough to run it in memory to check it executes — the executed version must
+be the one written to disk and committed. Stale outputs are misleading and worse
+than none.
+
+
 
 
 Minimal working example of a Large Momentum Transfer (LMT) atom interferometer simulation for Sr-87 on the 698 nm clock transition, using the formalism of Bordé (PhysRevA.30.1836).

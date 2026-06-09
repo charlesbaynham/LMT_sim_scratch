@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from lmt_sim.lmt_sequence import (
+    _addressed_momentum_classes,
     compute_spacetime_trajectory,
     Clearout,
     Freefall,
@@ -10,6 +11,8 @@ from lmt_sim.lmt_sequence import (
     run_pulse_sequence_in_lab_frame,
     run_pulse_sequence_in_borde_representation,
     build_mach_zehnder_pulse_sequence,
+    build_sequence_from_lab_pulse_dump,
+    calibrate_probe_shift_and_velocity_from_dump,
 )
 from lmt_sim.lmt_simulation import (
     AtomState,
@@ -26,7 +29,6 @@ from lmt_sim.lmt_simulation import (
     pulse_interaction_in_borde_representation,
     transform_state_vector,
 )
-from lmt_sim.lmt_real_sequence import build_lmt_real_sequence
 
 
 def assert_states_close(actual, expected):
@@ -94,6 +96,46 @@ def calc_mz_excitation(
         return excited_prob / (ground_prob + excited_prob)
 
 
+# ---------------------------------------------------------------------------
+# Low-level Bordé-frame primitives shared by the hand-rolled "legacy" baselines
+# below. These deliberately wrap only the low-level simulation primitives (never
+# the production runner) so the baselines remain an independent reference to
+# compare the high-level API against.
+# ---------------------------------------------------------------------------
+
+
+def _legacy_to_borde(state, detuning_hz, vz, t=0.0, inverse=False):
+    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
+    return transform_state_vector(
+        state, omega_laser=omega_laser, t=t, z=0.0, vz=vz, inverse=inverse
+    )
+
+
+def _legacy_pulse(
+    state, detuning_hz, t_pulse, phase, vz, rabi_freq=RABI_FREQ, k_sign=+1
+):
+    return pulse_interaction_in_borde_representation(
+        state,
+        pulse_detuning=detuning_hz,
+        t_pulse=t_pulse,
+        pulse_rabi_freq=rabi_freq,
+        pulse_phase=phase,
+        k_sign=k_sign,
+        k_wavevector=K_WAVEVECTOR,
+        vz=vz,
+    )
+
+
+def _legacy_propagate(state, dt, detuning_hz, vz):
+    return propagate_states_in_borde_representation(
+        state,
+        time_of_propegation=dt,
+        detuning_hz=detuning_hz,
+        vz=vz,
+        k_wavevector=K_WAVEVECTOR,
+    )
+
+
 def legacy_calc_mz_excitation(
     phi,
     detuning_hz=RECOIL_FREQUENCY_HZ,
@@ -101,82 +143,33 @@ def legacy_calc_mz_excitation(
     time_between_pulses=200e-6,
 ):
     state = make_atom_states(initial_velocity_z=initial_velocity_z)
-
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
     current_time = 0.0
 
-    state = transform_state_vector(
-        state,
-        omega_laser=omega_laser,
-        t=current_time,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=False,
-    )
+    state = _legacy_to_borde(state, detuning_hz, initial_velocity_z, t=current_time)
 
-    state = pulse_interaction_in_borde_representation(
-        state,
-        pulse_detuning=detuning_hz,
-        t_pulse=T_PI / 2,
-        pulse_rabi_freq=RABI_FREQ,
-        pulse_phase=0.0,
-        k_sign=+1,
-        k_wavevector=K_WAVEVECTOR,
-        vz=initial_velocity_z,
-    )
+    state = _legacy_pulse(state, detuning_hz, T_PI / 2, 0.0, initial_velocity_z)
     current_time += T_PI / 2
 
     if time_between_pulses > 0.0:
-        state = propagate_states_in_borde_representation(
-            state,
-            time_of_propegation=time_between_pulses,
-            detuning_hz=detuning_hz,
-            vz=initial_velocity_z,
-            k_wavevector=K_WAVEVECTOR,
+        state = _legacy_propagate(
+            state, time_between_pulses, detuning_hz, initial_velocity_z
         )
         current_time += time_between_pulses
 
-    state = pulse_interaction_in_borde_representation(
-        state,
-        pulse_detuning=detuning_hz,
-        t_pulse=T_PI,
-        pulse_rabi_freq=RABI_FREQ,
-        pulse_phase=phi,
-        k_sign=+1,
-        k_wavevector=K_WAVEVECTOR,
-        vz=initial_velocity_z,
-    )
+    state = _legacy_pulse(state, detuning_hz, T_PI, phi, initial_velocity_z)
     current_time += T_PI
 
     if time_between_pulses > 0.0:
-        state = propagate_states_in_borde_representation(
-            state,
-            time_of_propegation=time_between_pulses,
-            detuning_hz=detuning_hz,
-            vz=initial_velocity_z,
-            k_wavevector=K_WAVEVECTOR,
+        state = _legacy_propagate(
+            state, time_between_pulses, detuning_hz, initial_velocity_z
         )
         current_time += time_between_pulses
 
-    state = pulse_interaction_in_borde_representation(
-        state,
-        pulse_detuning=detuning_hz,
-        t_pulse=T_PI / 2,
-        pulse_rabi_freq=RABI_FREQ,
-        pulse_phase=4 * phi,
-        k_sign=+1,
-        k_wavevector=K_WAVEVECTOR,
-        vz=initial_velocity_z,
-    )
+    state = _legacy_pulse(state, detuning_hz, T_PI / 2, 4 * phi, initial_velocity_z)
     current_time += T_PI / 2
 
-    state = transform_state_vector(
-        state,
-        omega_laser=omega_laser,
-        t=current_time,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=True,
+    state = _legacy_to_borde(
+        state, detuning_hz, initial_velocity_z, t=current_time, inverse=True
     )
 
     ground_prob, excited_prob = calculate_ground_and_excited_probabilities(state)
@@ -196,38 +189,25 @@ def legacy_run_mz_sequence_in_borde_representation(
         time_between_pulses=time_between_pulses,
     )
 
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
-    state = transform_state_vector(
-        state,
-        omega_laser=omega_laser,
-        t=0.0,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=False,
-    )
+    state = _legacy_to_borde(state, detuning_hz, initial_velocity_z)
     current_time = 0.0
 
     for event in pulse_sequence:
         if isinstance(event, Freefall):
-            state = propagate_states_in_borde_representation(
-                state,
-                time_of_propegation=event.duration,
-                detuning_hz=detuning_hz,
-                vz=initial_velocity_z,
-                k_wavevector=K_WAVEVECTOR,
+            state = _legacy_propagate(
+                state, event.duration, detuning_hz, initial_velocity_z
             )
             current_time += event.duration
             continue
 
-        state = pulse_interaction_in_borde_representation(
+        state = _legacy_pulse(
             state,
-            pulse_detuning=event.detuning_hz,
-            t_pulse=event.duration,
-            pulse_rabi_freq=event.rabi_frequency,
-            pulse_phase=event.phi,
+            event.detuning_hz,
+            event.duration,
+            event.phi,
+            initial_velocity_z,
+            rabi_freq=event.rabi_frequency,
             k_sign=event.k,
-            k_wavevector=K_WAVEVECTOR,
-            vz=initial_velocity_z,
         )
         current_time += event.duration
 
@@ -246,49 +226,19 @@ def legacy_run_mz_sequence_with_clearout_in_borde_representation(
     time_between_pulses=200e-6,
 ):
     state = make_atom_states(initial_velocity_z=initial_velocity_z)
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
-    state = transform_state_vector(
-        state,
-        omega_laser=omega_laser,
-        t=0.0,
-        z=0.0,
-        vz=initial_velocity_z,
-        inverse=False,
-    )
+    state = _legacy_to_borde(state, detuning_hz, initial_velocity_z)
     current_time = 0.0
 
-    state = pulse_interaction_in_borde_representation(
-        state,
-        pulse_detuning=detuning_hz,
-        t_pulse=T_PI / 2,
-        pulse_rabi_freq=RABI_FREQ,
-        pulse_phase=0.0,
-        k_sign=+1,
-        k_wavevector=K_WAVEVECTOR,
-        vz=initial_velocity_z,
-    )
+    state = _legacy_pulse(state, detuning_hz, T_PI / 2, 0.0, initial_velocity_z)
     current_time += T_PI / 2
 
     if time_between_pulses > 0.0:
-        state = propagate_states_in_borde_representation(
-            state,
-            time_of_propegation=time_between_pulses,
-            detuning_hz=detuning_hz,
-            vz=initial_velocity_z,
-            k_wavevector=K_WAVEVECTOR,
+        state = _legacy_propagate(
+            state, time_between_pulses, detuning_hz, initial_velocity_z
         )
         current_time += time_between_pulses
 
-    state = pulse_interaction_in_borde_representation(
-        state,
-        pulse_detuning=detuning_hz,
-        t_pulse=T_PI,
-        pulse_rabi_freq=RABI_FREQ,
-        pulse_phase=phi,
-        k_sign=+1,
-        k_wavevector=K_WAVEVECTOR,
-        vz=initial_velocity_z,
-    )
+    state = _legacy_pulse(state, detuning_hz, T_PI, phi, initial_velocity_z)
     current_time += T_PI
 
     result = do_clearout(state, rng=rng)
@@ -297,25 +247,12 @@ def legacy_run_mz_sequence_with_clearout_in_borde_representation(
     state = result
 
     if time_between_pulses > 0.0:
-        state = propagate_states_in_borde_representation(
-            state,
-            time_of_propegation=time_between_pulses,
-            detuning_hz=detuning_hz,
-            vz=initial_velocity_z,
-            k_wavevector=K_WAVEVECTOR,
+        state = _legacy_propagate(
+            state, time_between_pulses, detuning_hz, initial_velocity_z
         )
         current_time += time_between_pulses
 
-    state = pulse_interaction_in_borde_representation(
-        state,
-        pulse_detuning=detuning_hz,
-        t_pulse=T_PI / 2,
-        pulse_rabi_freq=RABI_FREQ,
-        pulse_phase=4 * phi,
-        k_sign=+1,
-        k_wavevector=K_WAVEVECTOR,
-        vz=initial_velocity_z,
-    )
+    state = _legacy_pulse(state, detuning_hz, T_PI / 2, 4 * phi, initial_velocity_z)
     current_time += T_PI / 2
 
     # Match the production runner's per-pulse discard (see note above).
@@ -439,9 +376,14 @@ def test_compute_spacetime_trajectory_plot_places_pulse_step_at_midpoint(monkeyp
         def __init__(self):
             self.plot_calls = []
             self.vline_calls = []
+            self.broken_barh_calls = []
 
         def plot(self, x, y, *args, **kwargs):
             self.plot_calls.append((np.asarray(x), np.asarray(y), args, kwargs))
+            return []
+
+        def broken_barh(self, *args, **kwargs):
+            self.broken_barh_calls.append((args, kwargs))
             return []
 
         def axvline(self, *args, **kwargs):
@@ -485,15 +427,48 @@ def test_compute_spacetime_trajectory_plot_places_pulse_step_at_midpoint(monkeyp
     assert any(np.allclose(xs, [0.0, midpoint_us]) for xs in z_segment_xs)
     assert any(np.allclose(xs, [midpoint_us, end_us]) for xs in z_segment_xs)
 
-    m_trace_xs = [call[0] for call in ax_m.plot_calls if len(call[0]) >= 3]
-    assert any(
-        np.allclose(xs, [0.0, midpoint_us, midpoint_us, end_us]) for xs in m_trace_xs
-    )
+    m_segment_xs = [call[0] for call in ax_m.plot_calls if len(call[0]) == 2]
+    assert any(np.allclose(xs, [0.0, midpoint_us]) for xs in m_segment_xs)
+    assert any(np.allclose(xs, [midpoint_us, midpoint_us]) for xs in m_segment_xs)
+    assert any(np.allclose(xs, [midpoint_us, end_us]) for xs in m_segment_xs)
 
     z_vline_xs = sorted(float(args[0]) for args, _ in ax_z.vline_calls)
     m_vline_xs = sorted(float(args[0]) for args, _ in ax_m.vline_calls)
     assert np.allclose(z_vline_xs, [0.0, end_us])
     assert np.allclose(m_vline_xs, [0.0, end_us])
+
+    addressed_ranges = [args[0] for args, _ in ax_m.broken_barh_calls]
+    addressed_y_ranges = [args[1] for args, _ in ax_m.broken_barh_calls]
+    assert addressed_ranges == [[(0.0, end_us)]]
+    assert np.allclose(addressed_y_ranges, [(-0.05, 1.1)])
+
+
+def test_addressed_momentum_classes_follow_beam_sign():
+    pulse = Pulse(
+        k=-1,
+        detuning_hz=3 * RECOIL_FREQUENCY_HZ,
+        phi=0.0,
+        label="down-resonant",
+        rabi_frequency=RABI_FREQ,
+        duration=T_PI,
+    )
+
+    assert np.allclose(_addressed_momentum_classes(pulse), [-1.0, -2.0])
+
+
+def test_addressed_momentum_classes_use_effective_detuning():
+    probe_shift_coefficient = 1.0e-5
+    pulse = Pulse(
+        k=+1,
+        detuning_hz=RECOIL_FREQUENCY_HZ + probe_shift_coefficient * RABI_FREQ**2,
+        phi=0.0,
+        label="probe-shifted",
+        rabi_frequency=RABI_FREQ,
+        duration=T_PI,
+        probe_shift_coefficient=probe_shift_coefficient,
+    )
+
+    assert np.allclose(_addressed_momentum_classes(pulse), [0.0, 1.0])
 
 
 def test_compute_spacetime_trajectory_max_branches_plots_before_raising(monkeypatch):
@@ -907,28 +882,117 @@ def test_calculate_excited_fraction_for_pulse_sequence_rejects_clearout_events()
         calculate_excited_fraction_for_pulse_sequence(pulse_sequence)
 
 
-def test_build_lmt_real_sequence_negative_gap_validation_comes_from_steps():
-    with pytest.raises(ValueError, match="duration must be non-negative"):
-        build_lmt_real_sequence(delay_between_interferometry_pulses=-1e-6)
-    with pytest.raises(ValueError, match="duration must be non-negative"):
-        build_lmt_real_sequence(vs_to_bs1_gap=-1e-6)
+def _minimal_lab_dump(is_up):
+    """A minimal valid lab pulse dump (two pulses) for builder tests."""
+    return dict(
+        is_up=is_up,
+        start_times_mu=np.array([0.0, 1_000_000.0]),
+        durations_mu=np.array([95_000.0, 95_000.0]),
+        opll_hz=np.array([80e6, 80e6]),
+        switch_hz=np.zeros(2),
+        delivery_hz=np.zeros(2),
+        delivery_setpoint=np.array([2.0, 2.0]),
+    )
 
 
-def test_build_lmt_real_sequence_uses_duration_based_events():
-    sequence = build_lmt_real_sequence(N=7)
-    assert sequence
-    assert all(not hasattr(event, "time") for event in sequence)
-    assert isinstance(sequence[0], Pulse)
-    assert sequence[0].label == "velocity_selection"
-    assert isinstance(sequence[1], Clearout)
-    assert isinstance(sequence[2], Freefall)
-    assert isinstance(sequence[-1], Pulse)
-    assert sequence[-1].label == "BS2"
+@pytest.mark.parametrize(
+    "is_up",
+    [[1, 0], np.array([1, 0]), np.array([True, False])],
+)
+def test_build_sequence_accepts_boolean_like_is_up(is_up):
+    """0/1 ints, integer arrays and boolean arrays all map to the same beams."""
+    _, sequence = build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(is_up))
+    pulse_ks = [event.k for event in sequence if isinstance(event, Pulse)]
+    assert pulse_ks == [1, -1]
 
 
-def test_build_lmt_real_sequence_has_positive_total_duration():
-    sequence = build_lmt_real_sequence(N=7)
-    total_duration = sum(event.duration for event in sequence)
-    assert total_duration > 0.0
-    assert any(isinstance(event, Freefall) for event in sequence)
-    assert any(isinstance(event, Clearout) for event in sequence)
+def test_build_sequence_rejects_non_boolean_is_up():
+    """``~`` on an integer array yields [-2, -1]; this must fail loudly rather
+    than silently coercing to all-True (all up beams)."""
+    bad_is_up = ~np.array([1, 0])  # -> [-2, -1]
+    with pytest.raises(ValueError, match="boolean array"):
+        build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(bad_is_up))
+
+
+def test_build_sequence_logical_not_flips_beams():
+    """The supported beam flip (boolean array / np.logical_not) swaps up<->down."""
+    is_up = np.array([True, False])
+    base = build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(is_up))
+    flipped = build_sequence_from_lab_pulse_dump(
+        **_minimal_lab_dump(np.logical_not(is_up))
+    )
+    base_ks = [event.k for event in base if isinstance(event, Pulse)]
+    flipped_ks = [event.k for event in flipped if isinstance(event, Pulse)]
+    assert base_ks == [1, -1]
+    assert flipped_ks == [-1, 1]
+
+
+def _second_pulse_detuning(dump):
+    _, sequence = build_sequence_from_lab_pulse_dump(**dump)
+    pulses = [event for event in sequence if isinstance(event, Pulse)]
+    return pulses[1].detuning_hz
+
+
+def test_aom_frequencies_are_subtracted_opll_is_added():
+    """The switch and delivery AOMs lower the optical frequency at the atom, so
+    a per-pulse increase in either must DECREASE that pulse's detuning -- the
+    opposite sign to the OPLL, which adds. Verified absolutely against the
+    BIPM Sr-87 line (only +opll-switch-delivery lands on resonance)."""
+    # Use two up pulses so beam direction is identical and the first-pulse
+    # anchor cancels: only the pulse-2 offset survives.
+    base = dict(
+        is_up=np.array([True, True]),
+        start_times_mu=np.array([0.0, 1_000_000.0]),
+        durations_mu=np.array([95_000.0, 95_000.0]),
+        opll_hz=np.array([80e6, 80e6]),
+        switch_hz=np.array([200e6, 200e6]),
+        delivery_hz=np.array([99e6, 99e6]),
+        delivery_setpoint=np.array([2.0, 2.0]),
+    )
+    ref = _second_pulse_detuning(base)
+
+    bump_opll = dict(base, opll_hz=np.array([80e6, 80e6 + 1e3]))
+    bump_switch = dict(base, switch_hz=np.array([200e6, 200e6 + 1e3]))
+    bump_delivery = dict(base, delivery_hz=np.array([99e6, 99e6 + 1e3]))
+
+    # OPLL adds: +1 kHz on pulse 2 -> +1 kHz detuning.
+    assert _second_pulse_detuning(bump_opll) - ref == pytest.approx(1e3)
+    # Switch and delivery subtract: +1 kHz on pulse 2 -> -1 kHz detuning.
+    assert _second_pulse_detuning(bump_switch) - ref == pytest.approx(-1e3)
+    assert _second_pulse_detuning(bump_delivery) - ref == pytest.approx(-1e3)
+
+
+def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder():
+    """The auto-calibration is a hacky self-consistent fit: it must warn, and
+    the (alpha, v0) it returns must place every pulse on the integer recoil
+    ladder once its probe shift is removed."""
+    # A small synthetic LMT-like dump: alternating up/down pulses climbing the
+    # ladder, with the experiment's switch offsets (+1.5 kHz up, +5.8 kHz down)
+    # and two different up-beam pulse lengths so alpha is identifiable.
+    is_up = np.array([True, False, True, False, True])
+    durations_mu = np.array([380_000.0, 68_000.0, 54_999.0, 68_000.0, 54_999.0])
+    switch_hz = np.where(is_up, 200e6 + 1.5e3, 200e6 + 5.8e3)
+    dump = dict(
+        is_up=is_up,
+        start_times_mu=np.array([0.0, 1e6, 2e6, 3e6, 4e6]),
+        durations_mu=durations_mu,
+        opll_hz=np.full(5, 80e6),
+        switch_hz=switch_hz,
+        delivery_hz=np.full(5, 99.4853e6),
+        delivery_setpoint=np.full(5, 2.0),
+    )
+
+    with pytest.warns(UserWarning, match="HACKY"):
+        alpha, v0 = calibrate_probe_shift_and_velocity_from_dump(**dump)
+
+    _, sequence = build_sequence_from_lab_pulse_dump(
+        **dump,
+        probe_induced_alpha_up=alpha,
+        probe_induced_alpha_down=alpha,
+        initial_velocity_z=v0,
+    )
+    for event in sequence:
+        if isinstance(event, Pulse):
+            effective = event.detuning_hz - alpha * event.rabi_frequency**2
+            rungs = effective / RECOIL_FREQUENCY_HZ
+            assert abs(rungs - round(rungs)) < 0.05
