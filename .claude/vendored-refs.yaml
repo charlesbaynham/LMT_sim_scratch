@@ -1,5 +1,5 @@
 repos:
   - name: icl_experiments
     source: https://gitlab.com/aion-physics/code/artiq/experiment-repositories/icl_experiments.git
-    ref: cec25f6d3e7d9d92455d77d8eeb0ff8a6927c521
+    ref: master
 destination: vendor

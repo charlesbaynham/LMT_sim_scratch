@@ -49,10 +49,10 @@ This project uses [vendored-refs](https://github.com/charlesbaynham/claude-code-
 Dependencies are cloned into `vendor/` on session start based on `.claude/vendored-refs.yaml`.
 Do not modify vendored code directly — changes will be lost on next clone.
 
-The pinned repository is:
+The tracked repository is:
 
 - `icl_experiments` from `https://gitlab.com/aion-physics/code/artiq/experiment-repositories/icl_experiments.git`
-- pinned to commit `cec25f6d3e7d9d92455d77d8eeb0ff8a6927c521`
+- always cloned from `master`
 
 ## Architecture
 

@@ -15,5 +15,13 @@
   },
   "enabledPlugins": {
     "claude-code-vendored-refs@vendored-refs": true
+  },
+  "extraKnownMarketplaces": {
+    "vendored-refs": {
+      "source": {
+        "source": "git",
+        "url": "https://gitlab.com/charlesbaynham/claude-code-vendored_refs.git"
+      }
+    }
   }
 }
