@@ -28,21 +28,14 @@ This is python code, managed by UV. Call "uv sync" at the start of your session 
 
 ## Vendored dependencies
 
-This repo uses a Claude Code `SessionStart` hook (configured in `.claude/settings.json`) to
-vendor a pinned copy of `icl_experiments` from GitLab into `vendor/icl_experiments/`.
-The clone uses the public HTTPS URL:
+This project uses [vendored-refs](https://github.com/charlesbaynham/claude-code-vendored-refs) to manage external repositories.
+Dependencies are cloned into `vendor/` on session start based on `.claude/vendored-refs.yaml`.
+Do not modify vendored code directly — changes will be lost on next clone.
 
-- `https://gitlab.com/aion-physics/code/artiq/experiment-repositories/icl_experiments.git`
+The pinned repository is:
+
+- `icl_experiments` from `https://gitlab.com/aion-physics/code/artiq/experiment-repositories/icl_experiments.git`
 - pinned to commit `cec25f6d3e7d9d92455d77d8eeb0ff8a6927c521`
-
-The hook runs automatically at the start of each Claude session. If it fails (e.g. you are
-offline), run it manually:
-
-```bash
-python3 .claude/hooks/clone_icl_experiments.py
-```
-
-`vendor/` is ignored by Git so the cloned repository is not committed.
 
 ## Architecture
 

@@ -13,6 +13,7 @@ hifais_data/
 .claude/worktrees
 .claude/settings.local.json
 vendor/
+.vendor/
 
 # Editors / OS
 .vscode/
