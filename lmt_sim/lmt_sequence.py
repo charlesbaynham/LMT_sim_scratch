@@ -31,6 +31,27 @@ class Pulse:
     # true intensity, which can be much higher. None (default) means an
     # ordinary square pulse: the shift uses rabi_frequency.
     stark_rabi_frequency: float | None = None
+    # --- Shaped-pulse stand-in fields ------------------------------------
+    # TODO: replace this stand-in with a real shaped-pulse propagator that
+    # integrates the time-dependent Hamiltonian over the recorded
+    # amplitude/phase profile (see docs/roadmap.md).
+    #
+    # Restrict this pulse to a single transition pair: only rows/clouds whose
+    # GROUND-state momentum class equals this value interact with the pulse;
+    # every other momentum class is passed through completely untouched, i.e.
+    # the off-resonant interaction is deliberately suppressed IN CODE, not by
+    # physics. This models a phase-shaped pulse that is engineered to address
+    # one arm of the interferometer without disturbing the other -- something
+    # a plain square pulse cannot do. None (default): the pulse addresses all
+    # rows with the usual off-resonant 2x2 physics.
+    restrict_to_m_ground: int | None = None
+    # Fire this pulse at the same time as the previous pulse in the sequence
+    # instead of after it: the sequence clock does not advance. Used to model
+    # a single shaped pulse that drives several transitions at once (e.g. the
+    # double-launch JessePulseLMT) as multiple simultaneous arm-restricted
+    # stand-in pulses. Requires restrict_to_m_ground: simultaneous
+    # UNrestricted pulses cannot be composed from sequential 2x2 interactions.
+    simultaneous_with_previous: bool = False
 
     def __post_init__(self):
         if self.k not in (-1, +1):
@@ -41,6 +62,11 @@ class Pulse:
             raise ValueError("Pulse duration must be non-negative")
         if self.stark_rabi_frequency is not None and self.stark_rabi_frequency <= 0.0:
             raise ValueError("Pulse stark_rabi_frequency must be positive if given")
+        if self.simultaneous_with_previous and self.restrict_to_m_ground is None:
+            raise ValueError(
+                "simultaneous_with_previous requires restrict_to_m_ground: "
+                "unrestricted pulses cannot meaningfully overlap in time"
+            )
 
     @property
     def pulse_area(self):
@@ -212,6 +238,17 @@ def iter_pulse_sequence_in_borde_representation(
     for event in pulse_sequence:
         if not isinstance(event, (Pulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
+        if isinstance(event, Pulse) and (
+            event.restrict_to_m_ground is not None or event.simultaneous_with_previous
+        ):
+            raise NotImplementedError(
+                "Arm-restricted / simultaneous pulses are a stand-in for shaped "
+                "pulses and are only supported by compute_spacetime_trajectory. "
+                "Full quantum propagation of shaped pulses is not implemented "
+                "yet (see docs/roadmap.md): a restricted pulse needs the "
+                "untouched rows to free-evolve coherently during the pulse, and "
+                "simultaneous pulses are not sequential 2x2 interactions."
+            )
 
     detunings_hz = [
         pulse.detuning_hz for pulse in pulse_sequence if isinstance(pulse, Pulse)
@@ -361,6 +398,14 @@ def _transition_probability(m, is_ground, pulse: Pulse):
     """
     k = pulse.k
     m_ground = m if is_ground else m - k
+    if (
+        pulse.restrict_to_m_ground is not None
+        and m_ground != pulse.restrict_to_m_ground
+    ):
+        # Shaped-pulse stand-in: the pulse is engineered to leave every other
+        # momentum class untouched, so suppress the off-resonant interaction
+        # entirely instead of computing it.
+        return 0.0
     omega_ab = np.pi * pulse.rabi_frequency
     effective_detuning = sim._effective_detuning_hz(
         pulse.detuning_hz,
@@ -385,6 +430,10 @@ def _addressed_momentum_classes(pulse: Pulse):
     ``_transition_probability`` so the overlay matches the trajectory heuristic.
     The opposite Doppler slopes for the two beams enter via ``pulse.k``.
     """
+    if pulse.restrict_to_m_ground is not None:
+        # Shaped-pulse stand-in: the restriction IS the addressing.
+        m_ground = float(pulse.restrict_to_m_ground)
+        return m_ground, m_ground + pulse.k
     effective_detuning_hz = sim._effective_detuning_hz(
         pulse.detuning_hz,
         pulse.probe_shift_coefficient,
@@ -813,9 +862,20 @@ def compute_spacetime_trajectory(
                 color_index=self.color_index,
             )
 
+    previous_event = None
     for event in sequence:
         if not isinstance(event, (Pulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
+        if (
+            isinstance(event, Pulse)
+            and event.simultaneous_with_previous
+            and not isinstance(previous_event, Pulse)
+        ):
+            raise ValueError(
+                "A simultaneous_with_previous pulse must directly follow "
+                "another Pulse in the sequence"
+            )
+        previous_event = event
     if max_branches is not None and max_branches < 1:
         raise ValueError("max_branches must be positive or None")
 
@@ -837,7 +897,13 @@ def compute_spacetime_trajectory(
     next_color_index = 1
 
     for event in sequence:
-        dt = event.duration
+        # A simultaneous pulse fires at the same time as its predecessor: the
+        # sequence clock (and hence cloud positions) must not advance again.
+        dt = (
+            0.0
+            if isinstance(event, Pulse) and event.simultaneous_with_previous
+            else event.duration
+        )
 
         if isinstance(event, (Freefall, Clearout)):
             t += dt
@@ -937,7 +1003,12 @@ def _plot_spacetime(sequence, clouds, clearout_times):
 
         for i in range(len(cloud.times) - 1):
             event = sequence[i]
-            dt = event.duration
+            # Simultaneous pulses do not advance the clock (see the main loop)
+            dt = (
+                0.0
+                if isinstance(event, Pulse) and event.simultaneous_with_previous
+                else event.duration
+            )
             event_end_time = current_time + dt
 
             if isinstance(event, Pulse):
@@ -1053,11 +1124,18 @@ def _plot_spacetime(sequence, clouds, clearout_times):
     pulse_edge_alpha = 0.45
     pulse_edge_lw = 0.6
     t_event = 0.0
+    last_pulse_start = 0.0
     for event in sequence:
         if isinstance(event, Pulse):
-            t_start_us = t_event * 1e6
+            # A simultaneous pulse shares its predecessor's time span
+            if event.simultaneous_with_previous:
+                t_start = last_pulse_start
+            else:
+                t_start = t_event
+                last_pulse_start = t_event
+            t_start_us = t_start * 1e6
             t_width_us = event.duration * 1e6
-            t_end_us = (t_event + event.duration) * 1e6
+            t_end_us = (t_start + event.duration) * 1e6
             m_ground, m_excited = _addressed_momentum_classes(event)
             m_low = min(m_ground, m_excited)
             m_high = max(m_ground, m_excited)
@@ -1097,7 +1175,11 @@ def _plot_spacetime(sequence, clouds, clearout_times):
             )
             lbl = None  # only add to one axis
             pulse_fill_added[event.k] = True
-        t_event += event.duration
+        t_event += (
+            0.0
+            if isinstance(event, Pulse) and event.simultaneous_with_previous
+            else event.duration
+        )
 
     ax_z.plot([], [], "-", color="gray", lw=1.5, label="|g> (solid)")
     ax_z.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")

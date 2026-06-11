@@ -3,6 +3,7 @@ import pytest
 
 from lmt_sim.lmt_sequence import (
     _addressed_momentum_classes,
+    _transition_probability,
     compute_spacetime_trajectory,
     Clearout,
     Freefall,
@@ -1049,3 +1050,109 @@ def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder(
         assert effective / RECOIL_FREQUENCY_HZ == pytest.approx(
             intended_rung, abs=1e-6
         )
+
+
+# --- Shaped-pulse stand-ins: arm-restricted, simultaneous pi pulses ---------
+
+
+def _stand_in_pulse(**overrides):
+    rabi = 9090.9
+    defaults = dict(
+        k=+1,
+        detuning_hz=5 * RECOIL_FREQUENCY_HZ,
+        phi=0.0,
+        label="stand_in",
+        rabi_frequency=rabi,
+        duration=1 / (2 * rabi),
+    )
+    defaults.update(overrides)
+    return Pulse(**defaults)
+
+
+def test_restricted_pulse_only_addresses_its_momentum_class():
+    """A restricted pulse flips its target class as usual but is a strict
+    no-op -- not merely off-resonant -- for every other momentum class."""
+    pulse = _stand_in_pulse(restrict_to_m_ground=2)
+    # Target class: ground m=2 (and its partner, excited m=3), resonant pi.
+    assert _transition_probability(2, True, pulse) == pytest.approx(1.0, abs=1e-6)
+    assert _transition_probability(3, False, pulse) == pytest.approx(1.0, abs=1e-6)
+    # Any other class: exactly zero, even though a plain pulse would still
+    # interact off-resonantly.
+    assert _transition_probability(0, True, pulse) == 0.0
+    assert _transition_probability(1, False, pulse) == 0.0
+    unrestricted = _stand_in_pulse()
+    assert _transition_probability(0, True, unrestricted) > 0.0
+
+
+def test_addressed_momentum_classes_follow_the_restriction():
+    """For a restricted stand-in the restriction IS the addressing, whatever
+    the detuning says."""
+    pulse = _stand_in_pulse(detuning_hz=2.37 * RECOIL_FREQUENCY_HZ,
+                            restrict_to_m_ground=2)
+    assert _addressed_momentum_classes(pulse) == (2.0, 3.0)
+
+
+def test_simultaneous_pulse_requires_restriction():
+    with pytest.raises(ValueError, match="restrict_to_m_ground"):
+        _stand_in_pulse(simultaneous_with_previous=True)
+
+
+def test_simultaneous_pulse_must_follow_a_pulse():
+    lone = _stand_in_pulse(restrict_to_m_ground=0, simultaneous_with_previous=True)
+    with pytest.raises(ValueError, match="follow"):
+        compute_spacetime_trajectory([lone])
+    with pytest.raises(ValueError, match="follow"):
+        compute_spacetime_trajectory([Freefall(duration=1e-3), lone])
+
+
+def test_quantum_runner_guards_on_shaped_pulse_stand_ins():
+    """Full quantum propagation of the stand-ins is NOT implemented; the
+    runner must fail loudly rather than apply wrong physics."""
+    state = make_atom_states(
+        velocity_x=0.0,
+        velocity_y=0.0,
+        initial_velocity_z=0.0,
+        position_x=0.0,
+        position_y=0.0,
+        position_z=0.0,
+    )
+    restricted = _stand_in_pulse(restrict_to_m_ground=2)
+    with pytest.raises(NotImplementedError, match="shaped"):
+        run_pulse_sequence_in_lab_frame(state, [restricted])
+
+
+def test_double_launch_stand_in_kicks_both_arms_simultaneously():
+    """The rid74108 topology: velocity selection, pi/2 splitter, then ONE
+    shaped pulse modelled as two simultaneous arm-restricted pi pulses that
+    kick the two arms in opposite momentum directions."""
+    rabi = 9090.9
+    t_pi = 1 / (2 * rabi)
+    sequence = [
+        # VS: g m=0 -> e m=1
+        Pulse(k=+1, detuning_hz=1 * RECOIL_FREQUENCY_HZ, phi=0.0, label="VS",
+              rabi_frequency=rabi, duration=t_pi),
+        Freefall(duration=1e-3),
+        # pi/2 down splitter on the shelved atom: e m=1 <-> g m=2
+        Pulse(k=-1, detuning_hz=-3 * RECOIL_FREQUENCY_HZ, phi=0.0,
+              label="splitter", rabi_frequency=rabi, duration=t_pi / 2),
+        # shaped-pulse stand-in: upper arm g m=2 -> e m=3 (absorption) ...
+        Pulse(k=+1, detuning_hz=5 * RECOIL_FREQUENCY_HZ, phi=0.0,
+              label="shaped_upper", rabi_frequency=rabi, duration=t_pi,
+              restrict_to_m_ground=2),
+        # ... and lower arm e m=1 -> g m=0 (stimulated emission), at the
+        # same instant
+        Pulse(k=+1, detuning_hz=1 * RECOIL_FREQUENCY_HZ, phi=0.0,
+              label="shaped_lower", rabi_frequency=rabi, duration=t_pi,
+              restrict_to_m_ground=0, simultaneous_with_previous=True),
+        Freefall(duration=1e-3),
+    ]
+    clouds, _ = compute_spacetime_trajectory(sequence)
+    assert len(clouds) == 2
+    finals = {(cloud.m[-1], cloud.is_ground[-1]) for cloud in clouds}
+    assert finals == {(3, False), (0, True)}
+    for cloud in clouds:
+        # One entry per event after the initial point...
+        assert len(cloud.times) == len(sequence) + 1
+        # ...and the simultaneous pulse must not have advanced the clock:
+        # the post-upper and post-lower timestamps coincide.
+        assert cloud.times[4] == cloud.times[5]
