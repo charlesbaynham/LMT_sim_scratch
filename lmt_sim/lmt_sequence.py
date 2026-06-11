@@ -501,14 +501,21 @@ def build_sequence_from_lab_pulse_dump(
         probe_induced_alpha_up if is_up[0] else probe_induced_alpha_down
     ) * rabi_freq_first_pulse**2
     first_pulse_doppler_shift_hz = up_beam_doppler_hz[0] * beam_sign[0]
+    # The recoil energy is positive whichever way the photon kicks, so a
+    # velocity-selection pulse on a stationary atom is resonant one recoil
+    # frequency ABOVE the bare transition for BOTH beam directions.
     first_pulse_atom_frame_detuning_hz = sim.RECOIL_FREQUENCY_HZ
 
     # This is the unperturbed transition frequency for a hypothetical m=0 -> m=0
     # transition. To get it, we must subtract the probe shift that the atom was
     # experiencing during the pulse, and also subtract the detuning resultant
-    # from us actually driving the m=0 -> m=1 transition. We assume that the
-    # first pulse in any sequence is a pi pulse that drives the ground state m=0
-    # to the excited state m=+1, i.e. a velocity selection pulse.
+    # from us actually driving the m=0 -> m=+-1 transition. We assume that the
+    # first pulse in any sequence -- whichever beam fired it -- is a pi pulse
+    # that drives the ground state m=0 to the excited state m=+-1 along that
+    # beam's direction, i.e. a velocity selection pulse. All frequencies are
+    # therefore anchored on the first pulse, NOT on the first up pulse: the
+    # beam-dependent pieces (probe-shift coefficient and Doppler sign) above are
+    # selected by the first pulse's actual beam.
     centre_freq_hz = total_laser_frequency_hz[0] + first_pulse_doppler_shift_hz - first_pulse_atom_frame_detuning_hz - first_pulse_probe_shift_hz
     
     
@@ -605,16 +612,25 @@ def calibrate_probe_shift_and_velocity_from_dump(
 
 
 
-    * ``alpha`` (probe-shift coefficient, 1/Hz): the up-beam pulses share one
-      beam, so after removing the probe shift ``alpha * rabi**2`` their
-      effective detunings must differ only by an integer number of recoils (assuming the experimental sequence is correct - this is the hacky bit).
-      Comparing the reference up pulse with the up pulse of most-different Rabi
-      frequency lets us deduce a value for ``alpha``.
+    All frequencies are anchored on the FIRST pulse of the dump, whichever beam
+    fired it (matching :func:`build_sequence_from_lab_pulse_dump`), not on the
+    first up pulse. "Anchor beam" below means the beam of that first pulse.
+
+    * ``alpha`` (probe-shift coefficient, 1/Hz): the anchor-beam pulses share
+      one beam, so after removing the probe shift ``alpha * rabi**2`` their
+      effective detunings must differ only by an integer number of recoils
+      (assuming the experimental sequence is correct - this is the hacky bit).
+      Comparing the two anchor-beam pulses of most-different Rabi frequency
+      lets us deduce a value for ``alpha``. The anchor beam must be used
+      because its built detunings are independent of ``v0`` (the first-pulse
+      anchor absorbs the Doppler shift for its own beam).
 
     * ``v0`` (initial z-velocity, m/s): the two beams counter-propagate, so a
-      nonzero ``v0`` shifts the down-beam detunings by ``2 * v0 / lambda``
-      relative to the up-anchored centre. We pin ``v0`` by **assuming the first
-      down pulse is resonant**.
+      nonzero ``v0`` shifts the opposite beam's detunings by ``2 * v0 /
+      lambda`` relative to the anchored centre. We pin ``v0`` by **assuming
+      the first opposite-beam pulse is resonant** on the transition that
+      addresses the freshly velocity-selected atom (4 recoils below the
+      anchor pulse in effective-detuning space, for either beam order).
 
     Parameters match :func:`build_sequence_from_lab_pulse_dump`.
 
@@ -653,113 +669,88 @@ def calibrate_probe_shift_and_velocity_from_dump(
         initial_velocity_z=0.0,
     )
 
-    # Loop through the events, extracting the rabi freq, detuning and timestamp of the first pulses
+    pulses = [e for e in bare_sequence if isinstance(e, Pulse)]
+    if len(pulses) == 0:
+        raise ValueError("Lab pulse dump contains no pulses")
 
-    first_up_detuning_hz = None
-    first_up_rabi_freq_hz = None
-    first_up_timestamp = None
-    first_down_detuning_hz = None
-    first_down_rabi_freq_hz = None
-    first_down_timestamp = None
+    # The build anchors all frequencies on the first pulse, whichever beam
+    # fired it. With probe shift and v0 switched off, the built detunings obey
+    #
+    #   det_i = rung_i * REC + alpha * (rabi_i**2 - rabi_0**2)
+    #           + (v0 / lambda) * (k_i - k_0)
+    #
+    # where rung_i is the integer recoil-ladder position the lab intended.
+    # Anchor-beam pulses (k_i == k_0) are therefore independent of v0, and
+    # opposite-beam pulses are offset by exactly 2 * k_0 * v0 / lambda.
+    anchor_pulse = pulses[0]
+    anchor_beam_sign = anchor_pulse.k
 
-    for t, e in zip(bare_sequence_timestamps, bare_sequence):
-        if isinstance(e, (Freefall, Clearout)):
-            pass
-        elif isinstance(e, Pulse):
-            if e.k == +1:
-                if first_up_detuning_hz is None:
-                    first_up_detuning_hz = e.detuning_hz
-                    first_up_rabi_freq_hz = e.rabi_frequency
-                    first_up_timestamp = t + e.duration / 2
-            elif e.k == -1:
-                if first_down_detuning_hz is None:
-                    first_down_detuning_hz = e.detuning_hz
-                    first_down_rabi_freq_hz = e.rabi_frequency
-                    first_down_timestamp = t + e.duration / 2
+    # --- alpha: from two anchor-beam pulses with the largest Rabi**2 separation ---
+    anchor_beam_pulses = [p for p in pulses if p.k == anchor_beam_sign]
+    pulse_min_rabi = min(anchor_beam_pulses, key=lambda p: p.rabi_frequency)
+    pulse_max_rabi = max(anchor_beam_pulses, key=lambda p: p.rabi_frequency)
 
-    # Also get the up pulses with the largest and smallest rabi freq
-
-    # --- alpha: from two up pulses with the largest Rabi**2 separation ---
-    ind_min_rabi = np.argmin(
-        [
-            e.rabi_frequency if isinstance(e, Pulse) and e.k == +1 else np.inf
-            for e in bare_sequence
-        ]
-    )
-    ind_max_rabi = np.argmax(
-        [
-            e.rabi_frequency if isinstance(e, Pulse) and e.k == +1 else -np.inf
-            for e in bare_sequence
-        ]
-    )
-
-    rabi_min = bare_sequence[ind_min_rabi].rabi_frequency
-    rabi_min_detuning = bare_sequence[ind_min_rabi].detuning_hz
-    rabi_min_timestamp = (
-        bare_sequence_timestamps[ind_min_rabi]
-        + bare_sequence[ind_min_rabi].duration / 2
-    )
-
-    rabi_max = bare_sequence[ind_max_rabi].rabi_frequency
-    rabi_max_detuning = bare_sequence[ind_max_rabi].detuning_hz
-    rabi_max_timestamp = (
-        bare_sequence_timestamps[ind_max_rabi]
-        + bare_sequence[ind_max_rabi].duration / 2
-    )
-
-    if rabi_min == rabi_max:
+    if pulse_min_rabi.rabi_frequency == pulse_max_rabi.rabi_frequency:
         raise ValueError(
-            "All up-beam pulses share the same Rabi frequency; cannot separate "
-            "the probe shift from the recoil ladder."
+            "All anchor-beam (first-pulse beam) pulses share the same Rabi "
+            "frequency; cannot separate the probe shift from the recoil ladder."
         )
 
-    f_pulse_difference = rabi_max_detuning - rabi_min_detuning
+    f_pulse_difference = pulse_max_rabi.detuning_hz - pulse_min_rabi.detuning_hz
 
     # The free-fall Doppler shift was already removed by
-    # build_sequence_from_lab_pulse_dump, so this difference is only because of
-    # the probe-induced Stark shift + the true detuning in the atom frame. The
-    # two up pulses should therefore differ by an integer number of pulses. This
-    # allows us to pin down the stark shift contribution, on the assumption that
-    # the probe induced shift is less than the recoil shift
-    
-
+    # build_sequence_from_lab_pulse_dump, and v0 drops out for anchor-beam
+    # pulses, so this difference is only the probe-induced Stark shift plus an
+    # integer number of recoils. This pins down the Stark contribution, on the
+    # assumption that the probe-induced shift is less than half a recoil.
     ladder_separation_hz = (
-        round((f_pulse_difference) / sim.RECOIL_FREQUENCY_HZ)
+        round(f_pulse_difference / sim.RECOIL_FREQUENCY_HZ)
         * sim.RECOIL_FREQUENCY_HZ
     )
     residual_probe_shift_hz = f_pulse_difference - ladder_separation_hz
 
-    probe_shift_alpha = residual_probe_shift_hz / (rabi_max**2 - rabi_min**2)
+    probe_shift_alpha = residual_probe_shift_hz / (
+        pulse_max_rabi.rabi_frequency**2 - pulse_min_rabi.rabi_frequency**2
+    )
 
-    # --- v0: anchor on the FIRST down pulse being resonant ---
+    # --- v0: anchor on the FIRST opposite-beam pulse being resonant ---
 
-    # The build already assumes the first (up) pulse is resonant on the m_g=0
-    # transition.
+    # The build already assumes the first pulse is a velocity-selection pi
+    # pulse, resonant on m=0 -> m=k_0 (one recoil above the bare transition).
     #
-    # From the down beam's perspective this is the m=-1 state, so we assume that
-    # the first DOWN pulse is resonant on the m=-1 -> m=-2
+    # The first pulse of the OPPOSITE beam then addresses the freshly shelved
+    # atom (excited, m=k_0), whose ground-state partner for that beam is
+    # m_g = 2*k_0: its resonant effective detuning is 3 recoils BELOW the bare
+    # transition, for either beam order. The anchor and first-opposite pulse
+    # therefore sit exactly 4 recoils apart in effective-detuning space, and
+    # any residual is the 2 * k_0 * v0 / lambda Doppler offset between the
+    # counter-propagating beams:
     #
-    # This means that the difference between the first up and the first down
-    # pulse should be four recoil frequencies, after correction for the probe
-    # shift and the Doppler shift. This allow us to extract the Doppler shift
-    # only.
+    #   v0 = (k_0 * lambda / 2) * (det_0 - det_j - 4 * REC - (shift_0 - shift_j))
+    #
+    # Gravity needs no separate term here: the built detunings already include
+    # the free-fall Doppler ramp consistently for both beams.
+    first_opposite = next((p for p in pulses if p.k == -anchor_beam_sign), None)
 
-    if first_down_detuning_hz is None:
+    if first_opposite is None:
         # The initial velocity is irrelevant
         initial_velocity_z = 0.0
     else:
-        first_up_probe_shift_hz = probe_shift_alpha * first_up_rabi_freq_hz**2  # type: ignore
-        first_down_probe_shift_hz = probe_shift_alpha * first_down_rabi_freq_hz**2  # type: ignore
-
-        delta_f_laser = first_up_detuning_hz - first_down_detuning_hz  # type: ignore
-        delta_f_probe = first_up_probe_shift_hz - first_down_probe_shift_hz
-        t_sum = first_up_timestamp + first_down_timestamp  # type: ignore
+        anchor_probe_shift_hz = probe_shift_alpha * anchor_pulse.rabi_frequency**2
+        opposite_probe_shift_hz = (
+            probe_shift_alpha * first_opposite.rabi_frequency**2
+        )
 
         initial_velocity_z = (
-            0.5
+            anchor_beam_sign
+            * 0.5
             * sim.TRANSITION_WAVELENGTH
-            * (4 * sim.RECOIL_FREQUENCY_HZ - delta_f_laser - delta_f_probe)
-            - sim.GRAVITY_G * t_sum
+            * (
+                anchor_pulse.detuning_hz
+                - first_opposite.detuning_hz
+                - 4 * sim.RECOIL_FREQUENCY_HZ
+                - (anchor_probe_shift_hz - opposite_probe_shift_hz)
+            )
         )
 
     return probe_shift_alpha, initial_velocity_z

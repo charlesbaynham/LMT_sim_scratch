@@ -917,8 +917,8 @@ def test_build_sequence_rejects_non_boolean_is_up():
 def test_build_sequence_logical_not_flips_beams():
     """The supported beam flip (boolean array / np.logical_not) swaps up<->down."""
     is_up = np.array([True, False])
-    base = build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(is_up))
-    flipped = build_sequence_from_lab_pulse_dump(
+    _, base = build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(is_up))
+    _, flipped = build_sequence_from_lab_pulse_dump(
         **_minimal_lab_dump(np.logical_not(is_up))
     )
     base_ks = [event.k for event in base if isinstance(event, Pulse)]
@@ -962,28 +962,77 @@ def test_aom_frequencies_are_subtracted_opll_is_added():
     assert _second_pulse_detuning(bump_delivery) - ref == pytest.approx(-1e3)
 
 
-def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder():
-    """The auto-calibration is a hacky self-consistent fit: it must warn, and
-    the (alpha, v0) it returns must place every pulse on the integer recoil
-    ladder once its probe shift is removed."""
-    # A small synthetic LMT-like dump: alternating up/down pulses climbing the
-    # ladder, with the experiment's switch offsets (+1.5 kHz up, +5.8 kHz down)
-    # and two different up-beam pulse lengths so alpha is identifiable.
-    is_up = np.array([True, False, True, False, True])
-    durations_mu = np.array([380_000.0, 68_000.0, 54_999.0, 68_000.0, 54_999.0])
-    switch_hz = np.where(is_up, 200e6 + 1.5e3, 200e6 + 5.8e3)
+def _synthesize_ladder_dump(anchor_beam_sign, alpha, v0, n_pairs=3):
+    """A lab dump from a perfectly tuned LMT launch with known (alpha, v0).
+
+    The first pulse (beam ``anchor_beam_sign``) is a long velocity-selection pi
+    pulse on m=0 -> m=anchor_beam_sign; then alternating opposite/anchor-beam
+    pi pulses climb the ladder. Every laser frequency is exactly what the lab
+    would set so each pulse is resonant on its intended rung, using the same
+    bookkeeping as build_sequence_from_lab_pulse_dump (gravity Doppler
+    evaluated at pulse starts).
+
+    Returns ``(dump_kwargs, intended_rungs)``.
+    """
+    from lmt_sim.lmt_simulation import (
+        GRAVITY_G,
+        TRANSITION_WAVELENGTH,
+    )
+
+    beams = [anchor_beam_sign] + [-anchor_beam_sign, anchor_beam_sign] * n_pairs
+    durations = [380e-6] + [68e-6, 54.999e-6] * n_pairs
+    starts = [0.0] + [1e-3 + 0.15e-3 * i for i in range(2 * n_pairs)]
+
+    # Velocity selection puts the atom at m = anchor_beam_sign (excited); each
+    # subsequent pulse climbs one more recoil in that direction. The rung of a
+    # pulse addressing ground-state class m_g with beam k is 2*k*m_g + 1.
+    rungs = [1.0]
+    recoils_from_origin = 1
+    for k in beams[1:]:
+        m_g = (recoils_from_origin + 1) * anchor_beam_sign
+        rungs.append(2 * k * m_g + 1)
+        recoils_from_origin += 1
+
+    rabis = [1 / (2 * d) for d in durations]
+    total_laser_hz = [
+        rung * RECOIL_FREQUENCY_HZ
+        + alpha * rabi**2
+        - (-v0 / TRANSITION_WAVELENGTH + GRAVITY_G * t0 / TRANSITION_WAVELENGTH) * k
+        for k, t0, rung, rabi in zip(beams, starts, rungs, rabis)
+    ]
+
     dump = dict(
-        is_up=is_up,
-        start_times_mu=np.array([0.0, 1e6, 2e6, 3e6, 4e6]),
-        durations_mu=durations_mu,
-        opll_hz=np.full(5, 80e6),
-        switch_hz=switch_hz,
-        delivery_hz=np.full(5, 99.4853e6),
-        delivery_setpoint=np.full(5, 2.0),
+        is_up=np.array([k > 0 for k in beams]),
+        start_times_mu=np.array(starts) * 1e9,
+        durations_mu=np.array(durations) * 1e9,
+        # total = -opll - switch - delivery
+        opll_hz=-np.array(total_laser_hz),
+        switch_hz=np.zeros(len(beams)),
+        delivery_hz=np.zeros(len(beams)),
+        delivery_setpoint=np.full(len(beams), 2.0),
+    )
+    return dump, np.array(rungs)
+
+
+@pytest.mark.parametrize("anchor_beam_sign", [+1, -1])
+def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder(
+    anchor_beam_sign,
+):
+    """The auto-calibration is a hacky self-consistent fit: it must warn, and
+    on a perfectly tuned dump it must recover the true (alpha, v0) and place
+    every pulse on its intended recoil-ladder rung -- whichever beam fires the
+    first (anchor) pulse."""
+    alpha_true = -1.282e-5
+    v0_true = -1.6e-3
+    dump, intended_rungs = _synthesize_ladder_dump(
+        anchor_beam_sign, alpha_true, v0_true
     )
 
     with pytest.warns(UserWarning, match="HACKY"):
         alpha, v0 = calibrate_probe_shift_and_velocity_from_dump(**dump)
+
+    assert alpha == pytest.approx(alpha_true, rel=1e-6)
+    assert v0 == pytest.approx(v0_true, rel=1e-6)
 
     _, sequence = build_sequence_from_lab_pulse_dump(
         **dump,
@@ -991,8 +1040,9 @@ def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder():
         probe_induced_alpha_down=alpha,
         initial_velocity_z=v0,
     )
-    for event in sequence:
-        if isinstance(event, Pulse):
-            effective = event.detuning_hz - alpha * event.rabi_frequency**2
-            rungs = effective / RECOIL_FREQUENCY_HZ
-            assert abs(rungs - round(rungs)) < 0.05
+    pulses = [event for event in sequence if isinstance(event, Pulse)]
+    for pulse, intended_rung in zip(pulses, intended_rungs):
+        effective = pulse.detuning_hz - alpha * pulse.rabi_frequency**2
+        assert effective / RECOIL_FREQUENCY_HZ == pytest.approx(
+            intended_rung, abs=1e-6
+        )
