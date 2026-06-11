@@ -933,11 +933,11 @@ def _second_pulse_detuning(dump):
     return pulses[1].detuning_hz
 
 
-def test_aom_frequencies_are_subtracted_opll_is_added():
-    """The switch and delivery AOMs lower the optical frequency at the atom, so
-    a per-pulse increase in either must DECREASE that pulse's detuning -- the
-    opposite sign to the OPLL, which adds. Verified absolutely against the
-    BIPM Sr-87 line (only +opll-switch-delivery lands on resonance)."""
+def test_opll_and_aom_frequencies_are_all_subtracted():
+    """The OPLL offsets the Sirah from the ECDL with the lock on the NEGATIVE
+    side, and the switch and delivery AOMs use the -1st order, so a per-pulse
+    increase in ANY of the three must DECREASE that pulse's detuning:
+    total = -opll - switch - delivery (lab-confirmed convention)."""
     # Use two up pulses so beam direction is identical and the first-pulse
     # anchor cancels: only the pulse-2 offset survives.
     base = dict(
@@ -955,9 +955,8 @@ def test_aom_frequencies_are_subtracted_opll_is_added():
     bump_switch = dict(base, switch_hz=np.array([200e6, 200e6 + 1e3]))
     bump_delivery = dict(base, delivery_hz=np.array([99e6, 99e6 + 1e3]))
 
-    # OPLL adds: +1 kHz on pulse 2 -> +1 kHz detuning.
-    assert _second_pulse_detuning(bump_opll) - ref == pytest.approx(1e3)
-    # Switch and delivery subtract: +1 kHz on pulse 2 -> -1 kHz detuning.
+    # All three subtract: +1 kHz on pulse 2 -> -1 kHz detuning.
+    assert _second_pulse_detuning(bump_opll) - ref == pytest.approx(-1e3)
     assert _second_pulse_detuning(bump_switch) - ref == pytest.approx(-1e3)
     assert _second_pulse_detuning(bump_delivery) - ref == pytest.approx(-1e3)
 
@@ -970,7 +969,7 @@ def _synthesize_ladder_dump(anchor_beam_sign, alpha, v0, n_pairs=3):
     pi pulses climb the ladder. Every laser frequency is exactly what the lab
     would set so each pulse is resonant on its intended rung, using the same
     bookkeeping as build_sequence_from_lab_pulse_dump (gravity Doppler
-    evaluated at pulse starts).
+    evaluated at pulse centres, as the lab tunes it).
 
     Returns ``(dump_kwargs, intended_rungs)``.
     """
@@ -997,8 +996,12 @@ def _synthesize_ladder_dump(anchor_beam_sign, alpha, v0, n_pairs=3):
     total_laser_hz = [
         rung * RECOIL_FREQUENCY_HZ
         + alpha * rabi**2
-        - (-v0 / TRANSITION_WAVELENGTH + GRAVITY_G * t0 / TRANSITION_WAVELENGTH) * k
-        for k, t0, rung, rabi in zip(beams, starts, rungs, rabis)
+        - (
+            -v0 / TRANSITION_WAVELENGTH
+            + GRAVITY_G * (t0 + dur / 2) / TRANSITION_WAVELENGTH
+        )
+        * k
+        for k, t0, dur, rung, rabi in zip(beams, starts, durations, rungs, rabis)
     ]
 
     dump = dict(

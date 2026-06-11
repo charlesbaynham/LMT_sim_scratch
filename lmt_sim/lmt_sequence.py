@@ -483,10 +483,16 @@ def build_sequence_from_lab_pulse_dump(
     # Doppler shift seen by each beam from the atom's velocity. This number is
     # the difference between what the atom experiences and the UP beam's
     # frequency. In other words, if this number is positive, the atom is falling
-    # towards the ground and blue-shifting the up beam
+    # towards the ground and blue-shifting the up beam.
+    #
+    # The lab tunes each pulse's frequency for resonance at the pulse CENTRE,
+    # so the free-fall Doppler ramp must be evaluated there, not at the pulse
+    # start. (For a 380 us velocity-selection pulse the difference is ~0.57
+    # recoils -- large enough to wreck the anchor if evaluated at the start.)
+    pulse_centre_times = timestamps + durations / 2
     up_beam_doppler_hz = (
         -initial_velocity_z / sim.TRANSITION_WAVELENGTH
-        + sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps
+        + sim.GRAVITY_DOPPLER_PER_SEC_HZ * pulse_centre_times
     )
 
     # Assume that the first pulse is on resonance
