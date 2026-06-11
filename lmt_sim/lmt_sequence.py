@@ -24,6 +24,13 @@ class Pulse:
     # Rabi-squared / intensity scaling of a light shift; no factor of 2*pi).
     # Default 0.0 disables it.
     probe_shift_coefficient: float = 0.0
+    # True Rabi frequency (Hz) used for the probe (light) shift only. For a
+    # shaped (optimal-control) pulse modelled as a plain pi pulse,
+    # rabi_frequency is the fictitious value implied by the duration (so the
+    # 2x2 dynamics see a pi pulse area) while the light shift scales with the
+    # true intensity, which can be much higher. None (default) means an
+    # ordinary square pulse: the shift uses rabi_frequency.
+    stark_rabi_frequency: float | None = None
 
     def __post_init__(self):
         if self.k not in (-1, +1):
@@ -32,10 +39,19 @@ class Pulse:
             raise ValueError("Pulse rabi_frequency must be positive")
         if self.duration < 0.0:
             raise ValueError("Pulse duration must be non-negative")
+        if self.stark_rabi_frequency is not None and self.stark_rabi_frequency <= 0.0:
+            raise ValueError("Pulse stark_rabi_frequency must be positive if given")
 
     @property
     def pulse_area(self):
         return self.duration * 2 * np.pi * self.rabi_frequency
+
+    @property
+    def effective_stark_rabi_frequency(self):
+        """Rabi frequency the probe (light) shift is computed from."""
+        if self.stark_rabi_frequency is not None:
+            return self.stark_rabi_frequency
+        return self.rabi_frequency
 
 
 @dataclass(frozen=True)
@@ -233,6 +249,7 @@ def iter_pulse_sequence_in_borde_representation(
                 k_wavevector=sim.K_WAVEVECTOR,
                 vz=initial_velocity_z,
                 probe_shift_coefficient=event.probe_shift_coefficient,
+                on_axis_stark_rabi_freq=event.stark_rabi_frequency,
             )
 
             # If any states are below the discard threshold, discard them and renormalise
@@ -346,7 +363,9 @@ def _transition_probability(m, is_ground, pulse: Pulse):
     m_ground = m if is_ground else m - k
     omega_ab = np.pi * pulse.rabi_frequency
     effective_detuning = sim._effective_detuning_hz(
-        pulse.detuning_hz, pulse.probe_shift_coefficient, pulse.rabi_frequency
+        pulse.detuning_hz,
+        pulse.probe_shift_coefficient,
+        pulse.effective_stark_rabi_frequency,
     )
     _, B, _, _ = sim._calculate_interaction_constants(
         effective_detuning,
@@ -367,7 +386,9 @@ def _addressed_momentum_classes(pulse: Pulse):
     The opposite Doppler slopes for the two beams enter via ``pulse.k``.
     """
     effective_detuning_hz = sim._effective_detuning_hz(
-        pulse.detuning_hz, pulse.probe_shift_coefficient, pulse.rabi_frequency
+        pulse.detuning_hz,
+        pulse.probe_shift_coefficient,
+        pulse.effective_stark_rabi_frequency,
     )
     m_ground = (
         effective_detuning_hz - sim.RECOIL_FREQUENCY_HZ
