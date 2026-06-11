@@ -24,6 +24,34 @@ class Pulse:
     # Rabi-squared / intensity scaling of a light shift; no factor of 2*pi).
     # Default 0.0 disables it.
     probe_shift_coefficient: float = 0.0
+    # True Rabi frequency (Hz) used for the probe (light) shift only. For a
+    # shaped (optimal-control) pulse modelled as a plain pi pulse,
+    # rabi_frequency is the fictitious value implied by the duration (so the
+    # 2x2 dynamics see a pi pulse area) while the light shift scales with the
+    # true intensity, which can be much higher. None (default) means an
+    # ordinary square pulse: the shift uses rabi_frequency.
+    stark_rabi_frequency: float | None = None
+    # --- Shaped-pulse stand-in fields ------------------------------------
+    # TODO: replace this stand-in with a real shaped-pulse propagator that
+    # integrates the time-dependent Hamiltonian over the recorded
+    # amplitude/phase profile (see docs/roadmap.md).
+    #
+    # Restrict this pulse to a single transition pair: only rows/clouds whose
+    # GROUND-state momentum class equals this value interact with the pulse;
+    # every other momentum class is passed through completely untouched, i.e.
+    # the off-resonant interaction is deliberately suppressed IN CODE, not by
+    # physics. This models a phase-shaped pulse that is engineered to address
+    # one arm of the interferometer without disturbing the other -- something
+    # a plain square pulse cannot do. None (default): the pulse addresses all
+    # rows with the usual off-resonant 2x2 physics.
+    restrict_to_m_ground: int | None = None
+    # Fire this pulse at the same time as the previous pulse in the sequence
+    # instead of after it: the sequence clock does not advance. Used to model
+    # a single shaped pulse that drives several transitions at once (e.g. the
+    # double-launch JessePulseLMT) as multiple simultaneous arm-restricted
+    # stand-in pulses. Requires restrict_to_m_ground: simultaneous
+    # UNrestricted pulses cannot be composed from sequential 2x2 interactions.
+    simultaneous_with_previous: bool = False
 
     def __post_init__(self):
         if self.k not in (-1, +1):
@@ -32,10 +60,24 @@ class Pulse:
             raise ValueError("Pulse rabi_frequency must be positive")
         if self.duration < 0.0:
             raise ValueError("Pulse duration must be non-negative")
+        if self.stark_rabi_frequency is not None and self.stark_rabi_frequency <= 0.0:
+            raise ValueError("Pulse stark_rabi_frequency must be positive if given")
+        if self.simultaneous_with_previous and self.restrict_to_m_ground is None:
+            raise ValueError(
+                "simultaneous_with_previous requires restrict_to_m_ground: "
+                "unrestricted pulses cannot meaningfully overlap in time"
+            )
 
     @property
     def pulse_area(self):
         return self.duration * 2 * np.pi * self.rabi_frequency
+
+    @property
+    def effective_stark_rabi_frequency(self):
+        """Rabi frequency the probe (light) shift is computed from."""
+        if self.stark_rabi_frequency is not None:
+            return self.stark_rabi_frequency
+        return self.rabi_frequency
 
 
 @dataclass(frozen=True)
@@ -196,6 +238,17 @@ def iter_pulse_sequence_in_borde_representation(
     for event in pulse_sequence:
         if not isinstance(event, (Pulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
+        if isinstance(event, Pulse) and (
+            event.restrict_to_m_ground is not None or event.simultaneous_with_previous
+        ):
+            raise NotImplementedError(
+                "Arm-restricted / simultaneous pulses are a stand-in for shaped "
+                "pulses and are only supported by compute_spacetime_trajectory. "
+                "Full quantum propagation of shaped pulses is not implemented "
+                "yet (see docs/roadmap.md): a restricted pulse needs the "
+                "untouched rows to free-evolve coherently during the pulse, and "
+                "simultaneous pulses are not sequential 2x2 interactions."
+            )
 
     detunings_hz = [
         pulse.detuning_hz for pulse in pulse_sequence if isinstance(pulse, Pulse)
@@ -233,6 +286,7 @@ def iter_pulse_sequence_in_borde_representation(
                 k_wavevector=sim.K_WAVEVECTOR,
                 vz=initial_velocity_z,
                 probe_shift_coefficient=event.probe_shift_coefficient,
+                on_axis_stark_rabi_freq=event.stark_rabi_frequency,
             )
 
             # If any states are below the discard threshold, discard them and renormalise
@@ -344,9 +398,19 @@ def _transition_probability(m, is_ground, pulse: Pulse):
     """
     k = pulse.k
     m_ground = m if is_ground else m - k
+    if (
+        pulse.restrict_to_m_ground is not None
+        and m_ground != pulse.restrict_to_m_ground
+    ):
+        # Shaped-pulse stand-in: the pulse is engineered to leave every other
+        # momentum class untouched, so suppress the off-resonant interaction
+        # entirely instead of computing it.
+        return 0.0
     omega_ab = np.pi * pulse.rabi_frequency
     effective_detuning = sim._effective_detuning_hz(
-        pulse.detuning_hz, pulse.probe_shift_coefficient, pulse.rabi_frequency
+        pulse.detuning_hz,
+        pulse.probe_shift_coefficient,
+        pulse.effective_stark_rabi_frequency,
     )
     _, B, _, _ = sim._calculate_interaction_constants(
         effective_detuning,
@@ -366,8 +430,14 @@ def _addressed_momentum_classes(pulse: Pulse):
     ``_transition_probability`` so the overlay matches the trajectory heuristic.
     The opposite Doppler slopes for the two beams enter via ``pulse.k``.
     """
+    if pulse.restrict_to_m_ground is not None:
+        # Shaped-pulse stand-in: the restriction IS the addressing.
+        m_ground = float(pulse.restrict_to_m_ground)
+        return m_ground, m_ground + pulse.k
     effective_detuning_hz = sim._effective_detuning_hz(
-        pulse.detuning_hz, pulse.probe_shift_coefficient, pulse.rabi_frequency
+        pulse.detuning_hz,
+        pulse.probe_shift_coefficient,
+        pulse.effective_stark_rabi_frequency,
     )
     m_ground = (
         effective_detuning_hz - sim.RECOIL_FREQUENCY_HZ
@@ -462,10 +532,16 @@ def build_sequence_from_lab_pulse_dump(
     # Doppler shift seen by each beam from the atom's velocity. This number is
     # the difference between what the atom experiences and the UP beam's
     # frequency. In other words, if this number is positive, the atom is falling
-    # towards the ground and blue-shifting the up beam
+    # towards the ground and blue-shifting the up beam.
+    #
+    # The lab tunes each pulse's frequency for resonance at the pulse CENTRE,
+    # so the free-fall Doppler ramp must be evaluated there, not at the pulse
+    # start. (For a 380 us velocity-selection pulse the difference is ~0.57
+    # recoils -- large enough to wreck the anchor if evaluated at the start.)
+    pulse_centre_times = timestamps + durations / 2
     up_beam_doppler_hz = (
         -initial_velocity_z / sim.TRANSITION_WAVELENGTH
-        + sim.GRAVITY_DOPPLER_PER_SEC_HZ * timestamps
+        + sim.GRAVITY_DOPPLER_PER_SEC_HZ * pulse_centre_times
     )
 
     # Assume that the first pulse is on resonance
@@ -480,14 +556,21 @@ def build_sequence_from_lab_pulse_dump(
         probe_induced_alpha_up if is_up[0] else probe_induced_alpha_down
     ) * rabi_freq_first_pulse**2
     first_pulse_doppler_shift_hz = up_beam_doppler_hz[0] * beam_sign[0]
+    # The recoil energy is positive whichever way the photon kicks, so a
+    # velocity-selection pulse on a stationary atom is resonant one recoil
+    # frequency ABOVE the bare transition for BOTH beam directions.
     first_pulse_atom_frame_detuning_hz = sim.RECOIL_FREQUENCY_HZ
 
     # This is the unperturbed transition frequency for a hypothetical m=0 -> m=0
     # transition. To get it, we must subtract the probe shift that the atom was
     # experiencing during the pulse, and also subtract the detuning resultant
-    # from us actually driving the m=0 -> m=1 transition. We assume that the
-    # first pulse in any sequence is a pi pulse that drives the ground state m=0
-    # to the excited state m=+1, i.e. a velocity selection pulse.
+    # from us actually driving the m=0 -> m=+-1 transition. We assume that the
+    # first pulse in any sequence -- whichever beam fired it -- is a pi pulse
+    # that drives the ground state m=0 to the excited state m=+-1 along that
+    # beam's direction, i.e. a velocity selection pulse. All frequencies are
+    # therefore anchored on the first pulse, NOT on the first up pulse: the
+    # beam-dependent pieces (probe-shift coefficient and Doppler sign) above are
+    # selected by the first pulse's actual beam.
     centre_freq_hz = total_laser_frequency_hz[0] + first_pulse_doppler_shift_hz - first_pulse_atom_frame_detuning_hz - first_pulse_probe_shift_hz
     
     
@@ -584,16 +667,25 @@ def calibrate_probe_shift_and_velocity_from_dump(
 
 
 
-    * ``alpha`` (probe-shift coefficient, 1/Hz): the up-beam pulses share one
-      beam, so after removing the probe shift ``alpha * rabi**2`` their
-      effective detunings must differ only by an integer number of recoils (assuming the experimental sequence is correct - this is the hacky bit).
-      Comparing the reference up pulse with the up pulse of most-different Rabi
-      frequency lets us deduce a value for ``alpha``.
+    All frequencies are anchored on the FIRST pulse of the dump, whichever beam
+    fired it (matching :func:`build_sequence_from_lab_pulse_dump`), not on the
+    first up pulse. "Anchor beam" below means the beam of that first pulse.
+
+    * ``alpha`` (probe-shift coefficient, 1/Hz): the anchor-beam pulses share
+      one beam, so after removing the probe shift ``alpha * rabi**2`` their
+      effective detunings must differ only by an integer number of recoils
+      (assuming the experimental sequence is correct - this is the hacky bit).
+      Comparing the two anchor-beam pulses of most-different Rabi frequency
+      lets us deduce a value for ``alpha``. The anchor beam must be used
+      because its built detunings are independent of ``v0`` (the first-pulse
+      anchor absorbs the Doppler shift for its own beam).
 
     * ``v0`` (initial z-velocity, m/s): the two beams counter-propagate, so a
-      nonzero ``v0`` shifts the down-beam detunings by ``2 * v0 / lambda``
-      relative to the up-anchored centre. We pin ``v0`` by **assuming the first
-      down pulse is resonant**.
+      nonzero ``v0`` shifts the opposite beam's detunings by ``2 * v0 /
+      lambda`` relative to the anchored centre. We pin ``v0`` by **assuming
+      the first opposite-beam pulse is resonant** on the transition that
+      addresses the freshly velocity-selected atom (4 recoils below the
+      anchor pulse in effective-detuning space, for either beam order).
 
     Parameters match :func:`build_sequence_from_lab_pulse_dump`.
 
@@ -632,113 +724,88 @@ def calibrate_probe_shift_and_velocity_from_dump(
         initial_velocity_z=0.0,
     )
 
-    # Loop through the events, extracting the rabi freq, detuning and timestamp of the first pulses
+    pulses = [e for e in bare_sequence if isinstance(e, Pulse)]
+    if len(pulses) == 0:
+        raise ValueError("Lab pulse dump contains no pulses")
 
-    first_up_detuning_hz = None
-    first_up_rabi_freq_hz = None
-    first_up_timestamp = None
-    first_down_detuning_hz = None
-    first_down_rabi_freq_hz = None
-    first_down_timestamp = None
+    # The build anchors all frequencies on the first pulse, whichever beam
+    # fired it. With probe shift and v0 switched off, the built detunings obey
+    #
+    #   det_i = rung_i * REC + alpha * (rabi_i**2 - rabi_0**2)
+    #           + (v0 / lambda) * (k_i - k_0)
+    #
+    # where rung_i is the integer recoil-ladder position the lab intended.
+    # Anchor-beam pulses (k_i == k_0) are therefore independent of v0, and
+    # opposite-beam pulses are offset by exactly 2 * k_0 * v0 / lambda.
+    anchor_pulse = pulses[0]
+    anchor_beam_sign = anchor_pulse.k
 
-    for t, e in zip(bare_sequence_timestamps, bare_sequence):
-        if isinstance(e, (Freefall, Clearout)):
-            pass
-        elif isinstance(e, Pulse):
-            if e.k == +1:
-                if first_up_detuning_hz is None:
-                    first_up_detuning_hz = e.detuning_hz
-                    first_up_rabi_freq_hz = e.rabi_frequency
-                    first_up_timestamp = t + e.duration / 2
-            elif e.k == -1:
-                if first_down_detuning_hz is None:
-                    first_down_detuning_hz = e.detuning_hz
-                    first_down_rabi_freq_hz = e.rabi_frequency
-                    first_down_timestamp = t + e.duration / 2
+    # --- alpha: from two anchor-beam pulses with the largest Rabi**2 separation ---
+    anchor_beam_pulses = [p for p in pulses if p.k == anchor_beam_sign]
+    pulse_min_rabi = min(anchor_beam_pulses, key=lambda p: p.rabi_frequency)
+    pulse_max_rabi = max(anchor_beam_pulses, key=lambda p: p.rabi_frequency)
 
-    # Also get the up pulses with the largest and smallest rabi freq
-
-    # --- alpha: from two up pulses with the largest Rabi**2 separation ---
-    ind_min_rabi = np.argmin(
-        [
-            e.rabi_frequency if isinstance(e, Pulse) and e.k == +1 else np.inf
-            for e in bare_sequence
-        ]
-    )
-    ind_max_rabi = np.argmax(
-        [
-            e.rabi_frequency if isinstance(e, Pulse) and e.k == +1 else -np.inf
-            for e in bare_sequence
-        ]
-    )
-
-    rabi_min = bare_sequence[ind_min_rabi].rabi_frequency
-    rabi_min_detuning = bare_sequence[ind_min_rabi].detuning_hz
-    rabi_min_timestamp = (
-        bare_sequence_timestamps[ind_min_rabi]
-        + bare_sequence[ind_min_rabi].duration / 2
-    )
-
-    rabi_max = bare_sequence[ind_max_rabi].rabi_frequency
-    rabi_max_detuning = bare_sequence[ind_max_rabi].detuning_hz
-    rabi_max_timestamp = (
-        bare_sequence_timestamps[ind_max_rabi]
-        + bare_sequence[ind_max_rabi].duration / 2
-    )
-
-    if rabi_min == rabi_max:
+    if pulse_min_rabi.rabi_frequency == pulse_max_rabi.rabi_frequency:
         raise ValueError(
-            "All up-beam pulses share the same Rabi frequency; cannot separate "
-            "the probe shift from the recoil ladder."
+            "All anchor-beam (first-pulse beam) pulses share the same Rabi "
+            "frequency; cannot separate the probe shift from the recoil ladder."
         )
 
-    f_pulse_difference = rabi_max_detuning - rabi_min_detuning
+    f_pulse_difference = pulse_max_rabi.detuning_hz - pulse_min_rabi.detuning_hz
 
     # The free-fall Doppler shift was already removed by
-    # build_sequence_from_lab_pulse_dump, so this difference is only because of
-    # the probe-induced Stark shift + the true detuning in the atom frame. The
-    # two up pulses should therefore differ by an integer number of pulses. This
-    # allows us to pin down the stark shift contribution, on the assumption that
-    # the probe induced shift is less than the recoil shift
-    
-
+    # build_sequence_from_lab_pulse_dump, and v0 drops out for anchor-beam
+    # pulses, so this difference is only the probe-induced Stark shift plus an
+    # integer number of recoils. This pins down the Stark contribution, on the
+    # assumption that the probe-induced shift is less than half a recoil.
     ladder_separation_hz = (
-        round((f_pulse_difference) / sim.RECOIL_FREQUENCY_HZ)
+        round(f_pulse_difference / sim.RECOIL_FREQUENCY_HZ)
         * sim.RECOIL_FREQUENCY_HZ
     )
     residual_probe_shift_hz = f_pulse_difference - ladder_separation_hz
 
-    probe_shift_alpha = residual_probe_shift_hz / (rabi_max**2 - rabi_min**2)
+    probe_shift_alpha = residual_probe_shift_hz / (
+        pulse_max_rabi.rabi_frequency**2 - pulse_min_rabi.rabi_frequency**2
+    )
 
-    # --- v0: anchor on the FIRST down pulse being resonant ---
+    # --- v0: anchor on the FIRST opposite-beam pulse being resonant ---
 
-    # The build already assumes the first (up) pulse is resonant on the m_g=0
-    # transition.
+    # The build already assumes the first pulse is a velocity-selection pi
+    # pulse, resonant on m=0 -> m=k_0 (one recoil above the bare transition).
     #
-    # From the down beam's perspective this is the m=-1 state, so we assume that
-    # the first DOWN pulse is resonant on the m=-1 -> m=-2
+    # The first pulse of the OPPOSITE beam then addresses the freshly shelved
+    # atom (excited, m=k_0), whose ground-state partner for that beam is
+    # m_g = 2*k_0: its resonant effective detuning is 3 recoils BELOW the bare
+    # transition, for either beam order. The anchor and first-opposite pulse
+    # therefore sit exactly 4 recoils apart in effective-detuning space, and
+    # any residual is the 2 * k_0 * v0 / lambda Doppler offset between the
+    # counter-propagating beams:
     #
-    # This means that the difference between the first up and the first down
-    # pulse should be four recoil frequencies, after correction for the probe
-    # shift and the Doppler shift. This allow us to extract the Doppler shift
-    # only.
+    #   v0 = (k_0 * lambda / 2) * (det_0 - det_j - 4 * REC - (shift_0 - shift_j))
+    #
+    # Gravity needs no separate term here: the built detunings already include
+    # the free-fall Doppler ramp consistently for both beams.
+    first_opposite = next((p for p in pulses if p.k == -anchor_beam_sign), None)
 
-    if first_down_detuning_hz is None:
+    if first_opposite is None:
         # The initial velocity is irrelevant
         initial_velocity_z = 0.0
     else:
-        first_up_probe_shift_hz = probe_shift_alpha * first_up_rabi_freq_hz**2  # type: ignore
-        first_down_probe_shift_hz = probe_shift_alpha * first_down_rabi_freq_hz**2  # type: ignore
-
-        delta_f_laser = first_up_detuning_hz - first_down_detuning_hz  # type: ignore
-        delta_f_probe = first_up_probe_shift_hz - first_down_probe_shift_hz
-        t_sum = first_up_timestamp + first_down_timestamp  # type: ignore
+        anchor_probe_shift_hz = probe_shift_alpha * anchor_pulse.rabi_frequency**2
+        opposite_probe_shift_hz = (
+            probe_shift_alpha * first_opposite.rabi_frequency**2
+        )
 
         initial_velocity_z = (
-            0.5
+            anchor_beam_sign
+            * 0.5
             * sim.TRANSITION_WAVELENGTH
-            * (4 * sim.RECOIL_FREQUENCY_HZ - delta_f_laser - delta_f_probe)
-            - sim.GRAVITY_G * t_sum
+            * (
+                anchor_pulse.detuning_hz
+                - first_opposite.detuning_hz
+                - 4 * sim.RECOIL_FREQUENCY_HZ
+                - (anchor_probe_shift_hz - opposite_probe_shift_hz)
+            )
         )
 
     return probe_shift_alpha, initial_velocity_z
@@ -795,9 +862,20 @@ def compute_spacetime_trajectory(
                 color_index=self.color_index,
             )
 
+    previous_event = None
     for event in sequence:
         if not isinstance(event, (Pulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
+        if (
+            isinstance(event, Pulse)
+            and event.simultaneous_with_previous
+            and not isinstance(previous_event, Pulse)
+        ):
+            raise ValueError(
+                "A simultaneous_with_previous pulse must directly follow "
+                "another Pulse in the sequence"
+            )
+        previous_event = event
     if max_branches is not None and max_branches < 1:
         raise ValueError("max_branches must be positive or None")
 
@@ -819,7 +897,13 @@ def compute_spacetime_trajectory(
     next_color_index = 1
 
     for event in sequence:
-        dt = event.duration
+        # A simultaneous pulse fires at the same time as its predecessor: the
+        # sequence clock (and hence cloud positions) must not advance again.
+        dt = (
+            0.0
+            if isinstance(event, Pulse) and event.simultaneous_with_previous
+            else event.duration
+        )
 
         if isinstance(event, (Freefall, Clearout)):
             t += dt
@@ -919,7 +1003,12 @@ def _plot_spacetime(sequence, clouds, clearout_times):
 
         for i in range(len(cloud.times) - 1):
             event = sequence[i]
-            dt = event.duration
+            # Simultaneous pulses do not advance the clock (see the main loop)
+            dt = (
+                0.0
+                if isinstance(event, Pulse) and event.simultaneous_with_previous
+                else event.duration
+            )
             event_end_time = current_time + dt
 
             if isinstance(event, Pulse):
@@ -1035,11 +1124,18 @@ def _plot_spacetime(sequence, clouds, clearout_times):
     pulse_edge_alpha = 0.45
     pulse_edge_lw = 0.6
     t_event = 0.0
+    last_pulse_start = 0.0
     for event in sequence:
         if isinstance(event, Pulse):
-            t_start_us = t_event * 1e6
+            # A simultaneous pulse shares its predecessor's time span
+            if event.simultaneous_with_previous:
+                t_start = last_pulse_start
+            else:
+                t_start = t_event
+                last_pulse_start = t_event
+            t_start_us = t_start * 1e6
             t_width_us = event.duration * 1e6
-            t_end_us = (t_event + event.duration) * 1e6
+            t_end_us = (t_start + event.duration) * 1e6
             m_ground, m_excited = _addressed_momentum_classes(event)
             m_low = min(m_ground, m_excited)
             m_high = max(m_ground, m_excited)
@@ -1079,7 +1175,11 @@ def _plot_spacetime(sequence, clouds, clearout_times):
             )
             lbl = None  # only add to one axis
             pulse_fill_added[event.k] = True
-        t_event += event.duration
+        t_event += (
+            0.0
+            if isinstance(event, Pulse) and event.simultaneous_with_previous
+            else event.duration
+        )
 
     ax_z.plot([], [], "-", color="gray", lw=1.5, label="|g> (solid)")
     ax_z.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")

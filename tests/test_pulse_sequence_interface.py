@@ -3,6 +3,7 @@ import pytest
 
 from lmt_sim.lmt_sequence import (
     _addressed_momentum_classes,
+    _transition_probability,
     compute_spacetime_trajectory,
     Clearout,
     Freefall,
@@ -917,8 +918,8 @@ def test_build_sequence_rejects_non_boolean_is_up():
 def test_build_sequence_logical_not_flips_beams():
     """The supported beam flip (boolean array / np.logical_not) swaps up<->down."""
     is_up = np.array([True, False])
-    base = build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(is_up))
-    flipped = build_sequence_from_lab_pulse_dump(
+    _, base = build_sequence_from_lab_pulse_dump(**_minimal_lab_dump(is_up))
+    _, flipped = build_sequence_from_lab_pulse_dump(
         **_minimal_lab_dump(np.logical_not(is_up))
     )
     base_ks = [event.k for event in base if isinstance(event, Pulse)]
@@ -933,11 +934,11 @@ def _second_pulse_detuning(dump):
     return pulses[1].detuning_hz
 
 
-def test_aom_frequencies_are_subtracted_opll_is_added():
-    """The switch and delivery AOMs lower the optical frequency at the atom, so
-    a per-pulse increase in either must DECREASE that pulse's detuning -- the
-    opposite sign to the OPLL, which adds. Verified absolutely against the
-    BIPM Sr-87 line (only +opll-switch-delivery lands on resonance)."""
+def test_opll_and_aom_frequencies_are_all_subtracted():
+    """The OPLL offsets the Sirah from the ECDL with the lock on the NEGATIVE
+    side, and the switch and delivery AOMs use the -1st order, so a per-pulse
+    increase in ANY of the three must DECREASE that pulse's detuning:
+    total = -opll - switch - delivery (lab-confirmed convention)."""
     # Use two up pulses so beam direction is identical and the first-pulse
     # anchor cancels: only the pulse-2 offset survives.
     base = dict(
@@ -955,35 +956,87 @@ def test_aom_frequencies_are_subtracted_opll_is_added():
     bump_switch = dict(base, switch_hz=np.array([200e6, 200e6 + 1e3]))
     bump_delivery = dict(base, delivery_hz=np.array([99e6, 99e6 + 1e3]))
 
-    # OPLL adds: +1 kHz on pulse 2 -> +1 kHz detuning.
-    assert _second_pulse_detuning(bump_opll) - ref == pytest.approx(1e3)
-    # Switch and delivery subtract: +1 kHz on pulse 2 -> -1 kHz detuning.
+    # All three subtract: +1 kHz on pulse 2 -> -1 kHz detuning.
+    assert _second_pulse_detuning(bump_opll) - ref == pytest.approx(-1e3)
     assert _second_pulse_detuning(bump_switch) - ref == pytest.approx(-1e3)
     assert _second_pulse_detuning(bump_delivery) - ref == pytest.approx(-1e3)
 
 
-def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder():
-    """The auto-calibration is a hacky self-consistent fit: it must warn, and
-    the (alpha, v0) it returns must place every pulse on the integer recoil
-    ladder once its probe shift is removed."""
-    # A small synthetic LMT-like dump: alternating up/down pulses climbing the
-    # ladder, with the experiment's switch offsets (+1.5 kHz up, +5.8 kHz down)
-    # and two different up-beam pulse lengths so alpha is identifiable.
-    is_up = np.array([True, False, True, False, True])
-    durations_mu = np.array([380_000.0, 68_000.0, 54_999.0, 68_000.0, 54_999.0])
-    switch_hz = np.where(is_up, 200e6 + 1.5e3, 200e6 + 5.8e3)
+def _synthesize_ladder_dump(anchor_beam_sign, alpha, v0, n_pairs=3):
+    """A lab dump from a perfectly tuned LMT launch with known (alpha, v0).
+
+    The first pulse (beam ``anchor_beam_sign``) is a long velocity-selection pi
+    pulse on m=0 -> m=anchor_beam_sign; then alternating opposite/anchor-beam
+    pi pulses climb the ladder. Every laser frequency is exactly what the lab
+    would set so each pulse is resonant on its intended rung, using the same
+    bookkeeping as build_sequence_from_lab_pulse_dump (gravity Doppler
+    evaluated at pulse centres, as the lab tunes it).
+
+    Returns ``(dump_kwargs, intended_rungs)``.
+    """
+    from lmt_sim.lmt_simulation import (
+        GRAVITY_G,
+        TRANSITION_WAVELENGTH,
+    )
+
+    beams = [anchor_beam_sign] + [-anchor_beam_sign, anchor_beam_sign] * n_pairs
+    durations = [380e-6] + [68e-6, 54.999e-6] * n_pairs
+    starts = [0.0] + [1e-3 + 0.15e-3 * i for i in range(2 * n_pairs)]
+
+    # Velocity selection puts the atom at m = anchor_beam_sign (excited); each
+    # subsequent pulse climbs one more recoil in that direction. The rung of a
+    # pulse addressing ground-state class m_g with beam k is 2*k*m_g + 1.
+    rungs = [1.0]
+    recoils_from_origin = 1
+    for k in beams[1:]:
+        m_g = (recoils_from_origin + 1) * anchor_beam_sign
+        rungs.append(2 * k * m_g + 1)
+        recoils_from_origin += 1
+
+    rabis = [1 / (2 * d) for d in durations]
+    total_laser_hz = [
+        rung * RECOIL_FREQUENCY_HZ
+        + alpha * rabi**2
+        - (
+            -v0 / TRANSITION_WAVELENGTH
+            + GRAVITY_G * (t0 + dur / 2) / TRANSITION_WAVELENGTH
+        )
+        * k
+        for k, t0, dur, rung, rabi in zip(beams, starts, durations, rungs, rabis)
+    ]
+
     dump = dict(
-        is_up=is_up,
-        start_times_mu=np.array([0.0, 1e6, 2e6, 3e6, 4e6]),
-        durations_mu=durations_mu,
-        opll_hz=np.full(5, 80e6),
-        switch_hz=switch_hz,
-        delivery_hz=np.full(5, 99.4853e6),
-        delivery_setpoint=np.full(5, 2.0),
+        is_up=np.array([k > 0 for k in beams]),
+        start_times_mu=np.array(starts) * 1e9,
+        durations_mu=np.array(durations) * 1e9,
+        # total = -opll - switch - delivery
+        opll_hz=-np.array(total_laser_hz),
+        switch_hz=np.zeros(len(beams)),
+        delivery_hz=np.zeros(len(beams)),
+        delivery_setpoint=np.full(len(beams), 2.0),
+    )
+    return dump, np.array(rungs)
+
+
+@pytest.mark.parametrize("anchor_beam_sign", [+1, -1])
+def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder(
+    anchor_beam_sign,
+):
+    """The auto-calibration is a hacky self-consistent fit: it must warn, and
+    on a perfectly tuned dump it must recover the true (alpha, v0) and place
+    every pulse on its intended recoil-ladder rung -- whichever beam fires the
+    first (anchor) pulse."""
+    alpha_true = -1.282e-5
+    v0_true = -1.6e-3
+    dump, intended_rungs = _synthesize_ladder_dump(
+        anchor_beam_sign, alpha_true, v0_true
     )
 
     with pytest.warns(UserWarning, match="HACKY"):
         alpha, v0 = calibrate_probe_shift_and_velocity_from_dump(**dump)
+
+    assert alpha == pytest.approx(alpha_true, rel=1e-6)
+    assert v0 == pytest.approx(v0_true, rel=1e-6)
 
     _, sequence = build_sequence_from_lab_pulse_dump(
         **dump,
@@ -991,8 +1044,115 @@ def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder():
         probe_induced_alpha_down=alpha,
         initial_velocity_z=v0,
     )
-    for event in sequence:
-        if isinstance(event, Pulse):
-            effective = event.detuning_hz - alpha * event.rabi_frequency**2
-            rungs = effective / RECOIL_FREQUENCY_HZ
-            assert abs(rungs - round(rungs)) < 0.05
+    pulses = [event for event in sequence if isinstance(event, Pulse)]
+    for pulse, intended_rung in zip(pulses, intended_rungs):
+        effective = pulse.detuning_hz - alpha * pulse.rabi_frequency**2
+        assert effective / RECOIL_FREQUENCY_HZ == pytest.approx(
+            intended_rung, abs=1e-6
+        )
+
+
+# --- Shaped-pulse stand-ins: arm-restricted, simultaneous pi pulses ---------
+
+
+def _stand_in_pulse(**overrides):
+    rabi = 9090.9
+    defaults = dict(
+        k=+1,
+        detuning_hz=5 * RECOIL_FREQUENCY_HZ,
+        phi=0.0,
+        label="stand_in",
+        rabi_frequency=rabi,
+        duration=1 / (2 * rabi),
+    )
+    defaults.update(overrides)
+    return Pulse(**defaults)
+
+
+def test_restricted_pulse_only_addresses_its_momentum_class():
+    """A restricted pulse flips its target class as usual but is a strict
+    no-op -- not merely off-resonant -- for every other momentum class."""
+    pulse = _stand_in_pulse(restrict_to_m_ground=2)
+    # Target class: ground m=2 (and its partner, excited m=3), resonant pi.
+    assert _transition_probability(2, True, pulse) == pytest.approx(1.0, abs=1e-6)
+    assert _transition_probability(3, False, pulse) == pytest.approx(1.0, abs=1e-6)
+    # Any other class: exactly zero, even though a plain pulse would still
+    # interact off-resonantly.
+    assert _transition_probability(0, True, pulse) == 0.0
+    assert _transition_probability(1, False, pulse) == 0.0
+    unrestricted = _stand_in_pulse()
+    assert _transition_probability(0, True, unrestricted) > 0.0
+
+
+def test_addressed_momentum_classes_follow_the_restriction():
+    """For a restricted stand-in the restriction IS the addressing, whatever
+    the detuning says."""
+    pulse = _stand_in_pulse(detuning_hz=2.37 * RECOIL_FREQUENCY_HZ,
+                            restrict_to_m_ground=2)
+    assert _addressed_momentum_classes(pulse) == (2.0, 3.0)
+
+
+def test_simultaneous_pulse_requires_restriction():
+    with pytest.raises(ValueError, match="restrict_to_m_ground"):
+        _stand_in_pulse(simultaneous_with_previous=True)
+
+
+def test_simultaneous_pulse_must_follow_a_pulse():
+    lone = _stand_in_pulse(restrict_to_m_ground=0, simultaneous_with_previous=True)
+    with pytest.raises(ValueError, match="follow"):
+        compute_spacetime_trajectory([lone])
+    with pytest.raises(ValueError, match="follow"):
+        compute_spacetime_trajectory([Freefall(duration=1e-3), lone])
+
+
+def test_quantum_runner_guards_on_shaped_pulse_stand_ins():
+    """Full quantum propagation of the stand-ins is NOT implemented; the
+    runner must fail loudly rather than apply wrong physics."""
+    state = make_atom_states(
+        velocity_x=0.0,
+        velocity_y=0.0,
+        initial_velocity_z=0.0,
+        position_x=0.0,
+        position_y=0.0,
+        position_z=0.0,
+    )
+    restricted = _stand_in_pulse(restrict_to_m_ground=2)
+    with pytest.raises(NotImplementedError, match="shaped"):
+        run_pulse_sequence_in_lab_frame(state, [restricted])
+
+
+def test_double_launch_stand_in_kicks_both_arms_simultaneously():
+    """The rid74108 topology: velocity selection, pi/2 splitter, then ONE
+    shaped pulse modelled as two simultaneous arm-restricted pi pulses that
+    kick the two arms in opposite momentum directions."""
+    rabi = 9090.9
+    t_pi = 1 / (2 * rabi)
+    sequence = [
+        # VS: g m=0 -> e m=1
+        Pulse(k=+1, detuning_hz=1 * RECOIL_FREQUENCY_HZ, phi=0.0, label="VS",
+              rabi_frequency=rabi, duration=t_pi),
+        Freefall(duration=1e-3),
+        # pi/2 down splitter on the shelved atom: e m=1 <-> g m=2
+        Pulse(k=-1, detuning_hz=-3 * RECOIL_FREQUENCY_HZ, phi=0.0,
+              label="splitter", rabi_frequency=rabi, duration=t_pi / 2),
+        # shaped-pulse stand-in: upper arm g m=2 -> e m=3 (absorption) ...
+        Pulse(k=+1, detuning_hz=5 * RECOIL_FREQUENCY_HZ, phi=0.0,
+              label="shaped_upper", rabi_frequency=rabi, duration=t_pi,
+              restrict_to_m_ground=2),
+        # ... and lower arm e m=1 -> g m=0 (stimulated emission), at the
+        # same instant
+        Pulse(k=+1, detuning_hz=1 * RECOIL_FREQUENCY_HZ, phi=0.0,
+              label="shaped_lower", rabi_frequency=rabi, duration=t_pi,
+              restrict_to_m_ground=0, simultaneous_with_previous=True),
+        Freefall(duration=1e-3),
+    ]
+    clouds, _ = compute_spacetime_trajectory(sequence)
+    assert len(clouds) == 2
+    finals = {(cloud.m[-1], cloud.is_ground[-1]) for cloud in clouds}
+    assert finals == {(3, False), (0, True)}
+    for cloud in clouds:
+        # One entry per event after the initial point...
+        assert len(cloud.times) == len(sequence) + 1
+        # ...and the simultaneous pulse must not have advanced the clock:
+        # the post-upper and post-lower timestamps coincide.
+        assert cloud.times[4] == cloud.times[5]

@@ -306,6 +306,7 @@ def pulse_interaction_in_borde_representation(
     k_wavevector=K_WAVEVECTOR,
     vz: float = 0.0,
     probe_shift_coefficient: float = 0.0,
+    stark_rabi_freq=None,
 ):
     r"""
     Apply a laser pulse in the Borde representation
@@ -349,6 +350,13 @@ def pulse_interaction_in_borde_representation(
     probe_shift_coefficient : float, optional
         Probe (light) shift coefficient in 1/Hz, by default 0.0. The effective
         detuning is reduced by ``probe_shift_coefficient * rabi_freq**2`` Hz.
+    stark_rabi_freq : float or array-like, shape (N,), optional
+        Rabi frequency in Hz used for the probe (light) shift only, for pulses
+        whose intensity does not match their dynamics (e.g. shaped /
+        optimal-control pulses modelled as a plain pi pulse: ``pulse_rabi_freq``
+        is the fictitious value implied by the duration, while the light shift
+        scales with the true intensity). ``None`` (default) uses
+        ``pulse_rabi_freq``, i.e. an ordinary square pulse.
     Returns
     -------
     AtomState
@@ -363,6 +371,15 @@ def pulse_interaction_in_borde_representation(
 
     # Broadcast pulse_rabi_freq to a per-row array
     rabi_arr = np.broadcast_to(np.asarray(pulse_rabi_freq, dtype=float), (N,)).copy()
+
+    # The light shift follows the true intensity, which for a shaped pulse is
+    # decoupled from the (fictitious) dynamics Rabi frequency above
+    if stark_rabi_freq is None:
+        stark_rabi_arr = rabi_arr
+    else:
+        stark_rabi_arr = np.broadcast_to(
+            np.asarray(stark_rabi_freq, dtype=float), (N,)
+        ).copy()
 
     new_amplitudes = np.empty(new_num_rows, dtype=state.amplitudes.dtype)
     new_m_values = np.empty(new_num_rows, dtype=state.m_values.dtype)
@@ -394,7 +411,7 @@ def pulse_interaction_in_borde_representation(
         # Borde uses omega_ab = pi * RABI_FREQ, angular frequencies in rad/s
         omega_ab = np.pi * rabi_arr[idx]
         effective_detuning_hz = _effective_detuning_hz(
-            pulse_detuning, probe_shift_coefficient, rabi_arr[idx]
+            pulse_detuning, probe_shift_coefficient, stark_rabi_arr[idx]
         )
 
         A, B, C, D = _calculate_interaction_constants(
@@ -554,6 +571,7 @@ def do_gaussian_pulse(
     vz=0.0,
     wavelength=TRANSITION_WAVELENGTH,
     probe_shift_coefficient=0.0,
+    on_axis_stark_rabi_freq=None,
 ):
     """Apply a laser pulse with a full 3-D Gaussian (TEM00) intensity profile.
 
@@ -591,6 +609,13 @@ def do_gaussian_pulse(
         effective detuning by ``probe_shift_coefficient * rabi_freq**2`` Hz per
         row (Rabi-squared, i.e. intensity, scaling). Because the Rabi frequency
         is per-row for a Gaussian beam, the probe shift is naturally per-row too.
+    on_axis_stark_rabi_freq : float, optional
+        On-axis Rabi frequency in Hz used for the probe (light) shift only, for
+        shaped pulses whose true intensity does not match the fictitious
+        ``on_axis_rabi_freq`` implied by their duration. It is scaled by the
+        same Gaussian envelope as ``on_axis_rabi_freq``, so the per-row shift
+        still tracks the local intensity. ``None`` (default) uses
+        ``on_axis_rabi_freq``.
 
     Returns
     -------
@@ -602,6 +627,13 @@ def do_gaussian_pulse(
     rabi_per_row = gaussian_rabi(
         positions_mid, on_axis_rabi_freq, beam_waist, wavelength
     )
+    stark_rabi_per_row = (
+        None
+        if on_axis_stark_rabi_freq is None
+        else gaussian_rabi(
+            positions_mid, on_axis_stark_rabi_freq, beam_waist, wavelength
+        )
+    )
     return pulse_interaction_in_borde_representation(
         state,
         pulse_detuning=pulse_detuning,
@@ -612,6 +644,7 @@ def do_gaussian_pulse(
         k_wavevector=k_wavevector,
         vz=vz,
         probe_shift_coefficient=probe_shift_coefficient,
+        stark_rabi_freq=stark_rabi_per_row,
     )
 
 

@@ -106,6 +106,109 @@ def test_probe_shift_detunes_a_resonant_pi_pulse():
     assert p_exc_shifted < p_exc_resonant - 0.05, "probe shift should detune the pulse"
 
 
+def test_stark_rabi_freq_overrides_shift_only():
+    """stark_rabi_freq changes the light shift but not the pulse dynamics.
+
+    A pulse with stark_rabi_freq=Omega_s must match a pulse whose detuning is
+    bumped by coeff * Omega_s**2 (instead of coeff * pulse_rabi**2) but whose
+    coupling is unchanged.
+    """
+    detuning = RECOIL_FREQUENCY_HZ
+    coeff = PROBE_COEFF_1KHZ
+    stark_rabi = 3.0 * RABI_FREQ
+    shift_hz = coeff * stark_rabi**2
+
+    state = _prepared_state(pulse_detuning_hz=detuning)
+    shaped = pulse_interaction_in_borde_representation(
+        state,
+        pulse_detuning=detuning,
+        t_pulse=T_PI,
+        pulse_rabi_freq=RABI_FREQ,
+        pulse_phase=0.0,
+        k_sign=+1,
+        k_wavevector=K_WAVEVECTOR,
+        vz=0.0,
+        probe_shift_coefficient=coeff,
+        stark_rabi_freq=stark_rabi,
+    )
+    bumped = _do_pulse(detuning - shift_hz, probe_shift_coefficient=0.0)
+
+    assert np.allclose(shaped.amplitudes, bumped.amplitudes)
+
+
+def test_stark_rabi_freq_none_is_backward_compatible():
+    """stark_rabi_freq=None reproduces the rabi_freq-based shift exactly."""
+    detuning = RECOIL_FREQUENCY_HZ
+    coeff = PROBE_COEFF_1KHZ
+
+    state = _prepared_state(pulse_detuning_hz=detuning)
+    explicit_none = pulse_interaction_in_borde_representation(
+        state,
+        pulse_detuning=detuning,
+        t_pulse=T_PI,
+        pulse_rabi_freq=RABI_FREQ,
+        pulse_phase=0.0,
+        k_sign=+1,
+        k_wavevector=K_WAVEVECTOR,
+        vz=0.0,
+        probe_shift_coefficient=coeff,
+        stark_rabi_freq=None,
+    )
+    default = _do_pulse(detuning, probe_shift_coefficient=coeff)
+
+    assert np.allclose(explicit_none.amplitudes, default.amplitudes)
+
+
+def test_shaped_pulse_resonant_only_with_true_stark_rabi():
+    """A shaped pulse compensated in the lab for its TRUE light shift is only
+    resonant in the sim if the shift is computed from the true Rabi frequency.
+
+    The shaped pulse is several times longer than a pi pulse but keeps the full
+    intensity (Rabi = RABI_FREQ). We pretend it is a plain pi pulse, so its
+    fictitious dynamics Rabi frequency is 1 / (2 * duration). The lab detuning
+    includes compensation for the true shift coeff * RABI_FREQ**2.
+    """
+    duration = 4 * T_PI
+    fictitious_rabi = 1.0 / (2.0 * duration)
+    # 5 kHz true shift (cf. test_probe_shift_detunes_a_resonant_pi_pulse): large
+    # enough that computing it from the fictitious Rabi visibly breaks resonance.
+    coeff = 5000.0 / RABI_FREQ**2
+    lab_detuning = RECOIL_FREQUENCY_HZ + coeff * RABI_FREQ**2
+
+    common = dict(
+        k=+1,
+        detuning_hz=lab_detuning,
+        phi=0.0,
+        label="shaped",
+        rabi_frequency=fictitious_rabi,
+        duration=duration,
+        probe_shift_coefficient=coeff,
+    )
+    seq_marked = [Pulse(stark_rabi_frequency=RABI_FREQ, **common)]
+    seq_unmarked = [Pulse(**common)]
+
+    frac_marked = calculate_excited_fraction_for_pulse_sequence(seq_marked)
+    frac_unmarked = calculate_excited_fraction_for_pulse_sequence(seq_unmarked)
+
+    assert frac_marked > 0.99, "true-Rabi shift should restore resonance"
+    assert frac_unmarked < 0.5, "fictitious-Rabi shift should leave the pulse far off-resonance"
+
+
+def test_pulse_rejects_non_positive_stark_rabi():
+    import pytest
+
+    with pytest.raises(ValueError):
+        Pulse(
+            k=+1,
+            detuning_hz=0.0,
+            phi=0.0,
+            label="bad",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI,
+            stark_rabi_frequency=-1.0,
+        )
+
+
 def test_probe_shift_at_sequence_level():
     """Setting probe_shift_coefficient on a Pulse matches bumping its detuning."""
     detuning = RECOIL_FREQUENCY_HZ
