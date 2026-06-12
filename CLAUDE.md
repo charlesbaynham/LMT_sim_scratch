@@ -18,21 +18,25 @@ Examples of guards to respect (not exhaustive):
 - `ValueError: All pulses must currently use the same detuning for Bordé-frame propagation` in `lmt_sim/lmt_sequence.py` — changing laser frequency between pulses requires frame corrections not yet implemented
 - `TODO: Convert to the integral of laser phase` in `transform_state_vector` — the frame transformation is not valid for time-varying laser frequency
 
-## IMPORTANT: Notebooks must never have stale outputs
+## Notebooks are jupytext scripts, not `.ipynb`
 
-A notebook's stored outputs must always match its current code. **Never commit a
-notebook whose outputs are out of sync with its cells.** A notebook is only ever
-allowed to be in one of two states:
+This is a working repo, not an archive, so the explorations in `notebooks/` are
+plain Python scripts in the [jupytext](https://jupytext.readthedocs.io)
+`py:percent` format (`# %%` cell markers), **not** `.ipynb` files. There are no
+stored outputs to keep in sync — the script *is* the source of truth.
 
-- **No output** — all cells cleared, or
-- **Correct output** — freshly re-executed top-to-bottom so the saved outputs
-  reflect the current code.
-
-Whenever you change a notebook, re-execute it in place and save the regenerated
-outputs before committing (e.g. with `nbclient`, then `nbformat.write`). It is
-not enough to run it in memory to check it executes — the executed version must
-be the one written to disk and committed. Stale outputs are misleading and worse
-than none.
+- Run a script top-to-bottom from the `notebooks/` directory, e.g.
+  `cd notebooks && uv run python <name>.py` (the scripts do
+  `sys.path.insert(0, "..")`). `tests/test_scripts.py` executes every script
+  this way under a headless matplotlib backend.
+- Edit the `.py` directly. If you want the interactive cell experience, open it
+  with the Jupytext-aware Jupyter (`uv run jupytext --to notebook <name>.py` for
+  a throwaway `.ipynb`), but **do not commit `.ipynb` files** — only the scripts.
+- A script that must not be run as-is (e.g. it depends on data we don't have)
+  should be parked: put a `# --- PARKED: ...` comment explaining why immediately
+  after the imports, followed by `raise NotImplementedError(...)`. A parked
+  script is a known-broken state, so it deliberately **fails** `test_scripts.py`
+  (a red test) until it is fixed or removed — it is not exempted.
 
 
 
