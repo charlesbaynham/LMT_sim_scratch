@@ -705,7 +705,7 @@ def build_sequence_from_lab_pulse_dump(
     rabi_freq_first_pulse = (
         1 / (2 * durations[0])
         if durations[0] > pi_pulse_threshold_s
-        else 2 * np.pi / (4 * durations[0])
+        else 1 / (4 * durations[0])
     )
 
     # Get the shifts of the first pulse

@@ -35,8 +35,10 @@ stored outputs to keep in sync — the script *is* the source of truth.
 - A script that must not be run as-is (e.g. it depends on data we don't have)
   should be parked: put a `# --- PARKED: ...` comment explaining why immediately
   after the imports, followed by `raise NotImplementedError(...)`. A parked
-  script is a known-broken state, so it deliberately **fails** `test_scripts.py`
-  (a red test) until it is fixed or removed — it is not exempted.
+  script is a known-broken state. `test_scripts.py` detects the `# --- PARKED`
+  marker and marks that script `xfail` (strict), so it surfaces as an expected
+  failure rather than a hard red. Removing the marker (un-parking the script)
+  automatically holds it to the normal must-run bar again.
 
 
 
