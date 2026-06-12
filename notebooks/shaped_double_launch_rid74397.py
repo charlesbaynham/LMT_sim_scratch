@@ -20,21 +20,26 @@
 # the lab pulse record and reconstructed with `lmt_sim`. The dump is embedded
 # here so the script is self-contained (this repo has no RDS access).
 #
-# The pulse record alone is NOT enough to infer the trajectory; three pieces of
-# lab knowledge have to be reapplied (each in its own section below):
+# The pulse record alone is NOT enough to infer the trajectory; three things
+# the recorder cannot capture have to be reapplied (each in its own section):
 #
-# 1. **Probe (light) shifts.** The recorded carriers include the lab's
-#    intensity-dependent Stark compensation, which the parser's default
-#    `alpha * rabi_implied**2` model badly underestimates. We use the measured
-#    alpha and per-intensity-class `stark_rabi_frequency` markings.
+# 1. **The velocity-selection pulse's OPLL ramp.** The 380 us shelving pulse
+#    fires during the gravity DRG ramp, which the recorder cannot see: it
+#    stores the static pre-ramp setpoint (exactly 80 MHz). The pulse-centre
+#    value is +2.67 kHz higher; without this correction the parser's frequency
+#    anchor -- and hence EVERY pulse's detuning -- is off by 0.57 recoils.
 # 2. **The 200 us Jesse pulse.** A phase-shaped pulse driving both arms at
 #    once; the recorder stores it as a square pulse at the carrier (a known
-#    limitation, see the TODO in `first_shaped_lmt_pulse` in icl_experiments).
-#    It is replaced by two simultaneous arm-restricted stand-in pi pulses.
+#    limitation, see the TODO in `first_shaped_lmt_pulse`). It is replaced by
+#    two simultaneous arm-restricted stand-in pi pulses.
 # 3. **Clearouts.** The lab fires ground-state clearout pulses at six points;
 #    the pulse record does not store them, so they are reinserted by hand.
 #
-# With those in place the inference closes into the intended topology:
+# No other free parameters are needed: with the measured probe-shift alpha and
+# each square pulse's duration-implied Rabi frequency taken as its TRUE Rabi
+# frequency, all ninety plain pi pulses land on odd recoil rungs to within
+# 0.13 recoils (the six "selective" pulses carry known sub-recoil software
+# detunings on top). The inference then closes into the intended topology:
 # velocity selection, splitter, double launch, simultaneous second split,
 # W-shaped LMT interferometer out to +-63 recoil rungs, and recombination into
 # 8 clouds whose 4+4 outputs overlap.
@@ -186,12 +191,12 @@ assert n_pulses == 99
 # ## Pulse classes
 #
 # The clock switch-AOM offset recorded per pulse cleanly partitions the dump
-# into the intensity classes the experiment code uses (each `set_clock_up_dds`
-# / `set_clock_down_dds` call in `LMT_launch_mixins.py` bakes its Stark
-# compensation into the switch frequency):
+# into the beam/intensity classes the experiment code uses (each
+# `set_clock_up_dds` / `set_clock_down_dds` call in `LMT_launch_mixins.py`
+# selects one):
 #
-# * `+0 Hz`: the 380 us velocity-selection pulse (low delivery setpoint) and
-#   the 200 us Jesse pulse (RAM playback at the base carrier).
+# * `+0 Hz`: the 380 us velocity-selection pulse and the 200 us Jesse pulse
+#   (RAM playback at the base carrier).
 # * `+1500 Hz` (`up_switch_detuning_higher_intensity`): the 41 full-power
 #   55 us up-beam LMT pi pulses.
 # * `+500 Hz` (`up_switch_detuning_lower_intensity`): the 6 "selective"
@@ -218,40 +223,57 @@ SELECTIVE_PULSES = list(classes[500])
 assert SELECTIVE_PULSES == [21, 23, 25, 60, 62, 97]
 
 # %% [markdown]
-# ## Stark shifts and initial velocity
+# ## Correct the VS pulse's OPLL to its pulse-centre value
+#
+# The 380 us velocity-selection pulse fires while the clock OPLL is running
+# the gravity DRG ramp (`clock_shelving` starts the ramp immediately before
+# it). The recorder reports ramp-aware pulse-centre OPLL values only for
+# pulses whose ramp it starts itself (`do_selective_lmt_pulse` etc.); for the
+# shelving pulse it stores the static pre-ramp setpoint -- visible in the dump
+# as EXACTLY 80 MHz, while every other pulse's OPLL is a non-round value.
+#
+# The parser anchors the entire frequency scale on this pulse, so the missing
+# ramp_rate * duration / 2 = +2.67 kHz (0.57 recoil) shifts every detuning in
+# the sequence. This is the same correction the RID 74108 analysis applied.
+# Without it, the residuals look like an extra ~2.8 kHz light shift on the
+# up-beam pulses -- a wrong attribution: the shift is the same for the
+# full-power and 10.5 dB-attenuated classes, so it cannot be intensity-
+# dependent physics.
+
+# %%
+opll_hz = dump.opll_hz.copy()
+# Guard against double-correcting if the recorder is ever fixed to report the
+# ramp centre itself: the static value is exactly the 80 MHz base.
+assert opll_hz[0] == 80e6, (
+    "VS pulse OPLL is not the static pre-ramp value -- the recorder may now "
+    "report pulse-centre values, in which case this correction must be removed"
+)
+vs_ramp_correction_hz = sim.GRAVITY_DOPPLER_PER_SEC_HZ * dump.durations_s[0] / 2
+opll_hz[0] += vs_ramp_correction_hz
+print(f"VS OPLL pulse-centre correction: {vs_ramp_correction_hz:+.1f} Hz")
+
+# %% [markdown]
+# ## Stark shift and initial velocity
 #
 # The probe-shift coefficient is the measured value from
 # "2026-06-09 Clock shift gap-filling even Omega2 grid" (defined there per
-# rad/s, converted to 1/Hz). It is NOT the parser default, which has the wrong
-# sign and magnitude for this data.
+# rad/s, converted to 1/Hz). All pulses are plain square pulses (the Jesse
+# pulse is replaced below), so each pulse's duration-implied Rabi frequency IS
+# its true Rabi frequency and the default `alpha * rabi**2` light-shift model
+# applies with no `stark_rabi_frequency` markings. The residual check below
+# validates this: every plain pi pulse must land on an odd recoil rung.
 #
-# The light shift scales with the TRUE intensity of each pulse, not with the
-# duration-implied Rabi frequency the parser assigns, so the up-beam classes
-# are marked with a `stark_rabi_frequency` fitted from one pulse of known
-# recoil rung each:
-#
-# * full power: pulse 4, the first up-beam ladder pi pulse on arm A, must sit
-#   on rung 9 (g m=4 -> e m=5);
-# * selective: pulse 25, the first 100 us single-arm pulse, must sit on
-#   rung 29 (g m=14 -> e m=15).
-#
-# Both come out at ~16-17 kHz -- far above the duration-implied 9.1/5.0 kHz,
-# and nearly equal for the two classes even though the selective pulses are
-# fired with 10.5 dB more switch attenuation (the delivery servo holds the
-# optical power; the attenuation mostly trims the Rabi frequency via the
-# shaped time-envelope, not the peak intensity the Stark shift sees).
-#
-# The down beam keeps its duration-implied Stark and the residual common
-# offset of the down-beam class is absorbed into `initial_velocity_z` by
-# pinning pulse 3 (first down-beam ladder pulse, e m=3 -> g m=4) to rung -7 --
-# the same degeneracy-absorbing pinning the RID 74108 analysis used, so v0 is
-# an EFFECTIVE velocity, not a measurement.
+# `initial_velocity_z` is pinned so that pulse 3 (first down-beam ladder
+# pulse, e m=3 -> g m=4) sits exactly on rung -7, absorbing the down-beam
+# class's constant offset. NB the down-beam Stark shift and v0 are exactly
+# degenerate in this dump (all down pulses share one Rabi frequency), so this
+# v0 is an EFFECTIVE parameter, not a launch-velocity measurement.
 
 # %%
 PROBE_SHIFT_ALPHA = -2.04e-6 * (2 * np.pi)  # 1/Hz, measured 2026-06-09
 
 build_kwargs = dict(
-    **dataclasses.asdict(dump),
+    **{**dataclasses.asdict(dump), "opll_hz": opll_hz},
     probe_induced_alpha_up=PROBE_SHIFT_ALPHA,
     probe_induced_alpha_down=PROBE_SHIFT_ALPHA,
 )
@@ -262,46 +284,6 @@ def built_pulses(initial_velocity_z):
         **build_kwargs, initial_velocity_z=initial_velocity_z
     )
     return s, [e for e in s if isinstance(e, seq.Pulse)]
-
-
-# Pin v0 from pulse 3 = rung -7. The dependence of the down-beam detunings on
-# v0 is linear (2 v0 / lambda); fit the slope empirically so this stays
-# correct if the parser's frame handling changes.
-_, p_a = built_pulses(0.0)
-_, p_b = built_pulses(1e-4)
-slope = (p_b[3].detuning_hz - p_a[3].detuning_hz) / 1e-4
-initial_velocity_z = (-7 * REC - p_a[3].detuning_hz) / slope
-print(f"pinned initial_velocity_z = {initial_velocity_z * 1e3:+.4f} mm/s")
-assert abs(initial_velocity_z) < 5e-3, "pinned v0 should be a small residual"
-
-sequence, pulses = built_pulses(initial_velocity_z)
-
-# Fit the per-class Stark Rabi frequencies
-stark_rabi_full = np.sqrt((pulses[4].detuning_hz - 9 * REC) / PROBE_SHIFT_ALPHA)
-stark_rabi_selective = np.sqrt(
-    (pulses[25].detuning_hz - 29 * REC) / PROBE_SHIFT_ALPHA
-)
-print(
-    f"stark_rabi: full-power up {stark_rabi_full:.0f} Hz, "
-    f"selective up {stark_rabi_selective:.0f} Hz "
-    f"(duration-implied: {pulses[4].rabi_frequency:.0f} / "
-    f"{pulses[25].rabi_frequency:.0f} Hz)"
-)
-
-stark_marked = []
-pulse_index = -1
-for event in sequence:
-    if isinstance(event, seq.Pulse):
-        pulse_index += 1
-        if switch_offset[pulse_index] == 1500:
-            event = dataclasses.replace(event, stark_rabi_frequency=stark_rabi_full)
-        elif switch_offset[pulse_index] == 500:
-            event = dataclasses.replace(
-                event, stark_rabi_frequency=stark_rabi_selective
-            )
-    stark_marked.append(event)
-sequence = stark_marked
-pulses = [e for e in sequence if isinstance(e, seq.Pulse)]
 
 
 def effective_rung(pulse):
@@ -315,17 +297,39 @@ def effective_rung(pulse):
     )
 
 
-# With the markings every plain pi pulse must sit on an odd recoil rung
-residuals = [
-    effective_rung(p) - (2 * round((effective_rung(p) - 1) / 2) + 1)
-    for i, p in enumerate(pulses)
-    if i not in (0, 2) and p.duration > 50e-6
-]
+# Pin v0 from pulse 3's EFFECTIVE detuning = rung -7. The dependence of the
+# down-beam detunings on v0 is linear (2 v0 / lambda); fit the slope
+# empirically so this stays correct if the parser's frame handling changes.
+_, p_a = built_pulses(0.0)
+_, p_b = built_pulses(1e-4)
+slope = (p_b[3].detuning_hz - p_a[3].detuning_hz) / 1e-4
+initial_velocity_z = (-7 - effective_rung(p_a[3])) * REC / slope
+print(f"pinned initial_velocity_z = {initial_velocity_z * 1e3:+.4f} mm/s (effective)")
+assert abs(initial_velocity_z) < 5e-3
+
+sequence, pulses = built_pulses(initial_velocity_z)
+
+# Validation: with measured alpha, duration-implied Rabi frequencies and the
+# VS ramp correction -- no fitted Stark parameters -- every plain pi pulse
+# must sit on an odd recoil rung. The selective pulses carry known sub-recoil
+# software detunings (first_lmt_freq etc., 0.2-1 kHz) so they get a slightly
+# looser bound.
+residuals_plain, residuals_selective = [], []
+for i, p in enumerate(pulses):
+    if i in (0, 2):
+        continue
+    rung = effective_rung(p)
+    resid = rung - (2 * round((rung - 1) / 2) + 1)
+    (residuals_selective if i in SELECTIVE_PULSES else residuals_plain).append(resid)
 print(
-    f"pi-pulse odd-rung residuals: rms {np.sqrt(np.mean(np.square(residuals))):.3f}, "
-    f"max |.| {np.max(np.abs(residuals)):.3f} recoils"
+    f"plain pi-pulse odd-rung residuals: rms "
+    f"{np.sqrt(np.mean(np.square(residuals_plain))):.3f}, "
+    f"max |.| {np.max(np.abs(residuals_plain)):.3f} recoils\n"
+    f"selective-pulse residuals: max |.| "
+    f"{np.max(np.abs(residuals_selective)):.3f} recoils"
 )
-assert np.max(np.abs(residuals)) < 0.35
+assert np.max(np.abs(residuals_plain)) < 0.15
+assert np.max(np.abs(residuals_selective)) < 0.25
 
 # %% [markdown]
 # ## Replace the 200 us Jesse pulse with two arm-restricted stand-ins
@@ -430,8 +434,8 @@ sequence = with_clearouts
 # ## Recoil ladder
 #
 # Each pulse's effective (Stark-corrected) detuning in recoil units, i.e. the
-# rung the simulator sees after the markings above. Plain pi pulses sit on odd
-# rungs; the four 100 us selective pulses all address rung 29.
+# rung the simulator sees after the corrections above. Plain pi pulses sit on
+# odd rungs; the four 100 us selective pulses all address rung 29.
 
 # %%
 plot_pulses = [e for e in sequence if isinstance(e, seq.Pulse)]
