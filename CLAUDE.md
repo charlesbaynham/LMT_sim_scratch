@@ -34,8 +34,9 @@ stored outputs to keep in sync — the script *is* the source of truth.
   a throwaway `.ipynb`), but **do not commit `.ipynb` files** — only the scripts.
 - A script that must not be run as-is (e.g. it depends on data we don't have)
   should be parked: put a `# --- PARKED: ...` comment explaining why immediately
-  after the imports, followed by `raise NotImplementedError(...)`. The test
-  suite asserts such scripts raise that guard rather than running.
+  after the imports, followed by `raise NotImplementedError(...)`. A parked
+  script is a known-broken state, so it deliberately **fails** `test_scripts.py`
+  (a red test) until it is fixed or removed — it is not exempted.
 
 
 

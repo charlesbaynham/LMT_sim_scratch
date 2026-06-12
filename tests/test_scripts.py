@@ -8,11 +8,6 @@ SCRIPT_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "notebooks"
 )
 
-# Marker emitted by the guard block of a deliberately parked script (one fenced
-# off behind ``raise NotImplementedError`` because it runs on legacy/placeholder
-# data). Such scripts are EXPECTED to raise rather than execute cleanly.
-PARKED_MARKER = "PARKED:"
-
 
 def get_all_scripts():
     return sorted(
@@ -22,20 +17,18 @@ def get_all_scripts():
     )
 
 
-def _is_parked(path):
-    with open(path, "r", encoding="utf-8") as f:
-        return PARKED_MARKER in f.read()
-
-
 @pytest.mark.parametrize("script_path", get_all_scripts())
 def test_script_execution(script_path):
     """Every jupytext script in ``notebooks/`` must run top-to-bottom.
 
     Scripts are run from ``notebooks/`` (so the ``sys.path.insert(0, "..")``
     they use points at the repo root) with a headless matplotlib backend.
-    Scripts deliberately parked behind a ``raise NotImplementedError`` guard are
-    the exception: they must raise that guard (and nothing else) instead of
-    finishing cleanly.
+
+    A script that cannot currently run -- e.g. one parked behind a
+    ``raise NotImplementedError`` guard because it depends on data we don't
+    have -- is NOT exempted: it fails this test on purpose. A parked script is
+    a known-broken state, and a red test is exactly how it should surface until
+    it is fixed or removed.
     """
     env = {**os.environ, "MPLBACKEND": "Agg"}
     result = subprocess.run(
@@ -46,17 +39,6 @@ def test_script_execution(script_path):
         timeout=600,
         env=env,
     )
-
-    if _is_parked(script_path):
-        assert result.returncode != 0, (
-            f"Parked script {script_path} exited cleanly but should raise its "
-            f"NotImplementedError guard."
-        )
-        assert "NotImplementedError" in result.stderr, (
-            f"Parked script {script_path} raised an unexpected error instead of "
-            f"its NotImplementedError guard:\n{result.stderr[-3000:]}"
-        )
-        return
 
     assert result.returncode == 0, (
         f"Script {script_path} failed to execute:\n{result.stderr[-3000:]}"
