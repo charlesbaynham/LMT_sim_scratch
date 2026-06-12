@@ -14,6 +14,10 @@ from lmt_sim.lmt_sequence import (
     build_mach_zehnder_pulse_sequence,
     build_sequence_from_lab_pulse_dump,
     calibrate_probe_shift_and_velocity_from_dump,
+    decode_pulse_record_flat,
+    LabPulseDump,
+    PULSE_RECORD_SAME_AS_LAST_SENTINEL,
+    PULSE_RECORD_DISABLED_SENTINEL,
 )
 from lmt_sim.lmt_simulation import (
     AtomState,
@@ -887,8 +891,8 @@ def _minimal_lab_dump(is_up):
     """A minimal valid lab pulse dump (two pulses) for builder tests."""
     return dict(
         is_up=is_up,
-        start_times_mu=np.array([0.0, 1_000_000.0]),
-        durations_mu=np.array([95_000.0, 95_000.0]),
+        start_times_s=np.array([0.0, 1e-3]),
+        durations_s=np.array([95e-6, 95e-6]),
         opll_hz=np.array([80e6, 80e6]),
         switch_hz=np.zeros(2),
         delivery_hz=np.zeros(2),
@@ -943,8 +947,8 @@ def test_opll_and_aom_frequencies_are_all_subtracted():
     # anchor cancels: only the pulse-2 offset survives.
     base = dict(
         is_up=np.array([True, True]),
-        start_times_mu=np.array([0.0, 1_000_000.0]),
-        durations_mu=np.array([95_000.0, 95_000.0]),
+        start_times_s=np.array([0.0, 1e-3]),
+        durations_s=np.array([95e-6, 95e-6]),
         opll_hz=np.array([80e6, 80e6]),
         switch_hz=np.array([200e6, 200e6]),
         delivery_hz=np.array([99e6, 99e6]),
@@ -1007,8 +1011,8 @@ def _synthesize_ladder_dump(anchor_beam_sign, alpha, v0, n_pairs=3):
 
     dump = dict(
         is_up=np.array([k > 0 for k in beams]),
-        start_times_mu=np.array(starts) * 1e9,
-        durations_mu=np.array(durations) * 1e9,
+        start_times_s=np.array(starts),
+        durations_s=np.array(durations),
         # total = -opll - switch - delivery
         opll_hz=-np.array(total_laser_hz),
         switch_hz=np.zeros(len(beams)),
@@ -1050,6 +1054,203 @@ def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder(
         assert effective / RECOIL_FREQUENCY_HZ == pytest.approx(
             intended_rung, abs=1e-6
         )
+
+
+# --- pulse_record_flat decoding ---------------------------------------------
+
+
+def _encode_regular_record(
+    is_up,
+    start_times_s,
+    durations_s,
+    opll_hz,
+    switch_hz,
+    delivery_hz,
+    delivery_setpoint,
+):
+    """Encode one shot into a flat float64 record, mirroring the producer."""
+    rows = [
+        np.asarray(is_up, dtype=float),
+        np.asarray(start_times_s, dtype=float),
+        np.asarray(durations_s, dtype=float),
+        np.asarray(opll_hz, dtype=float),
+        np.asarray(switch_hz, dtype=float),
+        np.asarray(delivery_hz, dtype=float),
+        np.asarray(delivery_setpoint, dtype=float),
+    ]
+    num_pulses = len(rows[0])
+    return np.concatenate([[float(num_pulses)]] + rows)
+
+
+def test_decode_pulse_record_flat_round_trips_si_values():
+    """A regular record decodes back to exactly the SI values it encoded, with
+    no machine-unit conversion applied to the time columns."""
+    is_up = [1.0, 0.0, 1.0]
+    start_times_s = [0.0, 1.5e-3, 4.2e-3]
+    durations_s = [380e-6, 68e-6, 55e-6]
+    opll_hz = [80e6, 79.9e6, 80.1e6]
+    switch_hz = [200e6, 200.005e6, 200.001e6]
+    delivery_hz = [99e6, 99e6, 99e6]
+    # Full-precision, distinct, sub-volt setpoints -- the thing the old int64
+    # format truncated away.
+    delivery_setpoint = [1.234, 2.718, 0.577]
+
+    record = _encode_regular_record(
+        is_up,
+        start_times_s,
+        durations_s,
+        opll_hz,
+        switch_hz,
+        delivery_hz,
+        delivery_setpoint,
+    )
+    flat = np.asarray(record, dtype=np.float64)
+    offsets = np.array([0], dtype=np.int64)
+
+    decoded = decode_pulse_record_flat(flat, offsets)
+    assert len(decoded) == 1
+    dump = decoded[0]
+    assert isinstance(dump, LabPulseDump)
+
+    assert dump.is_up.dtype == bool
+    np.testing.assert_array_equal(dump.is_up, [True, False, True])
+    np.testing.assert_allclose(dump.start_times_s, start_times_s)
+    np.testing.assert_allclose(dump.durations_s, durations_s)
+    np.testing.assert_allclose(dump.opll_hz, opll_hz)
+    np.testing.assert_allclose(dump.switch_hz, switch_hz)
+    np.testing.assert_allclose(dump.delivery_hz, delivery_hz)
+    np.testing.assert_allclose(dump.delivery_setpoint, delivery_setpoint)
+
+
+def test_decode_pulse_record_flat_feeds_build_sequence():
+    """A decoded dump splats straight into build_sequence_from_lab_pulse_dump."""
+    import dataclasses
+
+    record = _encode_regular_record(
+        is_up=[1.0, 0.0],
+        start_times_s=[0.0, 1e-3],
+        durations_s=[95e-6, 95e-6],
+        opll_hz=[80e6, 80e6],
+        switch_hz=[0.0, 0.0],
+        delivery_hz=[0.0, 0.0],
+        delivery_setpoint=[1.5, 2.5],
+    )
+    decoded = decode_pulse_record_flat(record, [0])
+    _, sequence = build_sequence_from_lab_pulse_dump(
+        **dataclasses.asdict(decoded[0])
+    )
+    pulse_ks = [event.k for event in sequence if isinstance(event, Pulse)]
+    assert pulse_ks == [1, -1]
+
+
+def test_decode_pulse_record_flat_multiple_records_and_offsets():
+    """Several records concatenated are split by the offsets array."""
+    rec_a = _encode_regular_record(
+        is_up=[1.0],
+        start_times_s=[0.0],
+        durations_s=[380e-6],
+        opll_hz=[80e6],
+        switch_hz=[0.0],
+        delivery_hz=[0.0],
+        delivery_setpoint=[1.0],
+    )
+    rec_b = _encode_regular_record(
+        is_up=[1.0, 0.0],
+        start_times_s=[0.0, 2e-3],
+        durations_s=[68e-6, 55e-6],
+        opll_hz=[80e6, 80e6],
+        switch_hz=[0.0, 0.0],
+        delivery_hz=[0.0, 0.0],
+        delivery_setpoint=[2.0, 3.0],
+    )
+    flat = np.concatenate([rec_a, rec_b])
+    offsets = np.array([0, len(rec_a)], dtype=np.int64)
+
+    decoded = decode_pulse_record_flat(flat, offsets)
+    assert len(decoded) == 2
+    assert len(decoded[0].is_up) == 1
+    assert len(decoded[1].is_up) == 2
+    np.testing.assert_allclose(decoded[1].start_times_s, [0.0, 2e-3])
+
+
+def test_decode_pulse_record_flat_same_as_last_sentinel_reuses_previous():
+    """A -1.0 sentinel reuses (the same object as) the previous decoded dump."""
+    rec = _encode_regular_record(
+        is_up=[1.0],
+        start_times_s=[0.0],
+        durations_s=[380e-6],
+        opll_hz=[80e6],
+        switch_hz=[0.0],
+        delivery_hz=[0.0],
+        delivery_setpoint=[1.0],
+    )
+    flat = np.concatenate([rec, [PULSE_RECORD_SAME_AS_LAST_SENTINEL]])
+    offsets = np.array([0, len(rec)], dtype=np.int64)
+
+    decoded = decode_pulse_record_flat(flat, offsets)
+    assert len(decoded) == 2
+    assert decoded[1] is decoded[0]
+
+
+def test_decode_pulse_record_flat_disabled_sentinel_is_none():
+    """A -2.0 sentinel decodes to None and does not become the 'previous'."""
+    rec = _encode_regular_record(
+        is_up=[1.0],
+        start_times_s=[0.0],
+        durations_s=[380e-6],
+        opll_hz=[80e6],
+        switch_hz=[0.0],
+        delivery_hz=[0.0],
+        delivery_setpoint=[1.0],
+    )
+    flat = np.concatenate(
+        [
+            rec,
+            [PULSE_RECORD_DISABLED_SENTINEL],
+            [PULSE_RECORD_SAME_AS_LAST_SENTINEL],
+        ]
+    )
+    offsets = np.array([0, len(rec), len(rec) + 1], dtype=np.int64)
+
+    decoded = decode_pulse_record_flat(flat, offsets)
+    assert decoded[1] is None
+    # The 'same as last' after the disabled shot still refers to the last
+    # STORED record, not to the disabled one.
+    assert decoded[2] is decoded[0]
+
+
+def test_decode_pulse_record_flat_leading_same_as_last_raises():
+    """A 'same as last' with no prior stored record is a hard error."""
+    with pytest.raises(ValueError, match="no previous record"):
+        decode_pulse_record_flat(
+            np.array([PULSE_RECORD_SAME_AS_LAST_SENTINEL]), np.array([0])
+        )
+
+
+def test_decode_pulse_record_flat_rounds_noisy_num_pulses_and_directions():
+    """num_pulses and the sentinels are integer-valued floats handled with a
+    tolerance; tiny float noise must not break decoding."""
+    record = _encode_regular_record(
+        is_up=[0.9999999, 0.0000001],
+        start_times_s=[0.0, 1e-3],
+        durations_s=[95e-6, 95e-6],
+        opll_hz=[80e6, 80e6],
+        switch_hz=[0.0, 0.0],
+        delivery_hz=[0.0, 0.0],
+        delivery_setpoint=[1.0, 2.0],
+    )
+    record[0] = 2.0000001  # noisy num_pulses
+    decoded = decode_pulse_record_flat(record, [0])
+    np.testing.assert_array_equal(decoded[0].is_up, [True, False])
+
+
+def test_decode_pulse_record_flat_bad_length_raises():
+    """A record whose length disagrees with num_pulses is rejected loudly."""
+    # num_pulses = 2 implies length 1 + 7*2 = 15, but give 14.
+    bad = np.zeros(14, dtype=np.float64)
+    bad[0] = 2.0
+    with pytest.raises(ValueError, match="length"):
+        decode_pulse_record_flat(bad, np.array([0]))
 
 
 # --- Shaped-pulse stand-ins: arm-restricted, simultaneous pi pulses ---------

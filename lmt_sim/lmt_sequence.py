@@ -446,10 +446,162 @@ def _addressed_momentum_classes(pulse: Pulse):
     return float(m_ground), float(m_excited)
 
 
+# Sentinel values the lab pulse recorder (PulseDMARecording in icl_experiments)
+# writes as length-1 records inside ``pulse_record_flat``. They are stored as
+# float64 and so must be compared with a tolerance, not for exact equality.
+PULSE_RECORD_SAME_AS_LAST_SENTINEL = -1.0
+PULSE_RECORD_DISABLED_SENTINEL = -2.0
+# Sentinels and num_pulses are integer-valued floats; anything within this of an
+# integer is treated as that integer.
+_PULSE_RECORD_SENTINEL_TOL = 0.5
+
+
+@dataclass
+class LabPulseDump:
+    """One shot's worth of decoded pulse-recorder data, in SI units.
+
+    Field names match the keyword arguments of
+    :func:`build_sequence_from_lab_pulse_dump`, so a decoded dump can be fed
+    straight in with ``dataclasses.asdict(dump)``.
+    """
+
+    is_up: np.ndarray  # bool, True = up beam
+    start_times_s: np.ndarray  # seconds
+    durations_s: np.ndarray  # seconds
+    opll_hz: np.ndarray  # Hz
+    switch_hz: np.ndarray  # Hz
+    delivery_hz: np.ndarray  # Hz
+    delivery_setpoint: np.ndarray  # volts
+
+
+def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
+    """Decode the ``pulse_record_flat`` / ``pulse_record_offsets`` datasets.
+
+    These two archived datasets are emitted by the lab pulse recorder
+    (``PulseDMARecording._archive_encoded_pulse_records`` in icl_experiments).
+    This is the consumer-side counterpart and must be kept in lockstep with it.
+
+    ``pulse_record_flat`` is a **float64** 1-D array storing every field in
+    physical (SI) units; ``pulse_record_offsets`` is an int64 1-D array giving
+    the start index of each per-shot record within it. Each record is one slice
+    of ``pulse_record_flat``:
+
+    * Length-1 sentinel record:
+        - ``-1.0`` -> "same as the previous shot": the previous decoded dump is
+          reused (returned as the same object).
+        - ``-2.0`` -> "pulse-sequence storage was disabled for this shot",
+          decoded as ``None``.
+    * Regular record of length ``1 + 7 * num_pulses``::
+
+        [num_pulses, dir.., start.., dur.., opll.., switch.., delivery.., setpoint..]
+
+      i.e. ``num_pulses`` followed by seven contiguous rows, each
+      ``num_pulses`` long, in the order direction, start_time, duration,
+      opll_freq, switch_freq, delivery_freq, delivery_setpoint. All values are
+      already in SI units (seconds for the times, Hz for the frequencies, volts
+      for the setpoint); **no** machine-unit -> seconds conversion is applied.
+
+    ``num_pulses`` and the sentinels are integer-valued floats and are handled
+    defensively (rounded / compared with a tolerance).
+
+    Returns
+    -------
+    list
+        One entry per record (``len(pulse_record_offsets)`` entries), each
+        either a :class:`LabPulseDump` (SI units) or ``None`` for a shot whose
+        storage was disabled.
+    """
+    flat = np.asarray(pulse_record_flat, dtype=np.float64)
+    offsets = np.asarray(pulse_record_offsets, dtype=np.int64)
+
+    if flat.ndim != 1 or offsets.ndim != 1:
+        raise ValueError(
+            "pulse_record_flat and pulse_record_offsets must both be 1-D"
+        )
+
+    decoded = []
+    previous = None
+    n_records = len(offsets)
+    for i in range(n_records):
+        start = int(offsets[i])
+        end = int(offsets[i + 1]) if i + 1 < n_records else len(flat)
+        record = flat[start:end]
+
+        if len(record) == 0:
+            raise ValueError(f"Pulse record {i} is empty")
+
+        # Sentinel records are exactly one element long.
+        if len(record) == 1:
+            value = float(record[0])
+            if (
+                abs(value - PULSE_RECORD_SAME_AS_LAST_SENTINEL)
+                < _PULSE_RECORD_SENTINEL_TOL
+            ):
+                if previous is None:
+                    raise ValueError(
+                        "First pulse record is a 'same as last' sentinel; there "
+                        "is no previous record to reuse."
+                    )
+                decoded.append(previous)
+                continue
+            if (
+                abs(value - PULSE_RECORD_DISABLED_SENTINEL)
+                < _PULSE_RECORD_SENTINEL_TOL
+            ):
+                # Storage disabled this shot. This does NOT update ``previous``:
+                # a later 'same as last' refers to the last STORED sequence, as
+                # on the producer side.
+                decoded.append(None)
+                continue
+            raise ValueError(
+                f"Unrecognised length-1 pulse record value {value!r} at record "
+                f"{i} (expected {PULSE_RECORD_SAME_AS_LAST_SENTINEL} or "
+                f"{PULSE_RECORD_DISABLED_SENTINEL})"
+            )
+
+        # Regular record: num_pulses followed by 7 rows of num_pulses values.
+        num_pulses = int(round(float(record[0])))
+        if num_pulses < 0:
+            raise ValueError(
+                f"Pulse record {i} has negative num_pulses ({num_pulses})"
+            )
+        expected_len = 1 + 7 * num_pulses
+        if len(record) != expected_len:
+            raise ValueError(
+                f"Pulse record {i} has length {len(record)} but num_pulses="
+                f"{num_pulses} implies {expected_len}"
+            )
+
+        rows = record[1:].reshape(7, num_pulses)
+        (
+            directions,
+            start_times_s,
+            durations_s,
+            opll_hz,
+            switch_hz,
+            delivery_hz,
+            delivery_setpoint,
+        ) = rows
+
+        dump = LabPulseDump(
+            is_up=np.round(directions).astype(bool),
+            start_times_s=start_times_s.copy(),
+            durations_s=durations_s.copy(),
+            opll_hz=opll_hz.copy(),
+            switch_hz=switch_hz.copy(),
+            delivery_hz=delivery_hz.copy(),
+            delivery_setpoint=delivery_setpoint.copy(),
+        )
+        decoded.append(dump)
+        previous = dump
+
+    return decoded
+
+
 def build_sequence_from_lab_pulse_dump(
     is_up,
-    start_times_mu,
-    durations_mu,
+    start_times_s,
+    durations_s,
     opll_hz,
     switch_hz,
     delivery_hz,
@@ -492,8 +644,8 @@ def build_sequence_from_lab_pulse_dump(
     if is_up_input.dtype != bool and not np.all(np.isin(is_up_input, (0, 1))):
         raise ValueError("is_up must be a boolean array (or contain only 0/1)")
     is_up = is_up_input.astype(bool)
-    start_times_mu = np.asarray(start_times_mu, dtype=float)
-    durations_mu = np.asarray(durations_mu, dtype=float)
+    start_times_s = np.asarray(start_times_s, dtype=float)
+    durations_s = np.asarray(durations_s, dtype=float)
     opll_hz = np.asarray(opll_hz, dtype=float)
     switch_hz = np.asarray(switch_hz, dtype=float)
     delivery_hz = np.asarray(delivery_hz, dtype=float)
@@ -501,21 +653,26 @@ def build_sequence_from_lab_pulse_dump(
 
     lengths = {
         len(is_up),
-        len(start_times_mu),
-        len(durations_mu),
+        len(start_times_s),
+        len(durations_s),
         len(opll_hz),
         len(switch_hz),
         len(delivery_hz),
         len(delivery_setpoint),
     }
 
-    # FIXME must do something with the setpoint info
+    # delivery_setpoint is now a full-precision per-pulse value in volts (the
+    # producer no longer truncates it to whole volts). The simulator does not
+    # yet model the delivery-intensity setpoint, so it is accepted and
+    # length-checked but not used in the physics below.
 
     if len(lengths) != 1:
         raise ValueError("Lab pulse dump arrays must all have the same length")
 
-    timestamps = start_times_mu * 1e-9
-    durations = durations_mu * 1e-9
+    # start_time and duration arrive already in seconds (the producer converts
+    # from machine units via mu_to_seconds), so no conversion is applied here.
+    timestamps = start_times_s
+    durations = durations_s
 
     # The OPLL offsets the Sirah from the ECDL and we lock to the negative side.
     # The delivery and switch AOMs all use the -1st order.
@@ -642,8 +799,8 @@ def build_sequence_from_lab_pulse_dump(
 
 def calibrate_probe_shift_and_velocity_from_dump(
     is_up,
-    start_times_mu,
-    durations_mu,
+    start_times_s,
+    durations_s,
     opll_hz,
     switch_hz,
     delivery_hz,
@@ -712,8 +869,8 @@ def calibrate_probe_shift_and_velocity_from_dump(
     # calibration is consistent with it by construction.
     bare_sequence_timestamps, bare_sequence = build_sequence_from_lab_pulse_dump(
         is_up=is_up,
-        start_times_mu=start_times_mu,
-        durations_mu=durations_mu,
+        start_times_s=start_times_s,
+        durations_s=durations_s,
         opll_hz=opll_hz,
         switch_hz=switch_hz,
         delivery_hz=delivery_hz,
