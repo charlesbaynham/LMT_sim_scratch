@@ -263,11 +263,15 @@ print(f"VS OPLL pulse-centre correction: {vs_ramp_correction_hz:+.1f} Hz")
 # applies with no `stark_rabi_frequency` markings. The residual check below
 # validates this: every plain pi pulse must land on an odd recoil rung.
 #
-# `initial_velocity_z` is pinned so that pulse 3 (first down-beam ladder
-# pulse, e m=3 -> g m=4) sits exactly on rung -7, absorbing the down-beam
-# class's constant offset. NB the down-beam Stark shift and v0 are exactly
-# degenerate in this dump (all down pulses share one Rabi frequency), so this
-# v0 is an EFFECTIVE parameter, not a launch-velocity measurement.
+# `initial_velocity_z` is the one genuinely unknown parameter: the atom's
+# residual velocity at the anchor time. It is inferred by requiring pulse 3
+# (first down-beam ladder pulse, e m=3 -> g m=4) to be resonant on rung -7.
+# Because the down pulses are square pi pulses, their duration-implied Rabi
+# frequencies are exact and the measured alpha fixes their Stark shift
+# outright -- nothing on the down beam is fitted -- so under the assumption
+# that pulse 3 was on resonance this IS a velocity inference, not a catch-all
+# parameter. An independent time-of-flight measurement would be a worthwhile
+# cross-check of the inferred value.
 
 # %%
 PROBE_SHIFT_ALPHA = -2.04e-6 * (2 * np.pi)  # 1/Hz, measured 2026-06-09
@@ -304,7 +308,7 @@ _, p_a = built_pulses(0.0)
 _, p_b = built_pulses(1e-4)
 slope = (p_b[3].detuning_hz - p_a[3].detuning_hz) / 1e-4
 initial_velocity_z = (-7 - effective_rung(p_a[3])) * REC / slope
-print(f"pinned initial_velocity_z = {initial_velocity_z * 1e3:+.4f} mm/s (effective)")
+print(f"inferred initial_velocity_z = {initial_velocity_z * 1e3:+.4f} mm/s")
 assert abs(initial_velocity_z) < 5e-3
 
 sequence, pulses = built_pulses(initial_velocity_z)
