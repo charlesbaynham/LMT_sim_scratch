@@ -207,6 +207,14 @@ def compose_arp_2x2(
 
     for sub in subpulses:
         if sub.detuning_hz != current_detuning:
+            # FIXME(frame-change): This inter-block frame change is WRONG for a
+            # back-to-back chirp. The detuning is already carried in each block's
+            # Hamiltonian diagonal (Omega_3), so applying exp(-/+ i pi Df t) here
+            # double-counts the laser-frequency change and converges to the wrong
+            # physics (off from the continuous-sweep ODE / Landau-Zener by a
+            # factor of 2 in the exponent). The correct staircase is the plain
+            # product of the per-block propagators -- delete this block.
+            # See docs/arp_frame_change_finding.md.
             phase_exc, phase_gnd = sim._frame_change_phases(
                 current_detuning, sub.detuning_hz, current_time
             )
@@ -226,6 +234,10 @@ def compose_arp_2x2(
         current_time += sub.duration
 
     if ref_detuning_hz is not None and ref_detuning_hz != current_detuning:
+        # FIXME(frame-change): For the corrected (no inter-block frame change)
+        # composer, re-referencing the imprinted phase across a parameter scan
+        # needs an integral-of-laser-phase correction (exp(+/- i 2pi delta_err T)),
+        # NOT this frame change. See docs/arp_frame_change_finding.md.
         phase_exc, phase_gnd = sim._frame_change_phases(
             current_detuning, ref_detuning_hz, current_time
         )

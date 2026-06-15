@@ -131,6 +131,11 @@ def transform_state_vector(
     Note that this transformation depends on the laser frequency.
 
     TODO: Convert to the integral of laser phase
+    FIXME(frame-change): This laser-frequency dependence is the root cause behind
+    the frame-change limitation. Using the instantaneous laser frequency (rather
+    than the integral of the laser phase) is not valid for a time-varying laser
+    frequency, which is what breaks chirped/ARP pulses. See
+    docs/arp_frame_change_finding.md and _frame_change_phases.
     """
     global_phase = np.exp(1j * omega_0 / 2 * t)
 
@@ -532,6 +537,15 @@ def _frame_change_phases(old_detuning_hz, new_detuning_hz, time):
     ``change_laser_frequency_in_borde_representation`` (row representation) and
     the ARP composer in :mod:`lmt_sim.arp`, so the inter-block frame phase is
     defined in exactly one place.
+
+    FIXME(frame-change): This phase is known to be WRONG when applied between
+    *back-to-back* pulses of different detuning (it double-counts the chirp --
+    see docs/arp_frame_change_finding.md). It is OPEN whether it is correct in
+    its intended regime: pulses separated by free evolution at a fixed reference
+    frequency, where there genuinely is an accumulated cross-frame offset. That
+    regime has NOT been audited. Suggested check: pulse(D1) - freefall(tau) -
+    pulse(D2) vs an independent single-fixed-frame (atomic-resonance, RWA)
+    integration with the chirp in the coupling phase.
     """
     delta_f = new_detuning_hz - old_detuning_hz
     phase_exc = np.exp(+1j * np.pi * delta_f * time)

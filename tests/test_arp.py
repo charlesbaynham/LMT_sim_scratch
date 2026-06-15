@@ -149,6 +149,10 @@ def test_arp_staircase_convergence():
     assert abs(dphi) < 1e-2
 
 
+# FIXME(frame-change): These three tests are xfailed only because
+# compose_arp_2x2 applies the inter-block frame change. Removing that frame
+# change (see the FIXME in lmt_sim/arp.py) makes them pass -- so flip these back
+# to plain (must-pass) tests as part of the fix. docs/arp_frame_change_finding.md
 _FRAME_CHANGE_XFAIL = pytest.mark.xfail(
     reason=(
         "compose_arp_2x2 currently applies the inter-block frame change, which "
