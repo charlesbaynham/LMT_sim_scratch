@@ -20,7 +20,7 @@ Examples of guards to respect (not exhaustive):
 
 Note: changing the laser frequency between pulses **is** now supported. The
 lab<->Bordé transform (`transform_state_vector`) uses the genuine integral of the
-laser detuning, carried on `AtomState` as `(t_ref, f_ref,
+laser detuning, carried on `AtomState` as `(t_ref, detuning_ref_hz,
 accumulated_detuning_cycles)` and advanced by
 `change_laser_frequency_in_borde_representation` (which records the step without
 touching the amplitudes). See `docs/arp_frame_change_finding.md`. The ARP composer

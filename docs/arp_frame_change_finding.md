@@ -4,7 +4,7 @@
 paused**. The row-based path no longer applies any inter-block frame change: at a
 laser-frequency step it rebases the Bordé frame *without touching the amplitudes*
 (`change_laser_frequency_in_borde_representation`), carrying the laser-detuning
-integral on `AtomState` as `(t_ref, f_ref, accumulated_detuning_cycles)` and
+integral on `AtomState` as `(t_ref, detuning_ref_hz, accumulated_detuning_cycles)` and
 applying it only at the lab boundary (`transform_state_vector`). The old
 `_frame_change_phases` (`exp(±iπ Δf t)`) was removed from the core; a local copy
 survives only inside `lmt_sim/arp.py` so the paused ARP composer keeps its old

@@ -976,7 +976,7 @@ def test_clearout_frame_independence():
 # ---------------------------------------------------------------------------
 
 
-def _make_synthetic_borde_state(rng, t_ref=0.0, f_ref=0.0):
+def _make_synthetic_borde_state(rng, t_ref=0.0, detuning_ref_hz=0.0):
     m_values = np.array([-1, 0, 0, 1, 2], dtype=int)
     internal_is_ground = np.array([True, True, False, False, True], dtype=bool)
     sq = rng.normal(size=5) + 1j * rng.normal(size=5)
@@ -990,7 +990,7 @@ def _make_synthetic_borde_state(rng, t_ref=0.0, f_ref=0.0):
         amplitudes=sq,
         internal_is_ground=internal_is_ground,
         t_ref=t_ref,
-        f_ref=f_ref,
+        detuning_ref_hz=detuning_ref_hz,
     )
 
 
@@ -1001,8 +1001,8 @@ def test_change_laser_frequency_accumulates_closed_segment(seed):
     ``change_laser_frequency_in_borde_representation`` must NOT modify the
     amplitudes (the laser phase is continuous, so the instantaneous Bordé frame is
     unchanged at the step). It only advances the carried integral
-    ``accumulated_detuning_cycles += f_ref * (time - t_ref)`` and rebases
-    ``(t_ref, f_ref)``.
+    ``accumulated_detuning_cycles += detuning_ref_hz * (time - t_ref)`` and rebases
+    ``(t_ref, detuning_ref_hz)``.
     """
     rng = np.random.default_rng(seed)
 
@@ -1012,7 +1012,7 @@ def test_change_laser_frequency_accumulates_closed_segment(seed):
     phi0 = rng.uniform(-1.0, 1.0)
     time = t_ref + rng.uniform(1e-7, 1e-5)
 
-    state = _make_synthetic_borde_state(rng, t_ref=t_ref, f_ref=old_detuning)
+    state = _make_synthetic_borde_state(rng, t_ref=t_ref, detuning_ref_hz=old_detuning)
     state = replace(state, accumulated_detuning_cycles=phi0)
 
     out = sim.change_laser_frequency_in_borde_representation(
@@ -1029,7 +1029,7 @@ def test_change_laser_frequency_accumulates_closed_segment(seed):
         phi0 + old_detuning * (time - t_ref), rel=1e-12
     )
     assert out.t_ref == time
-    assert out.f_ref == new_detuning
+    assert out.detuning_ref_hz == new_detuning
 
     # Pass-through invariants.
     np.testing.assert_array_equal(out.m_values, state.m_values)
@@ -1041,7 +1041,7 @@ def test_change_laser_frequency_accumulates_closed_segment(seed):
 def test_change_laser_frequency_identity_when_time_equals_t_ref():
     """A zero-length open segment (time == t_ref) leaves the integral unchanged."""
     rng = np.random.default_rng(0)
-    state = _make_synthetic_borde_state(rng, t_ref=2.0e-4, f_ref=1.0e3)
+    state = _make_synthetic_borde_state(rng, t_ref=2.0e-4, detuning_ref_hz=1.0e3)
     state = replace(state, accumulated_detuning_cycles=0.5)
 
     out_state = sim.change_laser_frequency_in_borde_representation(
@@ -1053,7 +1053,7 @@ def test_change_laser_frequency_identity_when_time_equals_t_ref():
     assert out_state.accumulated_detuning_cycles == 0.5
     # The frame is still rebased to the new detuning.
     assert out_state.t_ref == 2.0e-4
-    assert out_state.f_ref == -7.5e3
+    assert out_state.detuning_ref_hz == -7.5e3
 
 
 def test_change_laser_frequency_same_frequency_is_noop_on_lab_output():
@@ -1068,15 +1068,15 @@ def test_change_laser_frequency_same_frequency_is_noop_on_lab_output():
     below the tolerance, as in the other transform tests.)
     """
     rng = np.random.default_rng(1)
-    f_ref = 4.2e3
-    state = _make_synthetic_borde_state(rng, t_ref=0.0, f_ref=f_ref)
+    detuning_ref_hz = 4.2e3
+    state = _make_synthetic_borde_state(rng, t_ref=0.0, detuning_ref_hz=detuning_ref_hz)
     t_end = 8e-6
     vz = 0.27
 
     # Straight to lab.
     lab_direct = sim.transform_state_vector(
         state,
-        detuning_hz=state.f_ref,
+        detuning_hz=state.detuning_ref_hz,
         t=t_end,
         t_ref=state.t_ref,
         accumulated_detuning_cycles=state.accumulated_detuning_cycles,
@@ -1086,7 +1086,7 @@ def test_change_laser_frequency_same_frequency_is_noop_on_lab_output():
     )
     # Same-frequency rebase at an interior time, then to lab.
     rebased = sim.change_laser_frequency_in_borde_representation(
-        state, new_detuning_hz=f_ref, time=3e-6
+        state, new_detuning_hz=detuning_ref_hz, time=3e-6
     )
     # The rebase leaves the amplitudes untouched...
     np.testing.assert_array_equal(rebased.amplitudes, state.amplitudes)
@@ -1094,7 +1094,7 @@ def test_change_laser_frequency_same_frequency_is_noop_on_lab_output():
     assert rebased.accumulated_detuning_cycles != 0.0
     lab_rebased = sim.transform_state_vector(
         rebased,
-        detuning_hz=rebased.f_ref,
+        detuning_hz=rebased.detuning_ref_hz,
         t=t_end,
         t_ref=rebased.t_ref,
         accumulated_detuning_cycles=rebased.accumulated_detuning_cycles,
@@ -1111,7 +1111,7 @@ def test_change_laser_frequency_same_frequency_is_noop_on_lab_output():
 def test_change_laser_frequency_independent_of_position_and_velocity():
     """Guard: the rebase must not develop any k*z or v_z dependence."""
     rng = np.random.default_rng(2)
-    state = _make_synthetic_borde_state(rng, t_ref=0.0, f_ref=1.0e3)
+    state = _make_synthetic_borde_state(rng, t_ref=0.0, detuning_ref_hz=1.0e3)
     zero_state = sim.AtomState(
         m_values=state.m_values,
         positions=np.zeros_like(state.positions),
@@ -1119,7 +1119,7 @@ def test_change_laser_frequency_independent_of_position_and_velocity():
         amplitudes=state.amplitudes,
         internal_is_ground=state.internal_is_ground,
         t_ref=state.t_ref,
-        f_ref=state.f_ref,
+        detuning_ref_hz=state.detuning_ref_hz,
         accumulated_detuning_cycles=state.accumulated_detuning_cycles,
     )
 

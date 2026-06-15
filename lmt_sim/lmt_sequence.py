@@ -185,7 +185,7 @@ def run_pulse_sequence_in_lab_frame(
 
     # Convert to the Borde representation based on the first detuning. At t=0 the
     # laser-detuning part of the transform is the identity; we additionally record
-    # the frame reference (t_ref=0, f_ref=current_detuning_hz) on the state so the
+    # the frame reference (t_ref=0, detuning_ref_hz=current_detuning_hz) on the state so the
     # Borde run knows which frequency the frame co-rotates with.
     state = sim.transform_state_vector(
         state,
@@ -197,7 +197,7 @@ def run_pulse_sequence_in_lab_frame(
         inverse=False,
     )
     state = replace(
-        state, t_ref=0.0, f_ref=current_detuning_hz, accumulated_detuning_cycles=0.0
+        state, t_ref=0.0, detuning_ref_hz=current_detuning_hz, accumulated_detuning_cycles=0.0
     )
 
     # Run the sequence in the Borde representation
@@ -214,13 +214,13 @@ def run_pulse_sequence_in_lab_frame(
     state, current_detuning_hz, current_time = result
 
     # Convert back to the lab frame. The full laser-detuning integral is
-    # Phi(t_end) = accumulated_detuning_cycles + f_ref * (current_time - t_ref);
+    # Phi(t_end) = accumulated_detuning_cycles + detuning_ref_hz * (current_time - t_ref);
     # the inverse transform applies that (plus the absolute-t global/spatial parts).
-    # (current_detuning_hz equals state.f_ref, but use the state's own reference to
+    # (current_detuning_hz equals state.detuning_ref_hz, but use the state's own reference to
     # stay self-consistent.)
     state = sim.transform_state_vector(
         state,
-        detuning_hz=state.f_ref,
+        detuning_hz=state.detuning_ref_hz,
         t=current_time,
         t_ref=state.t_ref,
         accumulated_detuning_cycles=state.accumulated_detuning_cycles,
@@ -272,13 +272,13 @@ def iter_pulse_sequence_in_borde_representation(
     # The incoming state is in the Bordé frame at t=0 with the first pulse's
     # detuning. Establish the frame reference on the state so frequency-change
     # rebasing (change_laser_frequency_in_borde_representation) reads a consistent
-    # (t_ref, f_ref) regardless of how the caller built the state. The lab-frame
+    # (t_ref, detuning_ref_hz) regardless of how the caller built the state. The lab-frame
     # wrapper sets the same values; setting them here makes the Bordé entry point
     # self-consistent for direct callers too.
     state = replace(
         state,
         t_ref=current_time,
-        f_ref=current_detuning_hz,
+        detuning_ref_hz=current_detuning_hz,
         accumulated_detuning_cycles=0.0,
     )
 

@@ -216,13 +216,13 @@ def collect_filmstrip(pulse_sequence, velocities, *,
                 discard_threshold=discard_threshold,
             )
         ):
-            # Use the state's own frame reference (t_ref, f_ref, accumulated
+            # Use the state's own frame reference (t_ref, detuning_ref_hz, accumulated
             # integral) so the lab transform is correct even when the laser
-            # frequency stepped earlier in the sequence. detuning_hz == state.f_ref
+            # frequency stepped earlier in the sequence. detuning_hz == state.detuning_ref_hz
             # and t == the global time here.
             lab_state = sim.transform_state_vector(
                 state,
-                detuning_hz=state.f_ref,
+                detuning_hz=state.detuning_ref_hz,
                 t=t,
                 t_ref=state.t_ref,
                 accumulated_detuning_cycles=state.accumulated_detuning_cycles,
