@@ -20,7 +20,8 @@
 # %%
 import sys
 from pathlib import Path
-sys.path.insert(0, '..')
+
+sys.path.insert(0, "..")
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -51,8 +52,7 @@ print(f"Case 1: {len(clouds_1)} clouds")
 for i, c in enumerate(clouds_1):
     print(f"  Cloud {i}: m={c.m[-1]}, is_ground={c.is_ground[-1]}, alive={c.alive}")
 
-vs.tag_plot(small=True);
-
+vs.tag_plot(small=True)
 sequence_1
 
 # %% [markdown]
@@ -97,8 +97,7 @@ print(f"Case 2: {len(clouds_2)} clouds")
 for i, c in enumerate(clouds_2):
     print(f"  Cloud {i}: m={c.m[-1]}, is_ground={c.is_ground[-1]}, alive={c.alive}")
 
-vs.tag_plot(small=True);
-
+vs.tag_plot(small=True)
 # %% [markdown]
 # ## Case 3: Standard Mach-Zehnder sequence
 #
@@ -117,14 +116,13 @@ print(f"Case 3: {len(clouds_3)} clouds")
 for i, c in enumerate(clouds_3):
     print(f"  Cloud {i}: m={c.m[-1]}, is_ground={c.is_ground[-1]}, alive={c.alive}")
 
-vs.tag_plot(small=True);
-
+vs.tag_plot(small=True)
 # %% [markdown]
 # ## Case 4: Beam splitter + π pulse to create two independent ground-state clouds, then MZ on both
 #
 # 1. BS1 (π/2, k=+1, on-resonance) → splits into |g,m=0⟩ and |e,m=1⟩
 # 2. π pulse (k=+1, tuned to the |e⟩ arm) → flips |e,m=1⟩ to |g,m=2⟩ and leaves |g,m=0⟩ untouched
-# 3. Clearout → kills |g⟩ clouds... wait, that would kill both! 
+# 3. Clearout → kills |g⟩ clouds... wait, that would kill both!
 #
 # Actually the idea is: use a π pulse resonant with one arm to flip it to ground, then clearout removes the other (excited) arm. Then we have two independent ground clouds.
 #

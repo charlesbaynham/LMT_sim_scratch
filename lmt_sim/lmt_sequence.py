@@ -5,7 +5,6 @@ import warnings
 import numpy as np
 import lmt_sim.lmt_simulation as sim
 from lmt_sim.lmt_simulation import RABI_FREQ, T_PI
-from scipy import constants
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +196,10 @@ def run_pulse_sequence_in_lab_frame(
         inverse=False,
     )
     state = replace(
-        state, t_ref=0.0, detuning_ref_hz=current_detuning_hz, accumulated_detuning_cycles=0.0
+        state,
+        t_ref=0.0,
+        detuning_ref_hz=current_detuning_hz,
+        accumulated_detuning_cycles=0.0,
     )
 
     # Run the sequence in the Borde representation
@@ -482,9 +484,9 @@ def _addressed_momentum_classes(pulse: Pulse):
         pulse.probe_shift_coefficient,
         pulse.effective_stark_rabi_frequency,
     )
-    m_ground = (
-        effective_detuning_hz - sim.RECOIL_FREQUENCY_HZ
-    ) / (2 * pulse.k * sim.RECOIL_FREQUENCY_HZ)
+    m_ground = (effective_detuning_hz - sim.RECOIL_FREQUENCY_HZ) / (
+        2 * pulse.k * sim.RECOIL_FREQUENCY_HZ
+    )
     m_excited = m_ground + pulse.k
     return float(m_ground), float(m_excited)
 
@@ -558,9 +560,7 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
     offsets = np.asarray(pulse_record_offsets, dtype=np.int64)
 
     if flat.ndim != 1 or offsets.ndim != 1:
-        raise ValueError(
-            "pulse_record_flat and pulse_record_offsets must both be 1-D"
-        )
+        raise ValueError("pulse_record_flat and pulse_record_offsets must both be 1-D")
 
     decoded = []
     previous = None
@@ -587,10 +587,7 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
                     )
                 decoded.append(previous)
                 continue
-            if (
-                abs(value - PULSE_RECORD_DISABLED_SENTINEL)
-                < _PULSE_RECORD_SENTINEL_TOL
-            ):
+            if abs(value - PULSE_RECORD_DISABLED_SENTINEL) < _PULSE_RECORD_SENTINEL_TOL:
                 # Storage disabled this shot. This does NOT update ``previous``:
                 # a later 'same as last' refers to the last STORED sequence, as
                 # on the producer side.
@@ -605,9 +602,7 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
         # Regular record: num_pulses followed by 7 rows of num_pulses values.
         num_pulses = int(round(float(record[0])))
         if num_pulses < 0:
-            raise ValueError(
-                f"Pulse record {i} has negative num_pulses ({num_pulses})"
-            )
+            raise ValueError(f"Pulse record {i} has negative num_pulses ({num_pulses})")
         expected_len = 1 + 7 * num_pulses
         if len(record) != expected_len:
             raise ValueError(
@@ -771,9 +766,12 @@ def build_sequence_from_lab_pulse_dump(
     # therefore anchored on the first pulse, NOT on the first up pulse: the
     # beam-dependent pieces (probe-shift coefficient and Doppler sign) above are
     # selected by the first pulse's actual beam.
-    centre_freq_hz = total_laser_frequency_hz[0] + first_pulse_doppler_shift_hz - first_pulse_atom_frame_detuning_hz - first_pulse_probe_shift_hz
-    
-    
+    centre_freq_hz = (
+        total_laser_frequency_hz[0]
+        + first_pulse_doppler_shift_hz
+        - first_pulse_atom_frame_detuning_hz
+        - first_pulse_probe_shift_hz
+    )
 
     # Now we calculate the detuning of all the beams due only to gravity. The simulation will handle the probe-induced Stark shift.
     # TODO: wrap the gravity Doppler shift into the main sim
@@ -785,7 +783,7 @@ def build_sequence_from_lab_pulse_dump(
         (total_laser_frequency_hz - centre_freq_hz)
         # Add the effect of the Doppler shift to bring the detunings into the
         # freely-falling frame:
-        + (up_beam_doppler_hz * beam_sign  )  
+        + (up_beam_doppler_hz * beam_sign)
     )
 
     sequence_timestamps = []
@@ -959,8 +957,7 @@ def calibrate_probe_shift_and_velocity_from_dump(
     # integer number of recoils. This pins down the Stark contribution, on the
     # assumption that the probe-induced shift is less than half a recoil.
     ladder_separation_hz = (
-        round(f_pulse_difference / sim.RECOIL_FREQUENCY_HZ)
-        * sim.RECOIL_FREQUENCY_HZ
+        round(f_pulse_difference / sim.RECOIL_FREQUENCY_HZ) * sim.RECOIL_FREQUENCY_HZ
     )
     residual_probe_shift_hz = f_pulse_difference - ladder_separation_hz
 
@@ -992,9 +989,7 @@ def calibrate_probe_shift_and_velocity_from_dump(
         initial_velocity_z = 0.0
     else:
         anchor_probe_shift_hz = probe_shift_alpha * anchor_pulse.rabi_frequency**2
-        opposite_probe_shift_hz = (
-            probe_shift_alpha * first_opposite.rabi_frequency**2
-        )
+        opposite_probe_shift_hz = probe_shift_alpha * first_opposite.rabi_frequency**2
 
         initial_velocity_z = (
             anchor_beam_sign
@@ -1322,7 +1317,7 @@ def _plot_spacetime(sequence, clouds, clearout_times, *, include_gravity=False):
                 ls,
                 color=color,
                 lw=1.5,
-                label=lbl
+                label=lbl,
             )
             m_label_added = True
         if cloud.alive:
@@ -1423,9 +1418,7 @@ def _plot_spacetime(sequence, clouds, clearout_times, *, include_gravity=False):
     ax_z.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")
     ax_m.plot([], [], "-", color="gray", lw=1.5, label="|g> (solid)")
     ax_m.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")
-    ax_z.set_ylabel(
-        "z position (mm)" + (" — lab frame" if include_gravity else "")
-    )
+    ax_z.set_ylabel("z position (mm)" + (" — lab frame" if include_gravity else ""))
     ax_z.set_title(
         "LMT spacetime diagram"
         + (" (lab frame, gravity included)" if include_gravity else "")

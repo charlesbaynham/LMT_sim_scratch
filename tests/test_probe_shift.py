@@ -97,7 +97,9 @@ def test_probe_shift_detunes_a_resonant_pi_pulse():
     resonant = _do_pulse(detuning, probe_shift_coefficient=0.0)
     shifted = _do_pulse(detuning, probe_shift_coefficient=coeff_5khz)
 
-    p_exc_resonant = np.abs(resonant.amplitudes[~resonant.internal_is_ground]).sum() ** 2
+    p_exc_resonant = (
+        np.abs(resonant.amplitudes[~resonant.internal_is_ground]).sum() ** 2
+    )
     p_exc_shifted = np.abs(shifted.amplitudes[~shifted.internal_is_ground]).sum() ** 2
 
     assert p_exc_resonant > 0.99, "pi pulse should be ~fully resonant without shift"
@@ -189,7 +191,9 @@ def test_shaped_pulse_resonant_only_with_true_stark_rabi():
     frac_unmarked = calculate_excited_fraction_for_pulse_sequence(seq_unmarked)
 
     assert frac_marked > 0.99, "true-Rabi shift should restore resonance"
-    assert frac_unmarked < 0.5, "fictitious-Rabi shift should leave the pulse far off-resonance"
+    assert frac_unmarked < 0.5, (
+        "fictitious-Rabi shift should leave the pulse far off-resonance"
+    )
 
 
 def test_pulse_rejects_non_positive_stark_rabi():

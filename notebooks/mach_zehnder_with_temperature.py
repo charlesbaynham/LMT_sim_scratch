@@ -28,7 +28,8 @@
 
 # %%
 import sys
-sys.path.insert(0, '..')
+
+sys.path.insert(0, "..")
 
 # %%
 import numpy as np
@@ -137,7 +138,7 @@ ax.fill_between(
 ax.set_xlabel(r"$\phi$ ($\pi$ rad)")
 ax.set_ylabel("Excitation Fraction")
 ax.set_title(
-    f"Mach-Zehnder with thermal dephasing, {N_ATOMS} atoms at T = {TEMPERATURE*1e9:.0f} nK (pulse API)"
+    f"Mach-Zehnder with thermal dephasing, {N_ATOMS} atoms at T = {TEMPERATURE * 1e9:.0f} nK (pulse API)"
 )
 ax.set_xticks([0, 0.5, 1, 1.5, 2], ["0", r"$\pi/2$", r"$\pi$", r"$3\pi/2$", r"$2\pi$"])
 ax.grid(True, alpha=0.3)
@@ -186,7 +187,13 @@ from lmt_sim.lmt_simulation import (
     RABI_FREQ,
     make_atom_states,
 )
-from lmt_sim.imaging import collect_branches, plot_camera_shot, pixel_grid, render, stack_atoms
+from lmt_sim.imaging import (
+    collect_branches,
+    plot_camera_shot,
+    pixel_grid,
+    render,
+    stack_atoms,
+)
 
 CAMERA_PHASE = 1.1 * np.pi
 CAMERA_EXCITED_DELAY = 4e-3  # excited camera reads out this long after the ground one
@@ -222,19 +229,23 @@ excited = stack_atoms(excited)
 # Imaged weight = integrated camera intensity (per-atom coherent wave-packet
 # sum, atoms incoherent), on the same grid plot_camera_shot uses. The absolute
 # value is in imaged-intensity units; the meaningful quantity is the fraction.
-_x_edges, _z_edges = pixel_grid([ground, excited], n_x=21, n_z=48,
-                                x_pad_frac=0.25, z_pad_frac=0.15)
+_x_edges, _z_edges = pixel_grid(
+    [ground, excited], n_x=21, n_z=48, x_pad_frac=0.25, z_pad_frac=0.15
+)
 ground_total = render(ground, _x_edges, _z_edges).sum()
 excited_total = render(excited, _x_edges, _z_edges).sum()
 camera_excited_fraction = excited_total / (ground_total + excited_total)
-ensemble_excited_fraction = mean_excitation[np.argmin(np.abs(phi_values - CAMERA_PHASE))]
+ensemble_excited_fraction = mean_excitation[
+    np.argmin(np.abs(phi_values - CAMERA_PHASE))
+]
 
 print(f"Camera phase:                     {CAMERA_PHASE / np.pi:.2f}pi rad")
 print(f"Camera-inferred excited fraction: {camera_excited_fraction:.4f}")
 print(f"Ensemble mean at nearest phase:   {ensemble_excited_fraction:.4f}")
 
 plot_camera_shot(
-    ground, excited,
+    ground,
+    excited,
     ground_title=f"Ground-state camera (weight = {ground_total:.2f})",
     excited_title=f"Excited-state camera, +{1e3 * CAMERA_EXCITED_DELAY:.1f} ms (weight = {excited_total:.2f})",
     suptitle=f"Synthetic dual-camera images for one shot at $\\phi = {CAMERA_PHASE / np.pi:.2f}\\pi$",
@@ -261,7 +272,8 @@ def plot_mz_filmstrip(phi):
         k=+1,
     )
     return plot_filmstrip(
-        sequence, velocities,
+        sequence,
+        velocities,
         title=f"MZ filmstrip at $\\phi = {phi / np.pi:.3f}\\pi$ (each panel autoscaled)",
         desc=f"phi={phi / np.pi:.3f}pi",
     )

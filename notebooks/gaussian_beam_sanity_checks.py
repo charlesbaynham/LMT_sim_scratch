@@ -27,12 +27,12 @@ import matplotlib.pyplot as plt
 import sys
 from pathlib import Path
 
-sys.path.insert(0, '..')
+sys.path.insert(0, "..")
 import lmt_sim.lmt_simulation as sim
 
-print('RABI_FREQ =', sim.RABI_FREQ, 'Hz')
-print('T_PI =', sim.T_PI * 1e6, 'us')
-print('RECOIL_FREQUENCY_HZ =', sim.RECOIL_FREQUENCY_HZ, 'Hz')
+print("RABI_FREQ =", sim.RABI_FREQ, "Hz")
+print("T_PI =", sim.T_PI * 1e6, "us")
+print("RECOIL_FREQUENCY_HZ =", sim.RECOIL_FREQUENCY_HZ, "Hz")
 
 # %% [markdown]
 # ## 1. Gaussian Rabi profile
@@ -48,12 +48,12 @@ positions_scan = np.column_stack([r_vals, np.zeros_like(r_vals), np.zeros_like(r
 rabi_vals = sim.gaussian_rabi(positions_scan, omega_0, w)
 
 plt.figure(figsize=(8, 4))
-plt.plot(r_vals / w, rabi_vals / omega_0, 'b-', linewidth=2)
-plt.axhline(1.0 / np.e, color='r', linestyle='--', label='1/e (r = w)')
-plt.axvline(1.0, color='r', linestyle=':', alpha=0.6)
-plt.xlabel('r / w')
-plt.ylabel('Rabi frequency / Omega_0')
-plt.title('Gaussian beam transverse profile')
+plt.plot(r_vals / w, rabi_vals / omega_0, "b-", linewidth=2)
+plt.axhline(1.0 / np.e, color="r", linestyle="--", label="1/e (r = w)")
+plt.axvline(1.0, color="r", linestyle=":", alpha=0.6)
+plt.xlabel("r / w")
+plt.ylabel("Rabi frequency / Omega_0")
+plt.title("Gaussian beam transverse profile")
 plt.legend()
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
@@ -61,16 +61,24 @@ plt.tight_layout()
 
 # Spot checks
 pos_center = np.array([[0.0, 0.0, 0.0]])
-pos_waist  = np.array([[w,   0.0, 0.0]])
-pos_far    = np.array([[5*w, 0.0, 0.0]])
+pos_waist = np.array([[w, 0.0, 0.0]])
+pos_far = np.array([[5 * w, 0.0, 0.0]])
 
-print(f'On-axis:  {sim.gaussian_rabi(pos_center, omega_0, w)[0]:.6f}  (expected {omega_0:.6f})')
-print(f'At r=w:   {sim.gaussian_rabi(pos_waist,  omega_0, w)[0]:.6f}  (expected {omega_0/np.e:.6f})')
-print(f'At r=5w:  {sim.gaussian_rabi(pos_far,    omega_0, w)[0]:.3e}  (expected < {1e-10*omega_0:.3e})')
+print(
+    f"On-axis:  {sim.gaussian_rabi(pos_center, omega_0, w)[0]:.6f}  (expected {omega_0:.6f})"
+)
+print(
+    f"At r=w:   {sim.gaussian_rabi(pos_waist, omega_0, w)[0]:.6f}  (expected {omega_0 / np.e:.6f})"
+)
+print(
+    f"At r=5w:  {sim.gaussian_rabi(pos_far, omega_0, w)[0]:.3e}  (expected < {1e-10 * omega_0:.3e})"
+)
 assert sim.gaussian_rabi(pos_center, omega_0, w)[0] == omega_0
-assert abs(sim.gaussian_rabi(pos_waist, omega_0, w)[0] - omega_0/np.e) < 1e-6 * omega_0
+assert (
+    abs(sim.gaussian_rabi(pos_waist, omega_0, w)[0] - omega_0 / np.e) < 1e-6 * omega_0
+)
 assert sim.gaussian_rabi(pos_far, omega_0, w)[0] < 1e-10 * omega_0
-print('All spot checks passed.')
+print("All spot checks passed.")
 
 # %% [markdown]
 # ## 2. Rabi flops at varying transverse offsets
@@ -80,7 +88,7 @@ print('All spot checks passed.')
 # %%
 w = 5e-3  # 5 mm beam waist
 omega_0 = sim.RABI_FREQ
-n_pi = 3          # plot over 3 pi-pulse durations
+n_pi = 3  # plot over 3 pi-pulse durations
 n_pts = 200
 t_vals = np.linspace(0, n_pi * sim.T_PI, n_pts)
 
@@ -120,17 +128,16 @@ for r, color in zip(radii, colors):
         _, exc = sim.calculate_ground_and_excited_probabilities(state)
         excitations.append(exc)
 
-    plt.plot(t_vals / sim.T_PI, excitations, color=color,
-             label=f'r = {r/w:.1f} w')
+    plt.plot(t_vals / sim.T_PI, excitations, color=color, label=f"r = {r / w:.1f} w")
 
-plt.xlabel('Pulse duration / T_pi')
-plt.ylabel('Excitation fraction')
-plt.title('Rabi flops at varying transverse offsets (Gaussian beam)')
+plt.xlabel("Pulse duration / T_pi")
+plt.ylabel("Excitation fraction")
+plt.title("Rabi flops at varying transverse offsets (Gaussian beam)")
 plt.legend()
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 
-print('Atoms further from beam axis oscillate slower -- as expected.')
+print("Atoms further from beam axis oscillate slower -- as expected.")
 
 
 # %% [markdown]
@@ -147,9 +154,11 @@ print('Atoms further from beam axis oscillate slower -- as expected.')
 # Rabi frequency than those at the centre.
 #
 
+
 # %%
-def mz_excitation_single_atom(phi, x, y, beam_waist,
-                               detuning_hz=None, time_between=200e-6):
+def mz_excitation_single_atom(
+    phi, x, y, beam_waist, detuning_hz=None, time_between=200e-6
+):
     """Mach-Zehnder excitation for a single atom at (x, y).
 
     Runs the standard pi/2 - pi - pi/2 sequence with laser phases 0, phi, 4*phi,
@@ -262,16 +271,16 @@ amplitudes = []
 for sw in sigma_over_w:
     sigma = sw * w
     xy_positions = (
-        rng.normal(0.0, sigma, size=(N_ATOMS, 2)) if sigma > 0
+        rng.normal(0.0, sigma, size=(N_ATOMS, 2))
+        if sigma > 0
         else np.zeros((N_ATOMS, 2))
     )
 
     per_atom_curves = []
     for x, y in xy_positions:
-        curve = np.array([
-            mz_excitation_single_atom(phi, x, y, beam_waist=w)
-            for phi in phi_vals
-        ])
+        curve = np.array(
+            [mz_excitation_single_atom(phi, x, y, beam_waist=w) for phi in phi_vals]
+        )
         per_atom_curves.append(curve)
 
     per_atom_curves = np.array(per_atom_curves).T
@@ -283,10 +292,10 @@ for sw in sigma_over_w:
 amplitudes = np.array(amplitudes)
 
 plt.figure(figsize=(8, 5))
-plt.plot(sigma_over_w, amplitudes, 'o-', color='tab:purple')
-plt.xlabel(r'Cloud sigma / beam waist  ($\sigma$ / w)')
-plt.ylabel('Fringe amplitude')
-plt.title('Gaussian-beam Mach-Zehnder fringe amplitude vs cloud size')
+plt.plot(sigma_over_w, amplitudes, "o-", color="tab:purple")
+plt.xlabel(r"Cloud sigma / beam waist  ($\sigma$ / w)")
+plt.ylabel("Fringe amplitude")
+plt.title("Gaussian-beam Mach-Zehnder fringe amplitude vs cloud size")
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 
@@ -309,14 +318,14 @@ for sw, color in zip(selected_sw, colors):
         exc_curve,
         color=color,
         linewidth=2,
-        label=fr"$\sigma/w = {closest_sw:.2f}$  (amp = {amp:.3f})",
+        label=rf"$\sigma/w = {closest_sw:.2f}$  (amp = {amp:.3f})",
     )
 
 ax.set_xlabel(r"$\phi$ ($\pi$ rad)")
 ax.set_ylabel("Ensemble-averaged excitation fraction")
 ax.set_title(
     f"MZ fringes for varying cloud size\n"
-    f"(N={N_ATOMS} atoms, beam waist w={w*1e3:.0f} mm, 0\u2013\u03c6\u20134\u03c6 phase convention)"
+    f"(N={N_ATOMS} atoms, beam waist w={w * 1e3:.0f} mm, 0\u2013\u03c6\u20134\u03c6 phase convention)"
 )
 ax.set_xticks([0, 0.5, 1, 1.5, 2], ["0", r"$\pi/2$", r"$\pi$", r"$3\pi/2$", r"$2\pi$"])
 ax.set_xlim(0, 2)
@@ -332,11 +341,11 @@ fig.tight_layout()
 
 selected_sw = [0.0, 0.5, 1.0, 2.0, 3.0]
 
-fig, axes = plt.subplots(5,1, figsize=(18, 20), sharey=True)
+fig, axes = plt.subplots(5, 1, figsize=(18, 20), sharey=True)
 
 for ax, sw in zip(axes, selected_sw):
     closest_sw = min(fringe_per_atom.keys(), key=lambda k: abs(k - sw))
-    per_atom = fringe_per_atom[closest_sw]   # shape (n_phi, n_atoms)
+    per_atom = fringe_per_atom[closest_sw]  # shape (n_phi, n_atoms)
     mean_curve = fringe_curves[closest_sw]
 
     # Plot each atom's fringe
@@ -359,9 +368,11 @@ for ax, sw in zip(axes, selected_sw):
         label="mean",
     )
 
-    ax.set_title(fr"$\sigma/w = {closest_sw:.2f}$")
+    ax.set_title(rf"$\sigma/w = {closest_sw:.2f}$")
     ax.set_xlabel(r"$\phi$ ($\pi$ rad)")
-    ax.set_xticks([0, 0.5, 1, 1.5, 2], ["0", r"$\pi/2$", r"$\pi$", r"$3\pi/2$", r"$2\pi$"])
+    ax.set_xticks(
+        [0, 0.5, 1, 1.5, 2], ["0", r"$\pi/2$", r"$\pi$", r"$3\pi/2$", r"$2\pi$"]
+    )
     ax.set_xlim(0, 2)
     ax.set_ylim(-0.05, 1.05)
     ax.grid(True, alpha=0.3)
@@ -369,11 +380,10 @@ for ax, sw in zip(axes, selected_sw):
 axes[0].set_ylabel("Excitation fraction")
 fig.suptitle(
     f"Per-atom MZ fringes for selected cloud sizes\n"
-    f"(N={N_ATOMS} atoms, w={w*1e3:.0f} mm, black=individual atoms, blue dotted=mean)",
+    f"(N={N_ATOMS} atoms, w={w * 1e3:.0f} mm, black=individual atoms, blue dotted=mean)",
     y=1.02,
 )
 fig.tight_layout()
-
 
 
 # %% [markdown]
@@ -396,7 +406,7 @@ fig.tight_layout()
 
 # %%
 N_ATOMS_PI = 100
-w_pi = 5e-3          # beam waist (m)
+w_pi = 5e-3  # beam waist (m)
 transform_detuning_hz_pi = 0.0
 
 rng_pi = np.random.default_rng(0)
@@ -407,7 +417,11 @@ std_errors = []
 
 for sw in sigma_over_w_pi:
     sigma = sw * w_pi
-    xy = rng_pi.normal(0.0, sigma, size=(N_ATOMS_PI, 2)) if sigma > 0 else np.zeros((N_ATOMS_PI, 2))
+    xy = (
+        rng_pi.normal(0.0, sigma, size=(N_ATOMS_PI, 2))
+        if sigma > 0
+        else np.zeros((N_ATOMS_PI, 2))
+    )
 
     exc_list = []
     for x, y in xy:
@@ -447,8 +461,15 @@ mean_excitations = np.array(mean_excitations)
 std_errors = np.array(std_errors)
 
 plt.figure(figsize=(8, 5))
-plt.errorbar(sigma_over_w_pi, mean_excitations, yerr=std_errors,
-             fmt="ro-", markersize=6, capsize=4, elinewidth=1.2)
+plt.errorbar(
+    sigma_over_w_pi,
+    mean_excitations,
+    yerr=std_errors,
+    fmt="ro-",
+    markersize=6,
+    capsize=4,
+    elinewidth=1.2,
+)
 plt.xlabel(r"Cloud sigma / beam waist  ($\sigma$ / w)")
 plt.ylabel(r"Mean excitation after $\pi$-pulse")
 plt.title(r"Ensemble-averaged $\pi$-pulse excitation vs cloud size (N=100)")

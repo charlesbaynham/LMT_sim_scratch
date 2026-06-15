@@ -29,7 +29,7 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, '..')
+sys.path.insert(0, "..")
 
 import matplotlib.pyplot as plt
 import lmt_sim.lmt_simulation as sim
@@ -39,7 +39,7 @@ import numpy as np
 
 # %%
 N = 4
-RABI_FREQ = 1*sim.RABI_FREQ
+RABI_FREQ = 1 * sim.RABI_FREQ
 T_PI = 0.5 / RABI_FREQ
 
 sequence = []
@@ -67,7 +67,7 @@ for i in range(N):
             k=k,
             detuning_hz=detuning_mult * sim.RECOIL_FREQUENCY_HZ,
             phi=0.0,
-            label=f"top accel {i+1}",
+            label=f"top accel {i + 1}",
             rabi_frequency=RABI_FREQ,
             duration=T_PI,
         )
@@ -109,7 +109,7 @@ for i in range(N):
             k=k,
             detuning_hz=detuning_mult * sim.RECOIL_FREQUENCY_HZ,
             phi=0.0,
-            label=f"bottom accel {i+1}",
+            label=f"bottom accel {i + 1}",
             rabi_frequency=RABI_FREQ,
             duration=T_PI,
         )
@@ -164,11 +164,10 @@ for i, pulse in enumerate(sequence, start=1):
 
 # %%
 clouds, clearout_times = seq.compute_spacetime_trajectory(sequence, plot=True)
-print(f'Clouds: {len(clouds)}')
-print(f'Clearouts: {len(clearout_times)}')
+print(f"Clouds: {len(clouds)}")
+print(f"Clearouts: {len(clearout_times)}")
 
-vs.tag_plot(small=True);
-
+vs.tag_plot(small=True)
 # %%
 state = sim.make_atom_states(
     position_x=0.0,
@@ -179,18 +178,20 @@ state = sim.make_atom_states(
     c1=0.0,
 )
 
-result = seq.run_pulse_sequence_in_lab_frame(state, pulse_sequence=sequence, discard_threshold=1e-9)
+result = seq.run_pulse_sequence_in_lab_frame(
+    state, pulse_sequence=sequence, discard_threshold=1e-9
+)
 if result is None:
-    raise RuntimeError('Atom was cleared out by the sequence')
+    raise RuntimeError("Atom was cleared out by the sequence")
 
 state, _, _ = result
 ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(state)
 
-print(f'Ground probability:  {ground_prob:.6f}')
-print(f'Excited probability: {excited_prob:.6f}')
+print(f"Ground probability:  {ground_prob:.6f}")
+print(f"Excited probability: {excited_prob:.6f}")
 
 
-print(f'Excited fraction:    {excited_prob / (ground_prob + excited_prob):.6f}')
+print(f"Excited fraction:    {excited_prob / (ground_prob + excited_prob):.6f}")
 
 
 # %%
@@ -221,7 +222,7 @@ def get_sequence(N, phi):
                 k=k,
                 detuning_hz=detuning_mult * sim.RECOIL_FREQUENCY_HZ,
                 phi=0.0,
-                label=f"top accel {i+1}",
+                label=f"top accel {i + 1}",
                 rabi_frequency=RABI_FREQ,
                 duration=T_PI,
             )
@@ -263,7 +264,7 @@ def get_sequence(N, phi):
                 k=k,
                 detuning_hz=detuning_mult * sim.RECOIL_FREQUENCY_HZ,
                 phi=phi,
-                label=f"bottom accel {i+1}",
+                label=f"bottom accel {i + 1}",
                 rabi_frequency=RABI_FREQ,
                 duration=T_PI,
             )
@@ -330,22 +331,21 @@ def run_phi(phi):
         discard_threshold=1e-9,
     )
     if result is None:
-        raise RuntimeError('Atom was cleared out by the sequence')
+        raise RuntimeError("Atom was cleared out by the sequence")
     state, _, _ = result
     ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(state)
     return excited_prob / (ground_prob + excited_prob)
 
 
 excitations = Parallel(n_jobs=-1)(
-    delayed(run_phi)(phi) for phi in tqdm(phis, desc='phi')
+    delayed(run_phi)(phi) for phi in tqdm(phis, desc="phi")
 )
 
 # %%
 plt.plot(phis, excitations)  # type: ignore
-plt.xlabel('Phase')
-plt.ylabel('Excitation Probability')
-plt.title(f'Excitation vs Phase, N={N_LMTs} LMTs');
-
+plt.xlabel("Phase")
+plt.ylabel("Excitation Probability")
+plt.title(f"Excitation vs Phase, N={N_LMTs} LMTs")
 # %% [markdown]
 # We should get perfect fringes. At what pulse are we messing it up?
 #
@@ -433,21 +433,28 @@ def plot_heat(ax, grid, keep_mask, title):
         y_labels = m_all[keep_mask]
         im = ax.imshow(
             shown,
-            origin='lower',
-            aspect='auto',
-            interpolation='nearest',
-            cmap='magma',
+            origin="lower",
+            aspect="auto",
+            interpolation="nearest",
+            cmap="magma",
             vmin=0.0,
             vmax=1.0,
         )
         ax.set_yticks(np.arange(len(y_labels)))
         ax.set_yticklabels(y_labels)
-        fig.colorbar(im, ax=ax, label='population')
+        fig.colorbar(im, ax=ax, label="population")
     else:
-        ax.text(0.5, 0.5, 'No m-state exceeds threshold', ha='center', va='center', transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "No m-state exceeds threshold",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         ax.set_yticks([])
 
-    ax.set_ylabel('m state')
+    ax.set_ylabel("m state")
     ax.set_title(title)
 
 
@@ -455,20 +462,20 @@ plot_heat(
     axes[0],
     grid_g,
     g_keep,
-    f'Ground-state population heatmap, phi = pi/4, threshold >= {threshold:.0%}',
+    f"Ground-state population heatmap, phi = pi/4, threshold >= {threshold:.0%}",
 )
 plot_heat(
     axes[1],
     grid_e,
     e_keep,
-    f'Excited-state population heatmap, phi = pi/4, threshold >= {threshold:.0%}',
+    f"Excited-state population heatmap, phi = pi/4, threshold >= {threshold:.0%}",
 )
 
-axes[1].set_xlabel('Number of first sequence events included (i)')
+axes[1].set_xlabel("Number of first sequence events included (i)")
 axes[1].set_xticks(x)
 
-print(f'Total events in full sequence: {len(full_sequence)}')
-print(f'Swept i from 0 to {len(full_sequence)}')
+print(f"Total events in full sequence: {len(full_sequence)}")
+print(f"Swept i from 0 to {len(full_sequence)}")
 
 # %%
 # Stacked line plots by m-state (population offset by m)
@@ -523,17 +530,17 @@ plot_stacked_lines(
     axes[0],
     grid_g,
     "Ground-state stacked lines (shown if max population >= 20%)",
-    threshold
+    threshold,
 )
 plot_stacked_lines(
     axes[1],
     grid_e,
     "Excited-state stacked lines (shown if max population >= 20%)",
-    threshold
+    threshold,
 )
 
 axes[1].set_xlabel("Number of first sequence events included (i)")
-axes[1].set_xticks(i_vals);
+axes[1].set_xticks(i_vals)
 
 # %% [markdown]
 # Ah, it's just legit physics. Cool!

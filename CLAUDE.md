@@ -72,7 +72,7 @@ The tracked repository is:
 
 The simulation tracks an ensemble of **state rows**, each representing a branch of the atom's wavefunction. A state row consists of:
 
-- **Momentum quantum number `m`** `(N,)` int array — number of ℏk photon recoils relative to the initial momentum. Actual velocity of branch m is `v_0 + m * v_recoil`. 
+- **Momentum quantum number `m`** `(N,)` int array — number of ℏk photon recoils relative to the initial momentum. Actual velocity of branch m is `v_0 + m * v_recoil`.
 - **Position** `(N,)` float array — z-position of each branch, propagated ballistically using `v(m) = v_0 + m * v_recoil`
 - **Internal amplitude** `(N,)` complex128 array — complex coefficient for that branch
 - **Internal label** `(N,)` bool array — `True` = ground state, `False` = excited state

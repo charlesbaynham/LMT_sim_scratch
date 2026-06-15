@@ -16,7 +16,7 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, '..')
+sys.path.insert(0, "..")
 
 import numpy as np
 import lmt_sim.lmt_simulation as sim
@@ -37,7 +37,7 @@ detuning_hz = sim.RECOIL_FREQUENCY_HZ
 # # Single $\pi$ pulse
 
 # %%
-detunings_hz  = np.linspace(-10.0, 10.0, 501) * sim.RECOIL_FREQUENCY_HZ
+detunings_hz = np.linspace(-10.0, 10.0, 501) * sim.RECOIL_FREQUENCY_HZ
 
 plt.figure(figsize=(6, 4))
 
@@ -83,30 +83,29 @@ for detuning_offset_hz in detunings_hz:
 
     state_trial, _, _ = result
 
-    ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(state_trial)
+    ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(
+        state_trial
+    )
     excited_scan.append(excited_prob / (ground_prob + excited_prob))
 
-plt.plot(
-    detunings_hz,
-    excited_scan,
-    label="Single $\pi$ pulse"
-)
+plt.plot(detunings_hz, excited_scan, label="Single $\pi$ pulse")
 
 
 plt.xlabel("Final pulse detuning offset (Hz)")
 plt.ylabel("Excited fraction")
-plt.axvline(sim.RECOIL_FREQUENCY_HZ, color="k", linestyle="--", label="Recoil frequency")
+plt.axvline(
+    sim.RECOIL_FREQUENCY_HZ, color="k", linestyle="--", label="Recoil frequency"
+)
 plt.legend()
 
 # plt.xlim([-1000, 1000])
 
-vs.tag_plot(small=True);
-
+vs.tag_plot(small=True)
 # %% [markdown]
 # # $\pi$ up then $\pi$ down
 
 # %%
-detunings_hz  = np.linspace(-10.0, 10.0, 501) * sim.RECOIL_FREQUENCY_HZ
+detunings_hz = np.linspace(-10.0, 10.0, 501) * sim.RECOIL_FREQUENCY_HZ
 
 plt.figure(figsize=(6, 4))
 
@@ -118,7 +117,6 @@ base_state = sim.make_atom_states(
     c0=1.0,
     c1=0.0,
 )
-
 
 
 excited_scan = []
@@ -160,31 +158,35 @@ for detuning_offset_hz in detunings_hz:
 
     state_trial, _, _ = result
 
-    ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(state_trial)
+    ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(
+        state_trial
+    )
     excited_scan.append(excited_prob / (ground_prob + excited_prob))
 
-plt.plot(
-    detunings_hz,
-    excited_scan,
-    label="Two $\pi$ pulses"
-)
+plt.plot(detunings_hz, excited_scan, label="Two $\pi$ pulses")
 
 
 plt.xlabel("Final pulse detuning offset (Hz)")
 plt.ylabel("Excited fraction")
-plt.axvline(sim.RECOIL_FREQUENCY_HZ, color="k", linestyle="--", label="Recoil frequency")
-plt.axvline(-3*sim.RECOIL_FREQUENCY_HZ, color="r", linestyle="--", label="-3 * Recoil frequency")
+plt.axvline(
+    sim.RECOIL_FREQUENCY_HZ, color="k", linestyle="--", label="Recoil frequency"
+)
+plt.axvline(
+    -3 * sim.RECOIL_FREQUENCY_HZ,
+    color="r",
+    linestyle="--",
+    label="-3 * Recoil frequency",
+)
 plt.legend()
 
 # plt.xlim([-1000, 1000])
 
-vs.tag_plot(small=True);
-
+vs.tag_plot(small=True)
 # %% [markdown]
 # # $\pi$ up, $\pi$ down, $\pi$ up
 
 # %%
-detunings_hz  = np.linspace(-10.0, 10.0, 501) * sim.RECOIL_FREQUENCY_HZ
+detunings_hz = np.linspace(-10.0, 10.0, 501) * sim.RECOIL_FREQUENCY_HZ
 
 plt.figure(figsize=(6, 4))
 
@@ -196,7 +198,6 @@ base_state = sim.make_atom_states(
     c0=1.0,
     c1=0.0,
 )
-
 
 
 excited_scan = []
@@ -221,7 +222,7 @@ for detuning_offset_hz in detunings_hz:
     )
     pulse_2 = seq.Pulse(
         k=-1,
-        detuning_hz=-3*sim.RECOIL_FREQUENCY_HZ,
+        detuning_hz=-3 * sim.RECOIL_FREQUENCY_HZ,
         phi=0.0,
         label="$\pi$ down",
         rabi_frequency=sim.RABI_FREQ,
@@ -247,29 +248,40 @@ for detuning_offset_hz in detunings_hz:
 
     state_trial, _, _ = result
 
-    ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(state_trial)
+    ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(
+        state_trial
+    )
     excited_scan.append(excited_prob / (ground_prob + excited_prob))
 
-plt.plot(
-    detunings_hz,
-    excited_scan,
-    label="Three $\pi$ pulses"
-)
+plt.plot(detunings_hz, excited_scan, label="Three $\pi$ pulses")
 
 
 plt.xlabel("Final pulse detuning offset (Hz)")
 plt.ylabel("Excited fraction")
-plt.axvline(sim.RECOIL_FREQUENCY_HZ, color="k", linestyle="--", label="$+1 \times$ Recoil frequency")
-plt.axvline(-3*sim.RECOIL_FREQUENCY_HZ, color="r", linestyle="--", label="$-3 \times$ Recoil frequency")
-plt.axvline(+5*sim.RECOIL_FREQUENCY_HZ, color="g", linestyle="--", label="$+5 \times$ Recoil frequency")
+plt.axvline(
+    sim.RECOIL_FREQUENCY_HZ,
+    color="k",
+    linestyle="--",
+    label="$+1 \times$ Recoil frequency",
+)
+plt.axvline(
+    -3 * sim.RECOIL_FREQUENCY_HZ,
+    color="r",
+    linestyle="--",
+    label="$-3 \times$ Recoil frequency",
+)
+plt.axvline(
+    +5 * sim.RECOIL_FREQUENCY_HZ,
+    color="g",
+    linestyle="--",
+    label="$+5 \times$ Recoil frequency",
+)
 plt.legend()
 
-vs.tag_plot(small=True);
-
+vs.tag_plot(small=True)
 plt.figure()
 seq.compute_spacetime_trajectory(sequence, plot=True)
-vs.tag_plot(small=True);
-
+vs.tag_plot(small=True)
 # %% [markdown]
 # # LMT sequences
 #
@@ -351,7 +363,9 @@ for n_lmt in n_lmts:
 
         state_trial, _, _ = result_final
 
-        ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(state_trial)
+        ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(
+            state_trial
+        )
         excited_scan.append(excited_prob / (ground_prob + excited_prob))
 
     plt.plot(
@@ -374,8 +388,7 @@ vs.tag_plot(small=True)
 # %%
 seq.compute_spacetime_trajectory(sequence, plot=True)
 
-vs.tag_plot(small=True);
-
+vs.tag_plot(small=True)
 # %% [markdown]
 # # Simple interferometry
 #
@@ -387,7 +400,7 @@ beam_waist = 5e-3
 initial_velocity_z = 0.0
 detuning_hz = 0
 
-phis = np.linspace(0, 2*np.pi, 201)
+phis = np.linspace(0, 2 * np.pi, 201)
 
 
 plt.figure(figsize=(12, 12))
@@ -404,14 +417,14 @@ for n_lmt in n_lmts:
                 phi=0.0,
                 label="SPLITTER-BOTH",
                 rabi_frequency=sim.RABI_FREQ,
-                duration=sim.T_PI/2,
+                duration=sim.T_PI / 2,
             )
         )
 
         # Accelerating LMTs
         for i in range(1, n_lmt):
             sequence.append(
-                seq.Pulse(  
+                seq.Pulse(
                     k=1 if i % 2 == 0 else -1,
                     detuning_hz=calc_resonant_detuning(i) + detuning_hz,
                     phi=0.0,
@@ -420,11 +433,11 @@ for n_lmt in n_lmts:
                     duration=sim.T_PI,
                 )
             )
-        
+
         # Decelerating LMTs
         for i in range(n_lmt - 1, 0, -1):
             sequence.append(
-                seq.Pulse(  
+                seq.Pulse(
                     k=1 if i % 2 == 0 else -1,
                     detuning_hz=calc_resonant_detuning(n_lmt - i) + detuning_hz,
                     phi=phi,
@@ -452,7 +465,9 @@ for n_lmt in n_lmts:
                 raise RuntimeError("Atom was cleared out")
             state, _, _ = result
 
-        ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(state)
+        ground_prob, excited_prob = sim.calculate_ground_and_excited_probabilities(
+            state
+        )
         excitation_fracs.append(excited_prob / (ground_prob + excited_prob))
 
     plt.plot(
@@ -470,12 +485,9 @@ plt.legend()
 
 # plt.xlim([-1000, 1000])
 
-vs.tag_plot(small=True);
-
-
+vs.tag_plot(small=True)
 plt.figure()
 seq.compute_spacetime_trajectory(sequence, plot=True)
 
-vs.tag_plot(small=True);
-
+vs.tag_plot(small=True)
 sequence

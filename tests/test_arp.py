@@ -213,9 +213,7 @@ def test_arp_landau_zener_diabatic_tail():
         sweep_shape="linear",
         omega_shape="const",
     )
-    expected = 1.0 - np.exp(
-        -(np.pi**2) * omega0_hz**2 * T / delta_sweep_hz
-    )
+    expected = 1.0 - np.exp(-(np.pi**2) * omega0_hz**2 * T / delta_sweep_hz)
     assert abs(pe - expected) < 0.03
 
 

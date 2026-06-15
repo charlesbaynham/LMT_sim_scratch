@@ -24,13 +24,15 @@
 import sys
 
 import sys
-sys.path.insert(0, '..')
+
+sys.path.insert(0, "..")
 
 # %%
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
-sys.path.insert(0, '..')
+
+sys.path.insert(0, "..")
 
 import version_info as vs
 
@@ -38,7 +40,6 @@ from lmt_sim.lmt_sequence import (
     build_mach_zehnder_pulse_sequence,
     calculate_excited_fraction_for_pulse_sequence,
 )
-
 
 
 # %%
@@ -81,10 +82,7 @@ def calc_mz_excitation_borde(phi, initial_velocity_z=0.0):
 
 
 # Simulate single zero-velocity atom
-excitation_fractions = np.array([
-    calc_mz_excitation_borde(phi)
-    for phi in phi_values
-])
+excitation_fractions = np.array([calc_mz_excitation_borde(phi) for phi in phi_values])
 
 # %%
 fig, ax = plt.subplots(figsize=(10, 6))
@@ -100,4 +98,3 @@ ax.set_xlim(0, 2)
 ax.set_ylim(0, 1.05)
 vs.tag_plot(small=True)
 fig.tight_layout()
-

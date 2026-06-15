@@ -1177,9 +1177,13 @@ def test_frequency_change_sequence_matches_no_frame_change_reference(seed=0):
         internal_is_ground=np.array([True]),
     )
     sequence = [
-        seq.Pulse(k=+1, detuning_hz=d1, phi=0.0, label="p1", rabi_frequency=rabi, duration=tp1),
+        seq.Pulse(
+            k=+1, detuning_hz=d1, phi=0.0, label="p1", rabi_frequency=rabi, duration=tp1
+        ),
         seq.Freefall(duration=tau),
-        seq.Pulse(k=+1, detuning_hz=d2, phi=0.0, label="p2", rabi_frequency=rabi, duration=tp2),
+        seq.Pulse(
+            k=+1, detuning_hz=d2, phi=0.0, label="p2", rabi_frequency=rabi, duration=tp2
+        ),
     ]
     final, _, _ = seq.run_pulse_sequence_in_borde_representation(
         state, sequence, initial_velocity_z=0.0, discard_threshold=0.0

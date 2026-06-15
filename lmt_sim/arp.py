@@ -290,7 +290,5 @@ def arp_excited_ground_amplitudes(
     ground state.
     """
     U = compose_arp_2x2(subpulses, **compose_kwargs)
-    c_excited, c_ground = U @ np.array(
-        [initial_excited, initial_ground], dtype=complex
-    )
+    c_excited, c_ground = U @ np.array([initial_excited, initial_ground], dtype=complex)
     return c_excited, c_ground

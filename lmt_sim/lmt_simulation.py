@@ -35,7 +35,6 @@ GRAVITY_G = constants.g
 GRAVITY_DOPPLER_PER_SEC_HZ = TRANSITION_FREQUENCY * constants.g / constants.c
 
 
-
 @dataclass(frozen=True)
 class AtomState:
     m_values: np.ndarray
