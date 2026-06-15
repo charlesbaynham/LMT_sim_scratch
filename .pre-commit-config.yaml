@@ -1,0 +1,24 @@
+# Pre-commit hooks for this repo. Config consumed by pre-commit and pre-commit.ci.
+# Run locally with:  uvx pre-commit run --all-files
+ci:
+  autoupdate_schedule: monthly
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: debug-statements
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.8
+    hooks:
+      # Lint (with autofix), then format. Ruff config lives in pyproject.toml.
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
