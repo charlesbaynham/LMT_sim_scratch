@@ -89,11 +89,11 @@ def calc_single_pulse_excitation_borde(
         c1=0,
     )
 
-    omega_laser = 2.0 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
+    transform_detuning_hz = detuning_hz
 
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=initial_velocity_z,
@@ -113,7 +113,7 @@ def calc_single_pulse_excitation_borde(
 
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=pulse_duration,
         z=0.0,
         vz=initial_velocity_z,

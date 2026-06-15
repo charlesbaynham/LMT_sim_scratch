@@ -43,6 +43,27 @@ class AtomState:
     velocities: np.ndarray
     amplitudes: np.ndarray
     internal_is_ground: np.ndarray
+    # Reference for the laser-phase part of the Bordé (Eq. 4) transform.
+    #
+    # The Bordé frame co-rotates with the laser, so the lab<->Bordé transform
+    # depends on the integral of the laser detuning, ``Phi(t) = integral_0^t
+    # delta(t') dt'`` (Hz*s = cycles). We store that piecewise-linear integral as
+    # its current segment: ``f_ref`` (Hz) is the laser detuning since ``t_ref``
+    # (s), and ``accumulated_detuning_cycles`` is ``Phi(t_ref)`` -- the integral
+    # over all *closed* (earlier) segments. So ``Phi(t) = accumulated_detuning_cycles
+    # + f_ref * (t - t_ref)`` for any ``t`` in the current segment.
+    #
+    # IMPORTANT: the amplitudes are kept in the *instantaneous* Bordé frame and are
+    # NOT touched when the laser frequency steps (the laser phase is continuous, so
+    # the instantaneous frames coincide at the step -- see
+    # docs/arp_frame_change_finding.md). The frame-change phase is held entirely in
+    # ``accumulated_detuning_cycles`` and applied only at the lab boundary by
+    # ``transform_state_vector``. Folding it into the amplitudes instead would
+    # corrupt any subsequent pulse (a non-diagonal op acting on a rotated g/e phase)
+    # -- the very bug this design removes.
+    t_ref: float = 0.0
+    f_ref: float = 0.0
+    accumulated_detuning_cycles: float = 0.0
 
 
 def make_atom_states(
@@ -108,15 +129,22 @@ def make_atom_states(
         velocities=velocities,
         amplitudes=internal_amplitude,
         internal_is_ground=internal_is_ground,
+        # Fresh lab state at t=0; the laser detuning of the Bordé frame is
+        # established at the lab->Bordé boundary in run_pulse_sequence_in_lab_frame.
+        t_ref=0.0,
+        f_ref=0.0,
+        accumulated_detuning_cycles=0.0,
     )
 
 
 def transform_state_vector(
     state: AtomState,
-    omega_laser,
+    detuning_hz,
     t,
     z,
     vz,
+    t_ref=0.0,
+    accumulated_detuning_cycles=0.0,
     k=K_WAVEVECTOR,
     omega_0=2 * np.pi * TRANSITION_FREQUENCY,
     inverse=False,
@@ -124,24 +152,42 @@ def transform_state_vector(
     """
     Transform a state vector to/from the position & time independent frame.
 
-    Eq. 4 of Bordé's paper
+    Eq. 4 of Bordé's paper.
 
-    Note that this transformation depends on the laser frequency.
+    The Bordé frame co-rotates with the laser, so this transformation depends on
+    the integral of the laser detuning,
+    ``Phi(t) = accumulated_detuning_cycles + detuning_hz * (t - t_ref)`` (in
+    cycles), where ``accumulated_detuning_cycles`` is the integral over earlier
+    (closed) constant-detuning segments and ``detuning_hz`` is the detuning held
+    since ``t_ref``. The laser-dependent part of the transform is then
+    ``exp(-/+ i * pi * Phi(t))`` (ground -, excited +). The transition-frequency
+    (``omega_0``) global/internal phase and the spatial ``m * k * (z + vz * t)``
+    term carry NO laser-frequency dependence and stay on **absolute** ``t``.
 
-    TODO: Convert to the integral of laser phase
-    FIXME(frame-change): This laser-frequency dependence is the root cause behind
-    the frame-change limitation. Using the instantaneous laser frequency (rather
-    than the integral of the laser phase) is not valid for a time-varying laser
-    frequency, which is what breaks chirped/ARP pulses. See
-    docs/arp_frame_change_finding.md and _frame_change_phases.
+    Writing the laser angular frequency as ``omega_laser = omega_0 + 2*pi*delta``,
+    the laser-dependent angle ``omega_laser * t`` of the old (fixed-frequency)
+    formulation becomes ``omega_0 * t + 2*pi * Phi(t)``: the ``omega_0`` piece is
+    kept on absolute ``t`` (it is the fixed transition frequency) and the detuning
+    piece is the genuine integral ``Phi(t)``. With
+    ``accumulated_detuning_cycles = 0`` and ``t_ref = 0`` this reduces exactly to
+    the old ``omega_laser * t`` behaviour. Using the integral (rather than
+    ``delta * t``) is what lets the laser frequency step between pulses without the
+    "assume current frequency since t=0" approximation; the closed-segment integral
+    is accumulated by ``change_laser_frequency_in_borde_representation`` (which does
+    NOT touch the amplitudes). See docs/arp_frame_change_finding.md.
     """
     global_phase = np.exp(1j * omega_0 / 2 * t)
 
+    # Laser-dependent angle: omega_0 on absolute t, detuning as the genuine
+    # integral Phi(t) (closed segments + current segment).
+    phi_cycles = accumulated_detuning_cycles + detuning_hz * (t - t_ref)
+    laser_angle = omega_0 * t + 2 * np.pi * phi_cycles
+
     m_dependent_phase_gnd = np.exp(
-        1j / 2 * (-omega_laser * t - 2 * state.m_values * k * (z + vz * t))
+        1j / 2 * (-laser_angle - 2 * state.m_values * k * (z + vz * t))
     )
     m_dependent_phase_excited = np.exp(
-        1j / 2 * (omega_laser * t - 2 * state.m_values * k * (z + vz * t))
+        1j / 2 * (laser_angle - 2 * state.m_values * k * (z + vz * t))
     )
     m_dependent_phase = np.where(
         state.internal_is_ground, m_dependent_phase_gnd, m_dependent_phase_excited
@@ -332,6 +378,10 @@ def propagate_states_in_borde_representation(
         velocities=state.velocities,
         amplitudes=amplitudes_out,
         internal_is_ground=state.internal_is_ground,
+        # Free fall does not change the laser frame; carry the reference forward.
+        t_ref=state.t_ref,
+        f_ref=state.f_ref,
+        accumulated_detuning_cycles=state.accumulated_detuning_cycles,
     )
 
 
@@ -519,69 +569,72 @@ def pulse_interaction_in_borde_representation(
         velocities=new_velocities,
         amplitudes=new_amplitudes,
         internal_is_ground=new_is_ground,
+        # The pulse doubles the rows but does not change the laser frame.
+        t_ref=state.t_ref,
+        f_ref=state.f_ref,
+        accumulated_detuning_cycles=state.accumulated_detuning_cycles,
     )
-
-
-def _frame_change_phases(old_detuning_hz, new_detuning_hz, time):
-    r"""Per-state Bordé frame-change phases for a laser-frequency change.
-
-    Returns ``(phase_excited, phase_ground)``: the factors to multiply the
-    excited- and ground-state amplitudes by when re-expressing them from the
-    ``old`` to the ``new`` laser-frequency frame at **global** ``time``. Excited
-    gains ``exp(+i pi Df t)`` and ground ``exp(-i pi Df t)`` with
-    ``Df = new - old`` (Hz).
-
-    Single source of truth shared by
-    ``change_laser_frequency_in_borde_representation`` (row representation) and
-    the ARP composer in :mod:`lmt_sim.arp`, so the inter-block frame phase is
-    defined in exactly one place.
-
-    FIXME(frame-change): This phase is known to be WRONG when applied between
-    *back-to-back* pulses of different detuning (it double-counts the chirp --
-    see docs/arp_frame_change_finding.md). It is OPEN whether it is correct in
-    its intended regime: pulses separated by free evolution at a fixed reference
-    frequency, where there genuinely is an accumulated cross-frame offset. That
-    regime has NOT been audited. Suggested check: pulse(D1) - freefall(tau) -
-    pulse(D2) vs an independent single-fixed-frame (atomic-resonance, RWA)
-    integration with the chirp in the coupling phase.
-    """
-    delta_f = new_detuning_hz - old_detuning_hz
-    phase_exc = np.exp(+1j * np.pi * delta_f * time)
-    phase_gnd = np.exp(-1j * np.pi * delta_f * time)
-    return phase_exc, phase_gnd
 
 
 def change_laser_frequency_in_borde_representation(
     state: AtomState,
-    old_detuning_hz: float,
     new_detuning_hz: float,
     time: float,
 ):
-    """Re-express Bordé-frame amplitudes for a new laser frequency.
+    r"""Record a laser-frequency change at ``time`` (no change to the amplitudes).
 
-    The Borde frame moves with the laser's frequency. So, to avoid having to
-    track the total laser phase, I transform amplitudes from one frame to
-    another whenever the laser frequency changes.
+    The Bordé frame co-rotates with the laser, so the lab<->Bordé transform
+    depends on the integral of the laser detuning ``Phi(t) = integral_0^t delta``.
+    We carry that piecewise-linear integral on the state as
+    ``(t_ref, f_ref, accumulated_detuning_cycles)``: ``f_ref`` is the detuning
+    since ``t_ref`` and ``accumulated_detuning_cycles`` is ``Phi(t_ref)`` (closed
+    segments).
+
+    At a frequency step at ``time`` we **close the open segment** and start a new
+    one:
+
+    1. ``accumulated_detuning_cycles += f_ref * (time - t_ref)`` -- fold the just
+       -ended segment ``[t_ref, time]`` (at the OLD detuning ``f_ref``) into the
+       closed-segment integral.
+    2. ``t_ref = time``, ``f_ref = new_detuning_hz``.
+
+    Crucially the **amplitudes are NOT changed**. The laser phase is continuous
+    across the step, so the instantaneous Bordé frames before and after coincide at
+    that instant and the correct boundary phase is zero. The old
+    ``exp(+/- i pi Df t)`` "frame change" double-counted the chirp (the detuning is
+    already carried in each pulse's ``Omega_3`` diagonal and in the free-evolution
+    phase); applying any nonzero diagonal phase here would corrupt the next pulse.
+    See docs/arp_frame_change_finding.md.
+
+    Because closing a segment is just an exact additive split of the same integral,
+    a "change" to the SAME frequency (``new_detuning_hz == f_ref``) leaves both the
+    amplitudes and ``Phi`` untouched -- **no effect on any physical prediction**.
 
     Parameters
     ----------
     state : AtomState
-        Atom state in the Bordé representation.
-    old_detuning_hz : float
-        Detuning (Hz) of the Bordé frame the amplitudes are currently in.
+        Atom state in the Bordé representation. Its ``t_ref``/``f_ref`` /
+        ``accumulated_detuning_cycles`` give the current frame integral.
     new_detuning_hz : float
-        Detuning (Hz) of the Bordé frame to express the amplitudes in.
+        Laser detuning (Hz) from this moment on.
     time : float
         **Global** simulation time at which the frame change happens, in seconds.
 
     Returns
     -------
     AtomState
-        Atom state expressed in the new Bordé frame.
+        Atom state with the frame integral advanced to ``time`` and the new
+        detuning recorded; ``amplitudes`` are unchanged.
     """
-    phase_exc, phase_gnd = _frame_change_phases(old_detuning_hz, new_detuning_hz, time)
-    phase = np.where(state.internal_is_ground, phase_gnd, phase_exc)
-    return replace(state, amplitudes=state.amplitudes * phase)
+    new_accumulated = state.accumulated_detuning_cycles + state.f_ref * (
+        time - state.t_ref
+    )
+    return replace(
+        state,
+        t_ref=time,
+        f_ref=new_detuning_hz,
+        accumulated_detuning_cycles=new_accumulated,
+    )
 
 
 def gaussian_rabi(
@@ -775,6 +828,10 @@ def do_clearout(state: AtomState, rng=None):
         velocities=state.velocities[keep],
         amplitudes=state.amplitudes[keep] * (1.0 / np.sqrt(p_e)),
         internal_is_ground=state.internal_is_ground[keep],
+        # Projection does not change the laser frame.
+        t_ref=state.t_ref,
+        f_ref=state.f_ref,
+        accumulated_detuning_cycles=state.accumulated_detuning_cycles,
     )
 
 
@@ -797,5 +854,9 @@ def discard_and_renormalise_state_vector(state: AtomState, discard_threshold: fl
         velocities=state.velocities[keep_mask],
         amplitudes=new_amplitudes,
         internal_is_ground=state.internal_is_ground[keep_mask],
+        # Discarding rows does not change the laser frame.
+        t_ref=state.t_ref,
+        f_ref=state.f_ref,
+        accumulated_detuning_cycles=state.accumulated_detuning_cycles,
     )
     return new_state

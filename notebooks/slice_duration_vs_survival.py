@@ -103,11 +103,11 @@ def calc_slice_survival_probability(
         c1=0,
     )
 
-    omega_laser = 2.0 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
+    transform_detuning_hz = detuning_hz
 
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=initial_velocity_z,
@@ -127,7 +127,7 @@ def calc_slice_survival_probability(
 
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=slice_pulse_duration,
         z=0.0,
         vz=initial_velocity_z,

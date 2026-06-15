@@ -94,11 +94,11 @@ def simulate_trajectory(
         c0=1.0, c1=0.0,
     )
 
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + DETUNING_HZ)
+    transform_detuning_hz = DETUNING_HZ
 
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser, t=0.0, z=pz0, vz=vz0, inverse=False,
+        detuning_hz=transform_detuning_hz, t=0.0, z=pz0, vz=vz0, inverse=False,
     )
 
     # Sort pulse schedule by time

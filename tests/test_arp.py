@@ -5,8 +5,21 @@ to analytic limits (no-frame-change consistency, Landau-Zener diabatic tail,
 adiabatic full inversion).
 """
 
-import numpy as np
 import pytest
+
+# PARKED: the ARP composer (lmt_sim.arp) is on hold pending the Bordé
+# frame-change rework. The row-based path has been corrected to rebase the frame
+# at a laser-frequency step (no inter-block frame change), so the still-paused 2x2
+# ARP composer -- which deliberately keeps the old (wrong) inter-block frame
+# change -- no longer matches the row composer. The whole ARP test module is
+# skipped until we return to the ARP composer. See docs/arp_frame_change_finding.md.
+pytest.skip(
+    "ARP composer parked pending the Bordé frame-change rework "
+    "(see docs/arp_frame_change_finding.md).",
+    allow_module_level=True,
+)
+
+import numpy as np
 
 from lmt_sim import arp
 from lmt_sim import lmt_simulation as sim

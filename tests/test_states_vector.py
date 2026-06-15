@@ -1,4 +1,5 @@
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -96,12 +97,12 @@ def test_mz_randomized_population_conserved_every_step(seed):
         abs=1e-6,
     )
 
-    omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + detuning_hz)
+    transform_detuning_hz = detuning_hz
     current_time = 0.0
 
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=current_time,
         z=0.0,
         vz=0.0,
@@ -200,7 +201,7 @@ def test_mz_randomized_population_conserved_every_step(seed):
 
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=current_time,
         z=0.0,
         vz=0.0,
@@ -254,10 +255,10 @@ def test_gaussian_rabi_far_from_axis():
 def test_array_rabi_matches_scalar():
     """pulse_interaction_in_borde_representation with array Rabi == scalar Rabi."""
     state = sim.make_atom_states(c0=1.0, c1=0.0)
-    omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
+    transform_detuning_hz = 0.0
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=0.0,
@@ -302,10 +303,10 @@ def test_array_rabi_matches_scalar():
 def test_gaussian_pulse_on_axis_pi():
     """do_gaussian_pulse with atom at beam centre gives full population transfer."""
     state = sim.make_atom_states(c0=1.0, c1=0.0)
-    omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
+    transform_detuning_hz = 0.0
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=0.0,
@@ -323,7 +324,7 @@ def test_gaussian_pulse_on_axis_pi():
 
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=sim.T_PI,
         z=0.0,
         vz=0.0,
@@ -337,10 +338,10 @@ def test_gaussian_pulse_at_waist():
     """do_gaussian_pulse with atom at r=w gives excitation sin^2(pi / (2e)) ~ 0.310."""
     w = 1e-3
     state = sim.make_atom_states(position_x=w, c0=1.0, c1=0.0)
-    omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
+    transform_detuning_hz = 0.0
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=0.0,
@@ -358,7 +359,7 @@ def test_gaussian_pulse_at_waist():
 
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=sim.T_PI,
         z=0.0,
         vz=0.0,
@@ -391,10 +392,10 @@ def test_ballistic_propagation_3d():
         c1=0.0,
     )
 
-    omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
+    transform_detuning_hz = 0.0
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=vz,
@@ -429,10 +430,10 @@ def test_velocity_tracking_through_pulse_and_propagation():
         c1=0.0,
     )
 
-    omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
+    transform_detuning_hz = 0.0
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=vz0,
@@ -478,10 +479,10 @@ def test_velocity_tracking_through_pulse_and_propagation():
 def test_clearout_pure_ground_always_discards():
     """c0=1, c1=0: every call returns None."""
     state = sim.make_atom_states(c0=1.0, c1=0.0)
-    omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
+    transform_detuning_hz = 0.0
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=0.0,
@@ -500,10 +501,10 @@ def test_clearout_pure_excited_never_discards():
     is a no-op because there is no ground population).
     """
     state = sim.make_atom_states(c0=0.0, c1=1.0)
-    omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
+    transform_detuning_hz = 0.0
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=0.0,
@@ -534,10 +535,10 @@ def test_clearout_renormalises_to_unit_norm():
         c1 /= norm
 
         state = sim.make_atom_states(c0=c0, c1=c1)
-        omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
+        transform_detuning_hz = 0.0
         state = sim.transform_state_vector(
             state,
-            omega_laser=omega_laser,
+            detuning_hz=transform_detuning_hz,
             t=0.0,
             z=0.0,
             vz=0.0,
@@ -571,10 +572,10 @@ def test_clearout_discard_rate_matches_initial_population():
     p_g_expected = np.abs(c0) ** 2
 
     state = sim.make_atom_states(c0=c0, c1=c1)
-    omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
+    transform_detuning_hz = 0.0
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=0.0,
@@ -597,10 +598,10 @@ def test_clearout_discard_rate_matches_initial_population():
 def test_clearout_drops_ground_rows():
     """After a pi/2 pulse, clearout removes all ground rows on survive."""
     state = sim.make_atom_states(c0=1.0, c1=0.0)
-    omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + sim.RECOIL_FREQUENCY_HZ)
+    transform_detuning_hz = sim.RECOIL_FREQUENCY_HZ
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=0.0,
@@ -635,10 +636,10 @@ def test_clearout_drops_ground_rows():
 def test_clearout_then_pulse_consistent():
     """After clearout survive, a subsequent pi pulse keeps total population 1."""
     state = sim.make_atom_states(c0=1.0, c1=0.0)
-    omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + sim.RECOIL_FREQUENCY_HZ)
+    transform_detuning_hz = sim.RECOIL_FREQUENCY_HZ
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=0.0,
@@ -707,12 +708,12 @@ def test_clearout_mc_matches_deterministic_dropground():
 
     def sequence_fn(rng):
         state = sim.make_atom_states(c0=1.0, c1=0.0)
-        omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + detuning_hz)
+        transform_detuning_hz = detuning_hz
         current_time = 0.0
 
         state = sim.transform_state_vector(
             state,
-            omega_laser=omega_laser,
+            detuning_hz=transform_detuning_hz,
             t=current_time,
             z=0.0,
             vz=0.0,
@@ -786,7 +787,7 @@ def test_clearout_mc_matches_deterministic_dropground():
         # Transform back to lab frame
         state = sim.transform_state_vector(
             state,
-            omega_laser=omega_laser,
+            detuning_hz=transform_detuning_hz,
             t=current_time,
             z=0.0,
             vz=0.0,
@@ -799,12 +800,12 @@ def test_clearout_mc_matches_deterministic_dropground():
     # "drop ground rows, do NOT renormalise"
     def deterministic_sequence():
         state = sim.make_atom_states(c0=1.0, c1=0.0)
-        omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + detuning_hz)
+        transform_detuning_hz = detuning_hz
         current_time = 0.0
 
         state = sim.transform_state_vector(
             state,
-            omega_laser=omega_laser,
+            detuning_hz=transform_detuning_hz,
             t=current_time,
             z=0.0,
             vz=0.0,
@@ -883,7 +884,7 @@ def test_clearout_mc_matches_deterministic_dropground():
         # Transform back to lab frame
         state = sim.transform_state_vector(
             state,
-            omega_laser=omega_laser,
+            detuning_hz=transform_detuning_hz,
             t=current_time,
             z=0.0,
             vz=0.0,
@@ -923,10 +924,10 @@ def test_clearout_frame_independence():
 
     # --- Bordé frame test ---
     borde_state = sim.make_atom_states(c0=c0, c1=c1)
-    omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
+    transform_detuning_hz = 0.0
     borde_state = sim.transform_state_vector(
         borde_state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=t_ref,
         z=z_ref,
         vz=vz_ref,
@@ -941,7 +942,7 @@ def test_clearout_frame_independence():
     # Transform to Bordé, then back to lab (non-trivial parameters)
     lab_state = sim.transform_state_vector(
         lab_state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=t_ref,
         z=z_ref,
         vz=vz_ref,
@@ -949,7 +950,7 @@ def test_clearout_frame_independence():
     )
     lab_state = sim.transform_state_vector(
         lab_state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=t_ref,
         z=z_ref,
         vz=vz_ref,
@@ -975,7 +976,7 @@ def test_clearout_frame_independence():
 # ---------------------------------------------------------------------------
 
 
-def _make_synthetic_borde_state(rng):
+def _make_synthetic_borde_state(rng, t_ref=0.0, f_ref=0.0):
     m_values = np.array([-1, 0, 0, 1, 2], dtype=int)
     internal_is_ground = np.array([True, True, False, False, True], dtype=bool)
     sq = rng.normal(size=5) + 1j * rng.normal(size=5)
@@ -988,129 +989,202 @@ def _make_synthetic_borde_state(rng):
         velocities=velocities,
         amplitudes=sq,
         internal_is_ground=internal_is_ground,
+        t_ref=t_ref,
+        f_ref=f_ref,
     )
 
 
 @pytest.mark.parametrize("seed", range(20))
-def test_change_laser_frequency_matches_lab_roundtrip(seed):
-    """Direct Bordé(old)→Bordé(new) equals routing through the lab frame.
+def test_change_laser_frequency_accumulates_closed_segment(seed):
+    """A frequency change closes the open segment into the integral, untouched amps.
 
-    The reference path multiplies by exp(i * omega_laser * t / 2) and its
-    conjugate-with-different-omega_laser, where omega_laser is dominated by
-    the optical transition frequency (~10^15 rad/s).  np.exp of such a large
-    argument has ~eps * |arg| precision in the resulting phase, so the
-    reference path is noisy at the eps * omega_0 * t / 2 level.  We bound
-    t to the microsecond scale to keep that noise well below the
-    detuning-induced phase we are checking.
+    ``change_laser_frequency_in_borde_representation`` must NOT modify the
+    amplitudes (the laser phase is continuous, so the instantaneous Bordé frame is
+    unchanged at the step). It only advances the carried integral
+    ``accumulated_detuning_cycles += f_ref * (time - t_ref)`` and rebases
+    ``(t_ref, f_ref)``.
     """
     rng = np.random.default_rng(seed)
-    state = _make_synthetic_borde_state(rng)
 
     old_detuning = rng.uniform(-50e3, 50e3)
     new_detuning = rng.uniform(-50e3, 50e3)
-    t_frame_change = rng.uniform(1e-7, 1e-5)
+    t_ref = rng.uniform(0.0, 1e-5)
+    phi0 = rng.uniform(-1.0, 1.0)
+    time = t_ref + rng.uniform(1e-7, 1e-5)
 
-    omega_L_old = 2 * np.pi * (sim.TRANSITION_FREQUENCY + old_detuning)
-    omega_L_new = 2 * np.pi * (sim.TRANSITION_FREQUENCY + new_detuning)
+    state = _make_synthetic_borde_state(rng, t_ref=t_ref, f_ref=old_detuning)
+    state = replace(state, accumulated_detuning_cycles=phi0)
 
-    # Reference: Bordé(old) -> lab -> Bordé(new), evaluated at the same
-    # (t, z, vz) on both legs so the m / k z / v_z t cancellations are exact.
-    state_lab = sim.transform_state_vector(
+    out = sim.change_laser_frequency_in_borde_representation(
         state,
-        omega_laser=omega_L_old,
-        t=t_frame_change,
-        z=0.0,
-        vz=0.0,
-        inverse=True,
-    )
-    state_reference = sim.transform_state_vector(
-        state_lab,
-        omega_laser=omega_L_new,
-        t=t_frame_change,
-        z=0.0,
-        vz=0.0,
-        inverse=False,
-    )
-
-    # Direct.
-    state_direct = sim.change_laser_frequency_in_borde_representation(
-        state,
-        old_detuning_hz=old_detuning,
         new_detuning_hz=new_detuning,
-        time=t_frame_change,
+        time=time,
     )
 
-    np.testing.assert_allclose(
-        state_direct.amplitudes,
-        state_reference.amplitudes,
-        rtol=1e-5,
-        atol=1e-6,
+    # Amplitudes are untouched.
+    np.testing.assert_array_equal(out.amplitudes, state.amplitudes)
+
+    # The integral advanced by the just-closed segment, and the frame is rebased.
+    assert out.accumulated_detuning_cycles == pytest.approx(
+        phi0 + old_detuning * (time - t_ref), rel=1e-12
     )
+    assert out.t_ref == time
+    assert out.f_ref == new_detuning
 
     # Pass-through invariants.
-    np.testing.assert_array_equal(state_direct.m_values, state.m_values)
-    np.testing.assert_array_equal(
-        state_direct.internal_is_ground, state.internal_is_ground
-    )
-    np.testing.assert_array_equal(state_direct.positions, state.positions)
-    np.testing.assert_array_equal(state_direct.velocities, state.velocities)
-
-    # Norm preservation (each row's phase factor is unit-modulus).
-    np.testing.assert_allclose(
-        np.abs(state_direct.amplitudes), np.abs(state.amplitudes), rtol=1e-12
-    )
+    np.testing.assert_array_equal(out.m_values, state.m_values)
+    np.testing.assert_array_equal(out.internal_is_ground, state.internal_is_ground)
+    np.testing.assert_array_equal(out.positions, state.positions)
+    np.testing.assert_array_equal(out.velocities, state.velocities)
 
 
-def test_change_laser_frequency_identity_when_time_zero():
+def test_change_laser_frequency_identity_when_time_equals_t_ref():
+    """A zero-length open segment (time == t_ref) leaves the integral unchanged."""
     rng = np.random.default_rng(0)
-    state = _make_synthetic_borde_state(rng)
+    state = _make_synthetic_borde_state(rng, t_ref=2.0e-4, f_ref=1.0e3)
+    state = replace(state, accumulated_detuning_cycles=0.5)
 
     out_state = sim.change_laser_frequency_in_borde_representation(
         state,
-        old_detuning_hz=1.0e3,
         new_detuning_hz=-7.5e3,
-        time=0.0,
+        time=2.0e-4,
     )
     np.testing.assert_array_equal(out_state.amplitudes, state.amplitudes)
+    assert out_state.accumulated_detuning_cycles == 0.5
+    # The frame is still rebased to the new detuning.
+    assert out_state.t_ref == 2.0e-4
+    assert out_state.f_ref == -7.5e3
 
 
-def test_change_laser_frequency_identity_when_old_equals_new():
+def test_change_laser_frequency_same_frequency_is_noop_on_lab_output():
+    """Rebasing to the SAME detuning has no effect on the lab-frame output.
+
+    This is the headline guarantee. Inserting an extra same-frequency rebase at an
+    interior time and then transforming back to the lab frame gives the identical
+    result as transforming straight to the lab frame -- the rebase only repartitions
+    the integral between ``accumulated_detuning_cycles`` and the open segment, and
+    never touches the amplitudes. (Exact up to the eps*omega_0*t float noise of the
+    optical-frequency phase; we bound t to the microsecond scale to keep that noise
+    below the tolerance, as in the other transform tests.)
+    """
     rng = np.random.default_rng(1)
-    state = _make_synthetic_borde_state(rng)
+    f_ref = 4.2e3
+    state = _make_synthetic_borde_state(rng, t_ref=0.0, f_ref=f_ref)
+    t_end = 8e-6
+    vz = 0.27
 
-    out_state = sim.change_laser_frequency_in_borde_representation(
+    # Straight to lab.
+    lab_direct = sim.transform_state_vector(
         state,
-        old_detuning_hz=4.2e3,
-        new_detuning_hz=4.2e3,
-        time=1.5e-4,
+        detuning_hz=state.f_ref,
+        t=t_end,
+        t_ref=state.t_ref,
+        accumulated_detuning_cycles=state.accumulated_detuning_cycles,
+        z=0.0,
+        vz=vz,
+        inverse=True,
     )
-    np.testing.assert_array_equal(out_state.amplitudes, state.amplitudes)
+    # Same-frequency rebase at an interior time, then to lab.
+    rebased = sim.change_laser_frequency_in_borde_representation(
+        state, new_detuning_hz=f_ref, time=3e-6
+    )
+    # The rebase leaves the amplitudes untouched...
+    np.testing.assert_array_equal(rebased.amplitudes, state.amplitudes)
+    # ...but does move the integral into accumulated_detuning_cycles.
+    assert rebased.accumulated_detuning_cycles != 0.0
+    lab_rebased = sim.transform_state_vector(
+        rebased,
+        detuning_hz=rebased.f_ref,
+        t=t_end,
+        t_ref=rebased.t_ref,
+        accumulated_detuning_cycles=rebased.accumulated_detuning_cycles,
+        z=0.0,
+        vz=vz,
+        inverse=True,
+    )
+    # The lab-frame output is unchanged.
+    np.testing.assert_allclose(
+        lab_rebased.amplitudes, lab_direct.amplitudes, rtol=1e-5, atol=1e-6
+    )
 
 
 def test_change_laser_frequency_independent_of_position_and_velocity():
-    """Guard: the transform must not develop any k*z or v_z dependence."""
+    """Guard: the rebase must not develop any k*z or v_z dependence."""
     rng = np.random.default_rng(2)
-    state = _make_synthetic_borde_state(rng)
+    state = _make_synthetic_borde_state(rng, t_ref=0.0, f_ref=1.0e3)
     zero_state = sim.AtomState(
         m_values=state.m_values,
         positions=np.zeros_like(state.positions),
         velocities=np.zeros_like(state.velocities),
         amplitudes=state.amplitudes,
         internal_is_ground=state.internal_is_ground,
+        t_ref=state.t_ref,
+        f_ref=state.f_ref,
+        accumulated_detuning_cycles=state.accumulated_detuning_cycles,
     )
 
     state_with_pos = sim.change_laser_frequency_in_borde_representation(
         state,
-        old_detuning_hz=1.0e3,
         new_detuning_hz=-3.0e3,
         time=2e-4,
     )
     state_without_pos = sim.change_laser_frequency_in_borde_representation(
         zero_state,
-        old_detuning_hz=1.0e3,
         new_detuning_hz=-3.0e3,
         time=2e-4,
     )
     np.testing.assert_array_equal(
         state_with_pos.amplitudes, state_without_pos.amplitudes
     )
+
+
+def test_frequency_change_sequence_matches_no_frame_change_reference(seed=0):
+    """A real frequency-change sequence matches the description-A composition.
+
+    For a single co-propagating arm {|g,0>, |e,1>}, the physically correct
+    propagator for ``pulse(d1) - freefall(tau) - pulse(d2)`` is the plain product
+    of the per-block propagators with NO inter-block frame change (the chirp's
+    detuning already lives in each block's Omega_3; see
+    docs/arp_frame_change_finding.md). We build that reference directly from the
+    single-source primitives and check the full row/Bordé sequence reproduces it.
+
+    This is the test the OLD ``exp(+/-i pi Df t)`` frame change fails: it inserts a
+    diagonal phase before pulse 2, which a non-diagonal pulse turns into a
+    population error.
+    """
+    import lmt_sim.lmt_sequence as seq
+
+    rabi = sim.RABI_FREQ
+    d1 = sim.RECOIL_FREQUENCY_HZ + 3.0e3
+    d2 = sim.RECOIL_FREQUENCY_HZ - 5.0e3
+    tp1 = 0.3 / (2 * rabi)
+    tau = 200e-6
+    tp2 = 0.7 / (2 * rabi)
+
+    # Reference: P2 @ F(d1) @ P1 in basis [excited(m=1), ground(m=0)], no frame change.
+    p1 = sim._single_pulse_propagator_2x2(d1, tp1, rabi, k_sign=+1, m_ground=0)
+    p2 = sim._single_pulse_propagator_2x2(d2, tp2, rabi, k_sign=+1, m_ground=0)
+    _, _, _, omega_3 = sim._borde_frame_constants(d1, k_sign=+1, vz=0.0, m_ground=0)
+    free = np.diag([np.exp(-1j * omega_3 * tau / 2), np.exp(+1j * omega_3 * tau / 2)])
+    c_e_ref, c_g_ref = p2 @ free @ p1 @ np.array([0.0, 1.0], dtype=complex)
+
+    # Row/Bordé path through the real sequence machinery.
+    state = sim.AtomState(
+        m_values=np.array([0], dtype=int),
+        positions=np.zeros((1, 3)),
+        velocities=np.zeros((1, 3)),
+        amplitudes=np.array([1.0 + 0.0j]),
+        internal_is_ground=np.array([True]),
+    )
+    sequence = [
+        seq.Pulse(k=+1, detuning_hz=d1, phi=0.0, label="p1", rabi_frequency=rabi, duration=tp1),
+        seq.Freefall(duration=tau),
+        seq.Pulse(k=+1, detuning_hz=d2, phi=0.0, label="p2", rabi_frequency=rabi, duration=tp2),
+    ]
+    final, _, _ = seq.run_pulse_sequence_in_borde_representation(
+        state, sequence, initial_velocity_z=0.0, discard_threshold=0.0
+    )
+    p_g, p_e = sim.calculate_ground_and_excited_probabilities(final)
+
+    assert p_e == pytest.approx(abs(c_e_ref) ** 2, abs=1e-12)
+    assert p_g == pytest.approx(abs(c_g_ref) ** 2, abs=1e-12)

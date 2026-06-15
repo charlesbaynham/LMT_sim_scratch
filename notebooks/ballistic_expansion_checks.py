@@ -85,7 +85,7 @@ def collect_snapshots(atoms, sequence, desc="Atoms"):
         ):
             lab_state = sim.transform_state_vector(
                 state,
-                omega_laser=2 * np.pi * (sim.TRANSITION_FREQUENCY + detuning_hz),
+                detuning_hz=detuning_hz,
                 t=t, z=0.0, vz=vz, inverse=True,
             )
             g, e = collect_branches(lab_state)

@@ -92,10 +92,10 @@ for r, color in zip(radii, colors):
     excitations = []
     for t_pulse in t_vals:
         state = sim.make_atom_states(position_x=r, c0=1.0, c1=0.0)
-        omega_laser = 2 * np.pi * sim.TRANSITION_FREQUENCY
+        transform_detuning_hz = 0.0
         state = sim.transform_state_vector(
             state,
-            omega_laser=omega_laser,
+            detuning_hz=transform_detuning_hz,
             t=0.0,
             z=0.0,
             vz=0.0,
@@ -111,7 +111,7 @@ for r, color in zip(radii, colors):
         )
         state = sim.transform_state_vector(
             state,
-            omega_laser=omega_laser,
+            detuning_hz=transform_detuning_hz,
             t=t_pulse,
             z=0.0,
             vz=0.0,
@@ -158,13 +158,13 @@ def mz_excitation_single_atom(phi, x, y, beam_waist,
     if detuning_hz is None:
         detuning_hz = sim.RECOIL_FREQUENCY_HZ
 
-    omega_laser = 2 * np.pi * (sim.TRANSITION_FREQUENCY + detuning_hz)
+    transform_detuning_hz = detuning_hz
     state = sim.make_atom_states(position_x=x, position_y=y, c0=1.0, c1=0.0)
     current_time = 0.0
 
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=0.0,
@@ -221,7 +221,7 @@ def mz_excitation_single_atom(phi, x, y, beam_waist,
 
     state = sim.transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=current_time,
         z=0.0,
         vz=0.0,
@@ -397,7 +397,7 @@ fig.tight_layout()
 # %%
 N_ATOMS_PI = 100
 w_pi = 5e-3          # beam waist (m)
-omega_laser_pi = 2 * np.pi * sim.TRANSITION_FREQUENCY
+transform_detuning_hz_pi = 0.0
 
 rng_pi = np.random.default_rng(0)
 
@@ -414,7 +414,7 @@ for sw in sigma_over_w_pi:
         state = sim.make_atom_states(position_x=x, position_y=y, c0=1.0, c1=0.0)
         state = sim.transform_state_vector(
             state,
-            omega_laser=omega_laser_pi,
+            detuning_hz=transform_detuning_hz_pi,
             t=0.0,
             z=0.0,
             vz=0.0,
@@ -430,7 +430,7 @@ for sw in sigma_over_w_pi:
         )
         state = sim.transform_state_vector(
             state,
-            omega_laser=omega_laser_pi,
+            detuning_hz=transform_detuning_hz_pi,
             t=sim.T_PI,
             z=0.0,
             vz=0.0,

@@ -25,7 +25,6 @@ from lmt_sim.lmt_simulation import (
     RABI_FREQ,
     RECOIL_FREQUENCY_HZ,
     T_PI,
-    TRANSITION_FREQUENCY,
     calculate_ground_and_excited_probabilities,
     discard_and_renormalise_state_vector,
     do_clearout,
@@ -110,9 +109,8 @@ def calc_mz_excitation(
 
 
 def _legacy_to_borde(state, detuning_hz, vz, t=0.0, inverse=False):
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
     return transform_state_vector(
-        state, omega_laser=omega_laser, t=t, z=0.0, vz=vz, inverse=inverse
+        state, detuning_hz=detuning_hz, t=t, z=0.0, vz=vz, inverse=inverse
     )
 
 
@@ -771,10 +769,9 @@ def test_run_pulse_sequence_in_borde_representation_preserves_representation(
         time_between_pulses=time_between_pulses,
     )
     state = make_atom_states(initial_velocity_z=initial_velocity_z)
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=detuning_hz,
         t=0.0,
         z=0.0,
         vz=initial_velocity_z,
@@ -846,10 +843,9 @@ def test_run_pulse_sequence_in_borde_representation_handles_clearout(seed):
         ),
     ]
     state = make_atom_states(initial_velocity_z=initial_velocity_z)
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=detuning_hz,
         t=0.0,
         z=0.0,
         vz=initial_velocity_z,
@@ -947,10 +943,9 @@ def test_clearout_duration_affects_timeline_in_pulse_sequence_runner():
         ],
     ]
     state = make_atom_states()
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=detuning_hz,
         t=0.0,
         z=0.0,
         vz=0.0,

@@ -209,17 +209,24 @@ def collect_filmstrip(pulse_sequence, velocities, *,
     iterator = tqdm(velocities, desc=desc) if progress else velocities
     for v in iterator:
         initial = make_atom_states(initial_velocity_z=v, c0=c0, c1=c1)
-        for i, (state, detuning_hz, t) in enumerate(
+        for i, (state, _detuning_hz, t) in enumerate(
             iter_pulse_sequence_in_borde_representation(
                 initial, pulse_sequence,
                 initial_velocity_z=v,
                 discard_threshold=discard_threshold,
             )
         ):
+            # Use the state's own frame reference (t_ref, f_ref, accumulated
+            # integral) so the lab transform is correct even when the laser
+            # frequency stepped earlier in the sequence. detuning_hz == state.f_ref
+            # and t == the global time here.
             lab_state = sim.transform_state_vector(
                 state,
-                omega_laser=2 * np.pi * (sim.TRANSITION_FREQUENCY + detuning_hz),
-                t=t, z=0.0, vz=v, inverse=True,
+                detuning_hz=state.f_ref,
+                t=t,
+                t_ref=state.t_ref,
+                accumulated_detuning_cycles=state.accumulated_detuning_cycles,
+                z=0.0, vz=v, inverse=True,
             )
             g, e = collect_branches(lab_state)
             if len(g):

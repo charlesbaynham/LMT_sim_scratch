@@ -45,8 +45,7 @@ for i, ef in enumerate(excited_fractions):
     for trial in range(n_trials):
         rng = np.random.default_rng(i * n_trials + trial)
         state = sim.make_atom_states(c0=c0, c1=c1)
-        omega = 2 * np.pi * sim.TRANSITION_FREQUENCY
-        state = sim.transform_state_vector(state, omega_laser=omega, t=0, z=0, vz=0, inverse=False)
+        state = sim.transform_state_vector(state, detuning_hz=0.0, t=0, z=0, vz=0, inverse=False)
         result = sim.do_clearout(state, rng=rng)
         if result is None:
             n_discards += 1
@@ -77,7 +76,6 @@ plt.show()
 # %%
 T_FREE = 200e-6
 DETUNING_HZ = sim.RECOIL_FREQUENCY_HZ
-OMEGA_LASER = 2 * np.pi * (sim.TRANSITION_FREQUENCY + DETUNING_HZ)
 CLEAROUT_DURATION = 0.0
 
 
@@ -117,7 +115,7 @@ def mz_sequence_with_clearout(phi, rng):
     state = sim.make_atom_states(c0=1, c1=0)
     state = sim.transform_state_vector(
         state,
-        omega_laser=OMEGA_LASER,
+        detuning_hz=DETUNING_HZ,
         t=0.0,
         z=0.0,
         vz=0.0,
@@ -136,7 +134,7 @@ def mz_sequence_with_clearout(phi, rng):
     state, _detuning_hz, current_time = result
     state = sim.transform_state_vector(
         state,
-        omega_laser=OMEGA_LASER,
+        detuning_hz=DETUNING_HZ,
         t=current_time,
         z=0.0,
         vz=0.0,
@@ -198,7 +196,6 @@ RABI_FREQ_SEL = 1.0 / (2 * T_PI_SEL)              # Rabi freq for selection puls
 
 T_FREE_VS = 200e-6                                 # MZ free-evolution interval
 MZ_DETUNING_VS = sim.RECOIL_FREQUENCY_HZ
-OMEGA_LASER_VS = 2 * np.pi * (sim.TRANSITION_FREQUENCY + MZ_DETUNING_VS)
 CLEAROUT_DURATION_VS = 0.0
 
 N_ATOMS_NORMAL = 500                               # ensemble size for normal MZ
@@ -217,7 +214,7 @@ def _mz_single(phi, vz):
     state = sim.make_atom_states(c0=1, c1=0, initial_velocity_z=vz)
     t = 0.0
     state = sim.transform_state_vector(
-        state, omega_laser=OMEGA_LASER_VS, t=t, z=0.0, vz=vz, inverse=False
+        state, detuning_hz=MZ_DETUNING_VS, t=t, z=0.0, vz=vz, inverse=False
     )
 
     state = sim.pulse_interaction_in_borde_representation(
@@ -275,7 +272,7 @@ def _mz_single(phi, vz):
     t += sim.T_PI / 2
 
     state = sim.transform_state_vector(
-        state, omega_laser=OMEGA_LASER_VS, t=t, z=0.0, vz=vz, inverse=True
+        state, detuning_hz=MZ_DETUNING_VS, t=t, z=0.0, vz=vz, inverse=True
     )
 
     _, p_e = sim.calculate_ground_and_excited_probabilities(state)
@@ -327,7 +324,7 @@ def _vs_mz_trial(phi, rng):
 
     state = sim.make_atom_states(c0=1, c1=0, initial_velocity_z=vz)
     state = sim.transform_state_vector(
-        state, omega_laser=OMEGA_LASER_VS, t=0.0, z=0.0, vz=vz, inverse=False
+        state, detuning_hz=MZ_DETUNING_VS, t=0.0, z=0.0, vz=vz, inverse=False
     )
 
     result = seq.run_pulse_sequence_in_borde_representation(
@@ -341,7 +338,7 @@ def _vs_mz_trial(phi, rng):
 
     state, _detuning_hz, t = result
     state = sim.transform_state_vector(
-        state, omega_laser=OMEGA_LASER_VS, t=t, z=0.0, vz=vz, inverse=True
+        state, detuning_hz=MZ_DETUNING_VS, t=t, z=0.0, vz=vz, inverse=True
     )
     return state
 

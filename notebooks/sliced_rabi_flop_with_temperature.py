@@ -96,11 +96,11 @@ def calc_sliced_pulse_excitation_borde(
         c1=0,
     )
 
-    omega_laser = 2.0 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
+    transform_detuning_hz = detuning_hz
 
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=initial_velocity_z,
@@ -122,7 +122,7 @@ def calc_sliced_pulse_excitation_borde(
     # Clear out the ground state
     state_slice_lab = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=slice_pulse_duration,
         z=0.0,
         vz=initial_velocity_z,
@@ -150,7 +150,7 @@ def calc_sliced_pulse_excitation_borde(
 
     state_final_lab = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=slice_pulse_duration + spectroscopy_pulse_duration,
         z=0.0,
         vz=initial_velocity_z,
