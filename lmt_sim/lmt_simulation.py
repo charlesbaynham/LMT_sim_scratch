@@ -218,6 +218,42 @@ def _calculate_interaction_constants(
     return A, B, C, D
 
 
+def _single_pulse_propagator_2x2(
+    detuning_hz,
+    t_pulse,
+    rabi_freq_hz,
+    pulse_phase=0.0,
+    k_sign=+1,
+    k=K_WAVEVECTOR,
+    vz=0.0,
+    m_ground=0,
+):
+    r"""Single-branch 2x2 Bordé pulse propagator, state order ``[excited, ground]``.
+
+    This is the single source of truth for the per-pulse propagator matrix
+    ``[[A, B e^{-i\phi}], [C e^{+i\phi}, D]]``. It is shared by
+    ``pulse_interaction_in_borde_representation`` (which applies it per row) and
+    the staircase ARP composer in :mod:`lmt_sim.arp`, so the two never encode
+    different pulse physics.
+
+    ``rabi_freq_hz`` is the dynamics Rabi frequency in Hz; the Bordé angular
+    value is ``omega_ab = pi * rabi_freq_hz`` (the pi-not-2pi convention).
+    """
+    omega_ab = np.pi * rabi_freq_hz
+    A, B, C, D = _calculate_interaction_constants(
+        detuning_hz,
+        t_pulse,
+        omega_ab,
+        k=k,
+        vz=vz,
+        k_sign=k_sign,
+        m_ground=m_ground,
+    )
+    return np.array(
+        [[A, B * np.exp(-1j * pulse_phase)], [C * np.exp(1j * pulse_phase), D]]
+    )
+
+
 def propagate_states_in_borde_representation(
     state: AtomState,
     time_of_propegation: float,
@@ -408,24 +444,19 @@ def pulse_interaction_in_borde_representation(
             m_excited = state.m_values[idx]
             amplitude_vector_in = np.array([state.amplitudes[idx], 0], dtype=complex)
 
-        # Borde uses omega_ab = pi * RABI_FREQ, angular frequencies in rad/s
-        omega_ab = np.pi * rabi_arr[idx]
         effective_detuning_hz = _effective_detuning_hz(
             pulse_detuning, probe_shift_coefficient, stark_rabi_arr[idx]
         )
 
-        A, B, C, D = _calculate_interaction_constants(
+        prop_matrix = _single_pulse_propagator_2x2(
             effective_detuning_hz,
             t_pulse,
-            omega_ab,
+            rabi_arr[idx],
+            pulse_phase=pulse_phase,
+            k_sign=k_sign,
             k=k_wavevector,
             vz=vz,
-            k_sign=k_sign,
             m_ground=m_ground,
-        )
-
-        prop_matrix = np.array(
-            [[A, B * np.exp(-1j * pulse_phase)], [C * np.exp(1j * pulse_phase), D]]
         )
 
         amplitude_vector_out = prop_matrix @ amplitude_vector_in
@@ -488,6 +519,26 @@ def pulse_interaction_in_borde_representation(
     )
 
 
+def _frame_change_phases(old_detuning_hz, new_detuning_hz, time):
+    r"""Per-state Bordé frame-change phases for a laser-frequency change.
+
+    Returns ``(phase_excited, phase_ground)``: the factors to multiply the
+    excited- and ground-state amplitudes by when re-expressing them from the
+    ``old`` to the ``new`` laser-frequency frame at **global** ``time``. Excited
+    gains ``exp(+i pi Df t)`` and ground ``exp(-i pi Df t)`` with
+    ``Df = new - old`` (Hz).
+
+    Single source of truth shared by
+    ``change_laser_frequency_in_borde_representation`` (row representation) and
+    the ARP composer in :mod:`lmt_sim.arp`, so the inter-block frame phase is
+    defined in exactly one place.
+    """
+    delta_f = new_detuning_hz - old_detuning_hz
+    phase_exc = np.exp(+1j * np.pi * delta_f * time)
+    phase_gnd = np.exp(-1j * np.pi * delta_f * time)
+    return phase_exc, phase_gnd
+
+
 def change_laser_frequency_in_borde_representation(
     state: AtomState,
     old_detuning_hz: float,
@@ -516,9 +567,7 @@ def change_laser_frequency_in_borde_representation(
     AtomState
         Atom state expressed in the new Bordé frame.
     """
-    delta_f = new_detuning_hz - old_detuning_hz
-    phase_gnd = np.exp(-1j * np.pi * delta_f * time)
-    phase_exc = np.exp(+1j * np.pi * delta_f * time)
+    phase_exc, phase_gnd = _frame_change_phases(old_detuning_hz, new_detuning_hz, time)
     phase = np.where(state.internal_is_ground, phase_gnd, phase_exc)
     return replace(state, amplitudes=state.amplitudes * phase)
 
