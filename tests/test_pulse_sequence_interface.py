@@ -448,6 +448,116 @@ def test_compute_spacetime_trajectory_plot_places_pulse_step_at_midpoint(monkeyp
     assert np.allclose(addressed_y_ranges, [(-0.05, 1.1)])
 
 
+class _CapturingAxis:
+    """Minimal matplotlib-axis stand-in that records plotted segments."""
+
+    def __init__(self):
+        self.plot_calls = []
+
+    def plot(self, x, y, *args, **kwargs):
+        self.plot_calls.append((np.asarray(x), np.asarray(y)))
+        return []
+
+    def broken_barh(self, *args, **kwargs):
+        return []
+
+    def axvline(self, *args, **kwargs):
+        pass
+
+    def axhline(self, *args, **kwargs):
+        pass
+
+    def axvspan(self, *args, **kwargs):
+        pass
+
+    def set_ylabel(self, *args, **kwargs):
+        pass
+
+    def set_xlabel(self, *args, **kwargs):
+        pass
+
+    def set_title(self, *args, **kwargs):
+        pass
+
+    def legend(self, *args, **kwargs):
+        pass
+
+    def grid(self, *args, **kwargs):
+        pass
+
+
+def _capture_spacetime_axes(monkeypatch, sequence, *, include_gravity):
+    ax_z = _CapturingAxis()
+    ax_m = _CapturingAxis()
+    monkeypatch.setattr(
+        "matplotlib.pyplot.subplots",
+        lambda *a, **k: (object(), (ax_z, ax_m)),
+    )
+    compute_spacetime_trajectory(
+        sequence, plot=True, include_gravity=include_gravity
+    )
+    return ax_z, ax_m
+
+
+def test_compute_spacetime_trajectory_include_gravity_leaves_data_unchanged():
+    # The trajectory is always solved in the freely-falling frame; the gravity
+    # flag must not touch the returned Cloud data, only the plot.
+    sequence = build_mach_zehnder_pulse_sequence(time_between_pulses=5e-3)
+    clouds_ff, ct_ff = compute_spacetime_trajectory(sequence, include_gravity=False)
+    clouds_g, ct_g = compute_spacetime_trajectory(sequence, include_gravity=True)
+
+    np.testing.assert_array_equal(ct_ff, ct_g)
+    assert len(clouds_ff) == len(clouds_g)
+    for cloud_ff, cloud_g in zip(clouds_ff, clouds_g):
+        assert cloud_ff.z == cloud_g.z
+        assert cloud_ff.m == cloud_g.m
+        assert cloud_ff.times == cloud_g.times
+
+
+def test_compute_spacetime_trajectory_include_gravity_shifts_plot_to_lab_frame(
+    monkeypatch,
+):
+    from lmt_sim.lmt_simulation import GRAVITY_G, RECOIL_VELOCITY
+
+    sequence = build_mach_zehnder_pulse_sequence(time_between_pulses=5e-3)
+
+    ax_z_ff, ax_m_ff = _capture_spacetime_axes(
+        monkeypatch, sequence, include_gravity=False
+    )
+    ax_z_g, ax_m_g = _capture_spacetime_axes(
+        monkeypatch, sequence, include_gravity=True
+    )
+
+    def segments_by_x(axis):
+        # Key each 2-point segment by its (start, end) time in us so the
+        # gravity / no-gravity runs can be compared segment-for-segment.
+        out = {}
+        for xs, ys in axis.plot_calls:
+            if len(xs) == 2:
+                out[(round(float(xs[0]), 6), round(float(xs[1]), 6))] = ys
+        return out
+
+    # z axis: lab frame subtracts 1/2 g t^2 (metres -> mm in the plot).
+    z_ff = segments_by_x(ax_z_ff)
+    z_g = segments_by_x(ax_z_g)
+    shared_z = set(z_ff) & set(z_g)
+    assert shared_z
+    for key in shared_z:
+        t_s = np.asarray(key) * 1e-6
+        expected = z_ff[key] - 0.5 * GRAVITY_G * t_s**2 * 1e3
+        np.testing.assert_allclose(z_g[key], expected, rtol=0, atol=1e-9)
+
+    # velocity axis: lab frame subtracts g t, expressed in recoil units.
+    v_ff = segments_by_x(ax_m_ff)
+    v_g = segments_by_x(ax_m_g)
+    shared_v = set(v_ff) & set(v_g)
+    assert shared_v
+    for key in shared_v:
+        t_s = np.asarray(key) * 1e-6
+        expected = v_ff[key] - GRAVITY_G * t_s / RECOIL_VELOCITY
+        np.testing.assert_allclose(v_g[key], expected, rtol=0, atol=1e-9)
+
+
 def test_addressed_momentum_classes_follow_beam_sign():
     pulse = Pulse(
         k=-1,
@@ -489,7 +599,9 @@ def test_compute_spacetime_trajectory_max_branches_plots_before_raising(monkeypa
     ]
     plot_calls = []
 
-    def record_plot(sequence_arg, clouds_arg, clearout_times_arg):
+    def record_plot(
+        sequence_arg, clouds_arg, clearout_times_arg, *, include_gravity=False
+    ):
         plot_calls.append((sequence_arg, clouds_arg, clearout_times_arg))
 
     monkeypatch.setattr("lmt_sim.lmt_sequence._plot_spacetime", record_plot)
