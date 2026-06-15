@@ -992,12 +992,13 @@ def compute_spacetime_trajectory(
     plot : bool
         If True, produce a spacetime/momentum figure.
     include_gravity : bool
-        Only affects the plot. The trajectory itself is always computed in the
-        freely-falling frame (gravity removed). When True, the plotted z
-        positions and velocities are transformed back into the lab frame at the
-        last minute by subtracting the free-fall of gravity:
-        ``z_lab = z_ff - 1/2 g t^2`` and ``v_lab = v_ff - g t`` (positive z is
-        up, so gravity accelerates in -z). The returned Cloud data is unchanged.
+        Only affects the plot. The trajectory itself is always computed in
+        the freely-falling frame (gravity removed). When True, the plotted z
+        positions and velocities are transformed back into the lab frame at
+        the last minute by subtracting the free-fall of gravity:
+        ``z_lab = z_ff - 1/2 g t**2`` and ``v_lab = v_ff - g t`` (positive z
+        is up, so gravity accelerates in -z). The returned Cloud data, which
+        stays in the freely-falling frame, is unchanged.
 
     Returns
     -------
@@ -1144,13 +1145,26 @@ def compute_spacetime_trajectory(
             enforce_max_branches()
 
     if plot:
-        _plot_spacetime(sequence, clouds, clearout_times)
+        _plot_spacetime(
+            sequence, clouds, clearout_times, include_gravity=include_gravity
+        )
 
     return clouds, np.asarray(clearout_times)
 
 
-def _plot_spacetime(sequence, clouds, clearout_times):
+def _plot_spacetime(sequence, clouds, clearout_times, *, include_gravity=False):
     import matplotlib.pyplot as plt
+
+    # Everything above was computed in the freely-falling frame. If gravity is
+    # requested we transform z and v into the lab frame here, at the last
+    # minute, purely for display: z_lab = z_ff - 1/2 g t**2 and
+    # v_lab = v_ff - g t (positive z up, so gravity accelerates in -z). Times
+    # in the traces are in seconds.
+    def grav_z_offset_m(t_seconds):
+        return -0.5 * sim.GRAVITY_G * t_seconds**2
+
+    def grav_v_offset_recoil(t_seconds):
+        return -sim.GRAVITY_G * t_seconds / sim.RECOIL_VELOCITY
 
     colors = plt.cm.tab10.colors
     addressed_bar_padding = 0.05
@@ -1239,6 +1253,9 @@ def _plot_spacetime(sequence, clouds, clearout_times):
         times_us, z_mm, m_times_us, m_arr, is_ground, m_is_ground = build_plot_trace(
             cloud
         )
+        if include_gravity:
+            z_mm = z_mm + grav_z_offset_m(times_us)
+            m_arr = m_arr + grav_v_offset_recoil(m_times_us)
         label_added = False
         for j in range(len(times_us) - 1):
             ls = "-" if is_ground[j + 1] else ":"
@@ -1313,6 +1330,10 @@ def _plot_spacetime(sequence, clouds, clearout_times):
             m_ground, m_excited = _addressed_momentum_classes(event)
             m_low = min(m_ground, m_excited)
             m_high = max(m_ground, m_excited)
+            if include_gravity:
+                bar_offset = grav_v_offset_recoil(t_start + event.duration / 2)
+                m_low += bar_offset
+                m_high += bar_offset
             lbl = pulse_labels[event.k] if not pulse_fill_added[event.k] else None
             for ax in (ax_z, ax_m):
                 ax.axvspan(
@@ -1359,15 +1380,22 @@ def _plot_spacetime(sequence, clouds, clearout_times):
     ax_z.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")
     ax_m.plot([], [], "-", color="gray", lw=1.5, label="|g> (solid)")
     ax_m.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")
-    ax_z.set_ylabel("z position (mm)")
-    ax_z.set_title("LMT spacetime diagram")
+    ax_z.set_ylabel(
+        "z position (mm)" + (" — lab frame" if include_gravity else "")
+    )
+    ax_z.set_title(
+        "LMT spacetime diagram"
+        + (" (lab frame, gravity included)" if include_gravity else "")
+    )
     ax_z.legend(loc="upper left")
     ax_z.grid(True, alpha=0.3)
 
     all_m = [m for cloud in clouds for m in cloud.m]
     ax_m.axhline(0, color="k", lw=0.3, alpha=0.3)
     ax_m.set_xlabel("time (us)")
-    ax_m.set_ylabel(r"$v_z$ ($v_\mathrm{recoil}$)")
+    ax_m.set_ylabel(
+        r"$v_z$ ($v_\mathrm{recoil}$)" + (" — lab frame" if include_gravity else "")
+    )
     ax_m.set_title(
         f"v_recoil = {sim.RECOIL_VELOCITY * 1e3:.2f} mm/s; "
         + f"|m|_max = {int(np.abs(all_m).max()) if all_m else 0}"

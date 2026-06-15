@@ -470,7 +470,13 @@ ax.legend(
 
 # %%
 clouds, clearout_times = seq.compute_spacetime_trajectory(
-    sequence, plot=True, max_branches=16
+    sequence, plot=True, max_branches=16, include_gravity=False
+)
+
+
+# %%
+clouds, clearout_times = seq.compute_spacetime_trajectory(
+    sequence, plot=True, max_branches=16, include_gravity=True
 )
 assert len(clearout_times) == len(CLEAROUT_AFTER)
 
