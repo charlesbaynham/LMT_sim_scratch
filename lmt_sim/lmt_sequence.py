@@ -969,7 +969,12 @@ def calibrate_probe_shift_and_velocity_from_dump(
 
 
 def compute_spacetime_trajectory(
-    sequence, *, flip_threshold=0.75, max_branches=None, plot=False
+    sequence,
+    *,
+    flip_threshold=0.75,
+    max_branches=None,
+    plot=False,
+    include_gravity=False,
 ):
     """Infer intended spacetime trajectory by simulating an ideal atom.
 
@@ -986,6 +991,13 @@ def compute_spacetime_trajectory(
         Maximum allowed number of live branches. ``None`` disables the limit.
     plot : bool
         If True, produce a spacetime/momentum figure.
+    include_gravity : bool
+        Only affects the plot. The trajectory itself is always computed in the
+        freely-falling frame (gravity removed). When True, the plotted z
+        positions and velocities are transformed back into the lab frame at the
+        last minute by subtracting the free-fall of gravity:
+        ``z_lab = z_ff - 1/2 g t^2`` and ``v_lab = v_ff - g t`` (positive z is
+        up, so gravity accelerates in -z). The returned Cloud data is unchanged.
 
     Returns
     -------
@@ -1042,7 +1054,12 @@ def compute_spacetime_trajectory(
         live_branch_count = sum(cloud.alive for cloud in clouds)
         if live_branch_count > max_branches:
             if plot:
-                _plot_spacetime(sequence, clouds, clearout_times)
+                _plot_spacetime(
+                    sequence,
+                    clouds,
+                    clearout_times,
+                    include_gravity=include_gravity,
+                )
             raise RuntimeError(
                 "compute_spacetime_trajectory exceeded max_branches: "
                 f"{live_branch_count} live branches > {max_branches}"

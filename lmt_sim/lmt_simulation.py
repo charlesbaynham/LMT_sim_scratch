@@ -34,8 +34,6 @@ RECOIL_FREQUENCY_HZ = constants.hbar * K_WAVEVECTOR**2 / (2 * MASS_ATOM) / (2 * 
 GRAVITY_G = constants.g
 GRAVITY_DOPPLER_PER_SEC_HZ = TRANSITION_FREQUENCY * constants.g / constants.c
 
-# GRAVITY_G = 0 # FIXME
-# GRAVITY_DOPPLER_PER_SEC_HZ = 0  # FIXME
 
 
 @dataclass(frozen=True)
