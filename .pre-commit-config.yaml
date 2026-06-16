@@ -19,6 +19,6 @@ repos:
     rev: v0.15.8
     hooks:
       # Lint (with autofix), then format. Ruff config lives in pyproject.toml.
-      - id: ruff
+      - id: ruff-check
         args: [--fix]
       - id: ruff-format

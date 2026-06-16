@@ -31,6 +31,12 @@ dev = [
 include = ["lmt_sim*"]
 exclude = ["notebooks*"]
 
+[tool.pytest.ini_options]
+# Only collect this repo's tests. Without this, a bare ``pytest`` also tries to
+# collect the vendored repos under vendor/ (e.g. icl_experiments), whose tests
+# import artiq and other deps we don't install, breaking collection.
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py310"
