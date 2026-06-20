@@ -30,3 +30,28 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["lmt_sim*"]
 exclude = ["notebooks*"]
+
+[tool.pytest.ini_options]
+# Only collect this repo's tests. Without this, a bare ``pytest`` also tries to
+# collect the vendored repos under vendor/ (e.g. icl_experiments), whose tests
+# import artiq and other deps we don't install, breaking collection.
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+# Ruff's default rule set: pycodestyle errors (E4/E7/E9) and pyflakes (F).
+# Line length (E501) is intentionally not enforced -- several physics docstrings
+# and comments run long and wrapping them hurts readability.
+
+[tool.ruff.lint.per-file-ignores]
+# notebooks/ are jupytext exploration scripts (see CLAUDE.md): they
+# legitimately import after a sys.path.insert (E402), use cell-style trailing
+# semicolons (E701/E702/E703) and lambdas (E731), and keep imports/redefinitions
+# around for interactive use (F401/F811). Format them, but don't fight the style.
+"notebooks/**" = ["E402", "E701", "E702", "E703", "E731", "F401", "F811"]
+# Module-level pytest.skip(..., allow_module_level=True) must run before the
+# imports it guards, which trips E402.
+"tests/test_arp.py" = ["E402"]

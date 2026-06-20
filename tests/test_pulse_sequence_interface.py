@@ -25,7 +25,6 @@ from lmt_sim.lmt_simulation import (
     RABI_FREQ,
     RECOIL_FREQUENCY_HZ,
     T_PI,
-    TRANSITION_FREQUENCY,
     calculate_ground_and_excited_probabilities,
     discard_and_renormalise_state_vector,
     do_clearout,
@@ -110,9 +109,8 @@ def calc_mz_excitation(
 
 
 def _legacy_to_borde(state, detuning_hz, vz, t=0.0, inverse=False):
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
     return transform_state_vector(
-        state, omega_laser=omega_laser, t=t, z=0.0, vz=vz, inverse=inverse
+        state, detuning_hz=detuning_hz, t=t, z=0.0, vz=vz, inverse=inverse
     )
 
 
@@ -493,9 +491,7 @@ def _capture_spacetime_axes(monkeypatch, sequence, *, include_gravity):
         "matplotlib.pyplot.subplots",
         lambda *a, **k: (object(), (ax_z, ax_m)),
     )
-    compute_spacetime_trajectory(
-        sequence, plot=True, include_gravity=include_gravity
-    )
+    compute_spacetime_trajectory(sequence, plot=True, include_gravity=include_gravity)
     return ax_z, ax_m
 
 
@@ -771,10 +767,9 @@ def test_run_pulse_sequence_in_borde_representation_preserves_representation(
         time_between_pulses=time_between_pulses,
     )
     state = make_atom_states(initial_velocity_z=initial_velocity_z)
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=detuning_hz,
         t=0.0,
         z=0.0,
         vz=initial_velocity_z,
@@ -846,10 +841,9 @@ def test_run_pulse_sequence_in_borde_representation_handles_clearout(seed):
         ),
     ]
     state = make_atom_states(initial_velocity_z=initial_velocity_z)
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=detuning_hz,
         t=0.0,
         z=0.0,
         vz=initial_velocity_z,
@@ -947,10 +941,9 @@ def test_clearout_duration_affects_timeline_in_pulse_sequence_runner():
         ],
     ]
     state = make_atom_states()
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=detuning_hz,
         t=0.0,
         z=0.0,
         vz=0.0,
@@ -1163,9 +1156,7 @@ def test_calibrate_probe_shift_and_velocity_warns_and_lands_on_ladder(
     pulses = [event for event in sequence if isinstance(event, Pulse)]
     for pulse, intended_rung in zip(pulses, intended_rungs):
         effective = pulse.detuning_hz - alpha * pulse.rabi_frequency**2
-        assert effective / RECOIL_FREQUENCY_HZ == pytest.approx(
-            intended_rung, abs=1e-6
-        )
+        assert effective / RECOIL_FREQUENCY_HZ == pytest.approx(intended_rung, abs=1e-6)
 
 
 # --- pulse_record_flat decoding ---------------------------------------------
@@ -1248,9 +1239,7 @@ def test_decode_pulse_record_flat_feeds_build_sequence():
         delivery_setpoint=[1.5, 2.5],
     )
     decoded = decode_pulse_record_flat(record, [0])
-    _, sequence = build_sequence_from_lab_pulse_dump(
-        **dataclasses.asdict(decoded[0])
-    )
+    _, sequence = build_sequence_from_lab_pulse_dump(**dataclasses.asdict(decoded[0]))
     pulse_ks = [event.k for event in sequence if isinstance(event, Pulse)]
     assert pulse_ks == [1, -1]
 
@@ -1400,8 +1389,9 @@ def test_restricted_pulse_only_addresses_its_momentum_class():
 def test_addressed_momentum_classes_follow_the_restriction():
     """For a restricted stand-in the restriction IS the addressing, whatever
     the detuning says."""
-    pulse = _stand_in_pulse(detuning_hz=2.37 * RECOIL_FREQUENCY_HZ,
-                            restrict_to_m_ground=2)
+    pulse = _stand_in_pulse(
+        detuning_hz=2.37 * RECOIL_FREQUENCY_HZ, restrict_to_m_ground=2
+    )
     assert _addressed_momentum_classes(pulse) == (2.0, 3.0)
 
 
@@ -1442,21 +1432,46 @@ def test_double_launch_stand_in_kicks_both_arms_simultaneously():
     t_pi = 1 / (2 * rabi)
     sequence = [
         # VS: g m=0 -> e m=1
-        Pulse(k=+1, detuning_hz=1 * RECOIL_FREQUENCY_HZ, phi=0.0, label="VS",
-              rabi_frequency=rabi, duration=t_pi),
+        Pulse(
+            k=+1,
+            detuning_hz=1 * RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="VS",
+            rabi_frequency=rabi,
+            duration=t_pi,
+        ),
         Freefall(duration=1e-3),
         # pi/2 down splitter on the shelved atom: e m=1 <-> g m=2
-        Pulse(k=-1, detuning_hz=-3 * RECOIL_FREQUENCY_HZ, phi=0.0,
-              label="splitter", rabi_frequency=rabi, duration=t_pi / 2),
+        Pulse(
+            k=-1,
+            detuning_hz=-3 * RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="splitter",
+            rabi_frequency=rabi,
+            duration=t_pi / 2,
+        ),
         # shaped-pulse stand-in: upper arm g m=2 -> e m=3 (absorption) ...
-        Pulse(k=+1, detuning_hz=5 * RECOIL_FREQUENCY_HZ, phi=0.0,
-              label="shaped_upper", rabi_frequency=rabi, duration=t_pi,
-              restrict_to_m_ground=2),
+        Pulse(
+            k=+1,
+            detuning_hz=5 * RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="shaped_upper",
+            rabi_frequency=rabi,
+            duration=t_pi,
+            restrict_to_m_ground=2,
+        ),
         # ... and lower arm e m=1 -> g m=0 (stimulated emission), at the
         # same instant
-        Pulse(k=+1, detuning_hz=1 * RECOIL_FREQUENCY_HZ, phi=0.0,
-              label="shaped_lower", rabi_frequency=rabi, duration=t_pi,
-              restrict_to_m_ground=0, simultaneous_with_previous=True),
+        Pulse(
+            k=+1,
+            detuning_hz=1 * RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="shaped_lower",
+            rabi_frequency=rabi,
+            duration=t_pi,
+            restrict_to_m_ground=0,
+            simultaneous_with_previous=True,
+        ),
         Freefall(duration=1e-3),
     ]
     clouds, _ = compute_spacetime_trajectory(sequence)

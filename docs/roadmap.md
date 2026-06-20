@@ -16,4 +16,3 @@
   `notebooks/true_trajectory_double_launch_rid74108.ipynb`. These stand-ins
   are supported by the trajectory inference only; the full quantum propagator
   raises `NotImplementedError` on them.
-

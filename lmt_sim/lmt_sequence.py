@@ -1,11 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import logging
 import warnings
 
 import numpy as np
 import lmt_sim.lmt_simulation as sim
 from lmt_sim.lmt_simulation import RABI_FREQ, T_PI
-from scipy import constants
 
 logger = logging.getLogger(__name__)
 
@@ -183,14 +182,24 @@ def run_pulse_sequence_in_lab_frame(
 
     current_time = 0.0
 
-    # Convert to the Borde representation based on the first detuning
+    # Convert to the Borde representation based on the first detuning. At t=0 the
+    # laser-detuning part of the transform is the identity; we additionally record
+    # the frame reference (t_ref=0, detuning_ref_hz=current_detuning_hz) on the state so the
+    # Borde run knows which frequency the frame co-rotates with.
     state = sim.transform_state_vector(
         state,
-        omega_laser=2 * np.pi * (sim.TRANSITION_FREQUENCY + current_detuning_hz),
+        detuning_hz=current_detuning_hz,
         t=current_time,
+        t_ref=0.0,
         z=0.0,
         vz=initial_velocity_z,
         inverse=False,
+    )
+    state = replace(
+        state,
+        t_ref=0.0,
+        detuning_ref_hz=current_detuning_hz,
+        accumulated_detuning_cycles=0.0,
     )
 
     # Run the sequence in the Borde representation
@@ -206,11 +215,17 @@ def run_pulse_sequence_in_lab_frame(
         return None
     state, current_detuning_hz, current_time = result
 
-    # Convert back to the lab frame
+    # Convert back to the lab frame. The full laser-detuning integral is
+    # Phi(t_end) = accumulated_detuning_cycles + detuning_ref_hz * (current_time - t_ref);
+    # the inverse transform applies that (plus the absolute-t global/spatial parts).
+    # (current_detuning_hz equals state.detuning_ref_hz, but use the state's own reference to
+    # stay self-consistent.)
     state = sim.transform_state_vector(
         state,
-        omega_laser=2 * np.pi * (sim.TRANSITION_FREQUENCY + current_detuning_hz),
+        detuning_hz=state.detuning_ref_hz,
         t=current_time,
+        t_ref=state.t_ref,
+        accumulated_detuning_cycles=state.accumulated_detuning_cycles,
         z=0.0,
         vz=initial_velocity_z,
         inverse=True,
@@ -256,6 +271,19 @@ def iter_pulse_sequence_in_borde_representation(
     current_detuning_hz = detunings_hz[0] if len(detunings_hz) > 0 else 0.0
     current_time = 0.0
 
+    # The incoming state is in the Bordé frame at t=0 with the first pulse's
+    # detuning. Establish the frame reference on the state so frequency-change
+    # rebasing (change_laser_frequency_in_borde_representation) reads a consistent
+    # (t_ref, detuning_ref_hz) regardless of how the caller built the state. The lab-frame
+    # wrapper sets the same values; setting them here makes the Bordé entry point
+    # self-consistent for direct callers too.
+    state = replace(
+        state,
+        t_ref=current_time,
+        detuning_ref_hz=current_detuning_hz,
+        accumulated_detuning_cycles=0.0,
+    )
+
     yield state, current_detuning_hz, current_time
 
     for event in pulse_sequence:
@@ -263,13 +291,23 @@ def iter_pulse_sequence_in_borde_representation(
             # If it's a Pulse, apply it to the state. This includes
             # ballistically propagating the states
 
-            # If the frequency has changed, transform the states to the new frame
+            # If the frequency has changed, rebase the Bordé frame to the new
+            # laser detuning. This bakes the open segment at the OLD frequency into
+            # the amplitudes and moves the frame reference to (current_time,
+            # new_detuning_hz); see change_laser_frequency_in_borde_representation.
+            #
+            # TODO: we assume the laser frequency steps exactly at the START of
+            # each pulse (current_time is the pulse start). In practice the step
+            # happens at the genuine instant the laser is retuned, which need not
+            # coincide with a pulse boundary (a real chirp can step mid-freefall).
+            # The total laser phase now matters, so to be correct in general we
+            # should track the real frequency-change instants and rebase there
+            # rather than piggy-backing on the pulse schedule.
             new_detuning_hz = event.detuning_hz
             if new_detuning_hz != current_detuning_hz:
                 state = sim.change_laser_frequency_in_borde_representation(
                     state,
                     new_detuning_hz=new_detuning_hz,
-                    old_detuning_hz=current_detuning_hz,
                     time=current_time,
                 )
                 current_detuning_hz = new_detuning_hz
@@ -304,7 +342,14 @@ def iter_pulse_sequence_in_borde_representation(
         if (
             isinstance(event, Freefall) or isinstance(event, Clearout)
         ) and event.duration > 0.0:
-            # Propegate the atom states ballistically during freefall or after clearout
+            # Propegate the atom states ballistically during freefall or after
+            # clearout, at the current laser detuning (which defines the Bordé
+            # frame for this segment).
+            #
+            # TODO: this assumes the laser detuning is constant across the whole
+            # freefall. A real chirp could step mid-freefall; see the TODO at the
+            # pulse block above -- genuine frequency-change instants should be
+            # tracked and rebased at, rather than only at pulse starts.
             state = sim.propagate_states_in_borde_representation(
                 state,
                 time_of_propegation=event.duration,
@@ -439,9 +484,9 @@ def _addressed_momentum_classes(pulse: Pulse):
         pulse.probe_shift_coefficient,
         pulse.effective_stark_rabi_frequency,
     )
-    m_ground = (
-        effective_detuning_hz - sim.RECOIL_FREQUENCY_HZ
-    ) / (2 * pulse.k * sim.RECOIL_FREQUENCY_HZ)
+    m_ground = (effective_detuning_hz - sim.RECOIL_FREQUENCY_HZ) / (
+        2 * pulse.k * sim.RECOIL_FREQUENCY_HZ
+    )
     m_excited = m_ground + pulse.k
     return float(m_ground), float(m_excited)
 
@@ -515,9 +560,7 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
     offsets = np.asarray(pulse_record_offsets, dtype=np.int64)
 
     if flat.ndim != 1 or offsets.ndim != 1:
-        raise ValueError(
-            "pulse_record_flat and pulse_record_offsets must both be 1-D"
-        )
+        raise ValueError("pulse_record_flat and pulse_record_offsets must both be 1-D")
 
     decoded = []
     previous = None
@@ -544,10 +587,7 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
                     )
                 decoded.append(previous)
                 continue
-            if (
-                abs(value - PULSE_RECORD_DISABLED_SENTINEL)
-                < _PULSE_RECORD_SENTINEL_TOL
-            ):
+            if abs(value - PULSE_RECORD_DISABLED_SENTINEL) < _PULSE_RECORD_SENTINEL_TOL:
                 # Storage disabled this shot. This does NOT update ``previous``:
                 # a later 'same as last' refers to the last STORED sequence, as
                 # on the producer side.
@@ -562,9 +602,7 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
         # Regular record: num_pulses followed by 7 rows of num_pulses values.
         num_pulses = int(round(float(record[0])))
         if num_pulses < 0:
-            raise ValueError(
-                f"Pulse record {i} has negative num_pulses ({num_pulses})"
-            )
+            raise ValueError(f"Pulse record {i} has negative num_pulses ({num_pulses})")
         expected_len = 1 + 7 * num_pulses
         if len(record) != expected_len:
             raise ValueError(
@@ -728,9 +766,12 @@ def build_sequence_from_lab_pulse_dump(
     # therefore anchored on the first pulse, NOT on the first up pulse: the
     # beam-dependent pieces (probe-shift coefficient and Doppler sign) above are
     # selected by the first pulse's actual beam.
-    centre_freq_hz = total_laser_frequency_hz[0] + first_pulse_doppler_shift_hz - first_pulse_atom_frame_detuning_hz - first_pulse_probe_shift_hz
-    
-    
+    centre_freq_hz = (
+        total_laser_frequency_hz[0]
+        + first_pulse_doppler_shift_hz
+        - first_pulse_atom_frame_detuning_hz
+        - first_pulse_probe_shift_hz
+    )
 
     # Now we calculate the detuning of all the beams due only to gravity. The simulation will handle the probe-induced Stark shift.
     # TODO: wrap the gravity Doppler shift into the main sim
@@ -742,7 +783,7 @@ def build_sequence_from_lab_pulse_dump(
         (total_laser_frequency_hz - centre_freq_hz)
         # Add the effect of the Doppler shift to bring the detunings into the
         # freely-falling frame:
-        + (up_beam_doppler_hz * beam_sign  )  
+        + (up_beam_doppler_hz * beam_sign)
     )
 
     sequence_timestamps = []
@@ -916,8 +957,7 @@ def calibrate_probe_shift_and_velocity_from_dump(
     # integer number of recoils. This pins down the Stark contribution, on the
     # assumption that the probe-induced shift is less than half a recoil.
     ladder_separation_hz = (
-        round(f_pulse_difference / sim.RECOIL_FREQUENCY_HZ)
-        * sim.RECOIL_FREQUENCY_HZ
+        round(f_pulse_difference / sim.RECOIL_FREQUENCY_HZ) * sim.RECOIL_FREQUENCY_HZ
     )
     residual_probe_shift_hz = f_pulse_difference - ladder_separation_hz
 
@@ -949,9 +989,7 @@ def calibrate_probe_shift_and_velocity_from_dump(
         initial_velocity_z = 0.0
     else:
         anchor_probe_shift_hz = probe_shift_alpha * anchor_pulse.rabi_frequency**2
-        opposite_probe_shift_hz = (
-            probe_shift_alpha * first_opposite.rabi_frequency**2
-        )
+        opposite_probe_shift_hz = probe_shift_alpha * first_opposite.rabi_frequency**2
 
         initial_velocity_z = (
             anchor_beam_sign
@@ -1279,7 +1317,7 @@ def _plot_spacetime(sequence, clouds, clearout_times, *, include_gravity=False):
                 ls,
                 color=color,
                 lw=1.5,
-                label=lbl
+                label=lbl,
             )
             m_label_added = True
         if cloud.alive:
@@ -1380,9 +1418,7 @@ def _plot_spacetime(sequence, clouds, clearout_times, *, include_gravity=False):
     ax_z.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")
     ax_m.plot([], [], "-", color="gray", lw=1.5, label="|g> (solid)")
     ax_m.plot([], [], ":", color="gray", lw=1.5, label="|e> (dotted)")
-    ax_z.set_ylabel(
-        "z position (mm)" + (" — lab frame" if include_gravity else "")
-    )
+    ax_z.set_ylabel("z position (mm)" + (" — lab frame" if include_gravity else ""))
     ax_z.set_title(
         "LMT spacetime diagram"
         + (" (lab frame, gravity included)" if include_gravity else "")

@@ -1,8 +1,16 @@
 # ARP frame-change finding (back-to-back pulses double-count the chirp)
 
-**Status:** open / under investigation. Building the ARP composer is **paused**
-pending a decision on the row-composer frame change. No core sequence code has
-been changed.
+**Status:** the **core/row path is now FIXED**; the **ARP composer remains
+paused**. The row-based path no longer applies any inter-block frame change: at a
+laser-frequency step it rebases the Bordé frame *without touching the amplitudes*
+(`change_laser_frequency_in_borde_representation`), carrying the laser-detuning
+integral on `AtomState` as `(t_ref, detuning_ref_hz, accumulated_detuning_cycles)` and
+applying it only at the lab boundary (`transform_state_vector`). The old
+`_frame_change_phases` (`exp(±iπ Δf t)`) was removed from the core; a local copy
+survives only inside `lmt_sim/arp.py` so the paused ARP composer keeps its old
+behaviour. `lmt_sim.arp` and `tests/test_arp.py` are parked (the test module is
+skipped) until the ARP composer is revisited. The note below ("No core sequence
+code has been changed") describes the state *before* that fix.
 
 ## TL;DR
 

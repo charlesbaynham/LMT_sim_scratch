@@ -23,7 +23,8 @@
 import sys
 
 import sys
-sys.path.insert(0, '..')
+
+sys.path.insert(0, "..")
 
 # %%
 import numpy as np
@@ -32,7 +33,8 @@ from scipy import constants
 from tqdm import tqdm
 
 import sys
-sys.path.insert(0, '..')
+
+sys.path.insert(0, "..")
 
 import version_info as vs
 from lmt_sim.lmt_simulation import (
@@ -103,11 +105,11 @@ def calc_slice_survival_probability(
         c1=0,
     )
 
-    omega_laser = 2.0 * np.pi * (TRANSITION_FREQUENCY + detuning_hz)
+    transform_detuning_hz = detuning_hz
 
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=0.0,
         z=0.0,
         vz=initial_velocity_z,
@@ -127,7 +129,7 @@ def calc_slice_survival_probability(
 
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser,
+        detuning_hz=transform_detuning_hz,
         t=slice_pulse_duration,
         z=0.0,
         vz=initial_velocity_z,
@@ -137,7 +139,6 @@ def calc_slice_survival_probability(
     _ground_prob, excited_prob = calculate_ground_and_excited_probabilities(state)
 
     return excited_prob
-
 
 
 # %%
@@ -156,14 +157,16 @@ for ind_atom, velocity in enumerate(tqdm(velocities, desc="Simulating atoms")):
 mean_survival = np.mean(survival_traces, axis=0)
 std_survival = np.std(survival_traces, axis=0)
 
-ideal_survival = np.array([
-    calc_slice_survival_probability(
-        slice_pulse_duration=t,
-        detuning_hz=BASE_DETUNING_HZ,
-        initial_velocity_z=0.0,
-    )
-    for t in slice_durations
-])
+ideal_survival = np.array(
+    [
+        calc_slice_survival_probability(
+            slice_pulse_duration=t,
+            detuning_hz=BASE_DETUNING_HZ,
+            initial_velocity_z=0.0,
+        )
+        for t in slice_durations
+    ]
+)
 
 # %%
 fig, ax = plt.subplots(figsize=(9, 4.5))
@@ -216,4 +219,3 @@ ax.set_title(
 
 
 vs.tag_plot(small=True)
-

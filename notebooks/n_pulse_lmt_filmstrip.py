@@ -21,7 +21,8 @@
 
 # %%
 import sys
-sys.path.insert(0, '..')
+
+sys.path.insert(0, "..")
 
 # %%
 import numpy as np
@@ -56,54 +57,105 @@ def build_lmt_sequence(N, phi):
     """
     s = []
 
-    s.append(seq.Pulse(
-        k=+1, detuning_hz=+1 * RECOIL_FREQUENCY_HZ, phi=0.0,
-        label='BS pi/2', rabi_frequency=RABI_FREQ, duration=T_PI / 2,
-    ))
+    s.append(
+        seq.Pulse(
+            k=+1,
+            detuning_hz=+1 * RECOIL_FREQUENCY_HZ,
+            phi=0.0,
+            label="BS pi/2",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI / 2,
+        )
+    )
 
     # (k, detuning_multiplier) for the i-th pulse in an arm: (-1,-3),(+1,+5),(-1,-7),...
     kicks = [
-        ((-1 if i % 2 == 0 else +1),
-         (-1 if i % 2 == 0 else +1) * (2 * (i + 1) + 1))
+        ((-1 if i % 2 == 0 else +1), (-1 if i % 2 == 0 else +1) * (2 * (i + 1) + 1))
         for i in range(N)
     ]
 
     for i, (k, d) in enumerate(kicks, start=1):
-        s.append(seq.Pulse(k=k, detuning_hz=d * RECOIL_FREQUENCY_HZ, phi=0.0,
-                           label=f'top accel {i}', rabi_frequency=RABI_FREQ, duration=T_PI))
+        s.append(
+            seq.Pulse(
+                k=k,
+                detuning_hz=d * RECOIL_FREQUENCY_HZ,
+                phi=0.0,
+                label=f"top accel {i}",
+                rabi_frequency=RABI_FREQ,
+                duration=T_PI,
+            )
+        )
     for i, (k, d) in enumerate(reversed(kicks), start=1):
-        s.append(seq.Pulse(k=k, detuning_hz=d * RECOIL_FREQUENCY_HZ, phi=0.0,
-                           label=f'top decel {i}', rabi_frequency=RABI_FREQ, duration=T_PI))
+        s.append(
+            seq.Pulse(
+                k=k,
+                detuning_hz=d * RECOIL_FREQUENCY_HZ,
+                phi=0.0,
+                label=f"top decel {i}",
+                rabi_frequency=RABI_FREQ,
+                duration=T_PI,
+            )
+        )
 
-    s.append(seq.Pulse(
-        k=+1, detuning_hz=+1 * RECOIL_FREQUENCY_HZ, phi=phi,
-        label='mirror pi', rabi_frequency=RABI_FREQ, duration=T_PI,
-    ))
+    s.append(
+        seq.Pulse(
+            k=+1,
+            detuning_hz=+1 * RECOIL_FREQUENCY_HZ,
+            phi=phi,
+            label="mirror pi",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI,
+        )
+    )
 
     for i, (k, d) in enumerate(kicks, start=1):
-        s.append(seq.Pulse(k=k, detuning_hz=d * RECOIL_FREQUENCY_HZ, phi=phi,
-                           label=f'bottom accel {i}', rabi_frequency=RABI_FREQ, duration=T_PI))
+        s.append(
+            seq.Pulse(
+                k=k,
+                detuning_hz=d * RECOIL_FREQUENCY_HZ,
+                phi=phi,
+                label=f"bottom accel {i}",
+                rabi_frequency=RABI_FREQ,
+                duration=T_PI,
+            )
+        )
     for i, (k, d) in enumerate(reversed(kicks), start=1):
-        s.append(seq.Pulse(k=k, detuning_hz=d * RECOIL_FREQUENCY_HZ, phi=phi,
-                           label=f'bottom decel {i}', rabi_frequency=RABI_FREQ, duration=T_PI))
+        s.append(
+            seq.Pulse(
+                k=k,
+                detuning_hz=d * RECOIL_FREQUENCY_HZ,
+                phi=phi,
+                label=f"bottom decel {i}",
+                rabi_frequency=RABI_FREQ,
+                duration=T_PI,
+            )
+        )
 
-    s.append(seq.Pulse(
-        k=+1, detuning_hz=+1 * RECOIL_FREQUENCY_HZ, phi=4 * phi,
-        label='BS pi/2 final', rabi_frequency=RABI_FREQ, duration=T_PI / 2,
-    ))
+    s.append(
+        seq.Pulse(
+            k=+1,
+            detuning_hz=+1 * RECOIL_FREQUENCY_HZ,
+            phi=4 * phi,
+            label="BS pi/2 final",
+            rabi_frequency=RABI_FREQ,
+            duration=T_PI / 2,
+        )
+    )
 
     # Trailing freefall so the m-state separation is visible in the final shot.
-    s.append(seq.Freefall(duration=T_PI, label='freefall'))
+    s.append(seq.Freefall(duration=T_PI, label="freefall"))
     return s
 
 
 def plot_lmt_filmstrip(phi, N=LMT_N):
     sequence = build_lmt_sequence(N=N, phi=phi)
     return plot_filmstrip(
-        sequence, velocities,
-        title=f'LMT $N={N}$ filmstrip at $\\phi = {phi / np.pi:.3f}\\pi$ (each panel autoscaled)',
-        desc=f'N={N}, phi={phi / np.pi:.3f}pi',
-        panel_width=1.6, panel_height=3.2,
+        sequence,
+        velocities,
+        title=f"LMT $N={N}$ filmstrip at $\\phi = {phi / np.pi:.3f}\\pi$ (each panel autoscaled)",
+        desc=f"N={N}, phi={phi / np.pi:.3f}pi",
+        panel_width=1.6,
+        panel_height=3.2,
         # Lossy threshold: keeps weights to ~0.1% of exact while running ~6x faster.
         # Plenty for visualisation; bump down to 1e-9 if you need exact channel weights.
         discard_threshold=1e-6,

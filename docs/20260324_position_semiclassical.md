@@ -9,7 +9,7 @@ Add classical position tracking to the LMT simulation. Positions are threaded th
 ### Phase 1: Core library changes in `lmt_sim/lmt_simulation.py`
 
 1. **`propagate_states_in_borde_representation`** — Add `positions` parameter and return it
-   - New parameter: `positions: np.ndarray` 
+   - New parameter: `positions: np.ndarray`
    - For each state row, compute velocity as `vz + m_values[idx] * RECOIL_VELOCITY`
    - Update position: `positions_out[idx] = positions[idx] + velocity * time_of_propegation`
    - Return 4-tuple: `(m_values, squiggly_amplitudes_out, state_is_ground, positions_out)`
@@ -43,7 +43,7 @@ Add classical position tracking to the LMT simulation. Positions are threaded th
 
 ### Phase 4: Update tests
 
-9. **`test_states_vector.py`** — Update all calls to `pulse_interaction_in_borde_representation` and `propagate_states_in_borde_representation` to pass `positions` and unpack 4-tuple returns. Initialize positions from `make_atom_states`. 
+9. **`test_states_vector.py`** — Update all calls to `pulse_interaction_in_borde_representation` and `propagate_states_in_borde_representation` to pass `positions` and unpack 4-tuple returns. Initialize positions from `make_atom_states`.
 
 ## Relevant files
 

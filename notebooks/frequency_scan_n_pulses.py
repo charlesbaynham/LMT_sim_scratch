@@ -43,7 +43,7 @@
 import sys
 import dataclasses
 
-sys.path.insert(0, '..')
+sys.path.insert(0, "..")
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -80,7 +80,249 @@ raise NotImplementedError(
 # Same dump and `INITIAL_VELOCITY_Z` as `true_LMT_trajectory.ipynb`.
 
 # %%
-pulse_sequence = [[[1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0], [4936, 2691191, 2771190, 2838189, 2918188, 2985187, 3065186, 3132185, 3212184, 3279183, 3359182, 3426181, 3506180, 3573179, 3653178, 3720177, 3800176, 4077207, 4122991, 4286111, 4392695, 4722709, 4809244, 4922367, 5030207, 5108734, 5221855, 5328439, 5508438, 5594973, 5908111, 6019623], [380000, 68000, 54999, 68000, 54999, 68000, 54999, 68000, 54999, 68000, 54999, 68000, 54999, 68000, 54999, 68000, 54999, 34000, 99999, 99999, 68000, 68000, 99999, 99999, 68000, 99999, 99999, 68000, 68000, 99999, 99999, 34000], [80000000, 79971814, 80020109, 79988550, 80003372, 80005286, 79986636, 80022022, 79969900, 80038758, 79953164, 80055494, 79936428, 80072230, 79919692, 80088966, 79902956, 80027353, 79983322, 79966812, 80004123, 79999490, 79974157, 79994546, 80013772, 79978362, 79998751, 80028585, 80026058, 80003989, 79989586, 80000149], [200000000, 200005800, 200001500, 200005800, 200001500, 200005800, 200001500, 200005800, 200001500, 200005800, 200001500, 200005800, 200001500, 200005800, 200001500, 200005800, 200001500, 200005800, 200000500, 200000500, 200005800, 200005800, 200000500, 200000500, 200005800, 200000500, 200000500, 200005800, 200005800, 200000500, 200000500, 200005800], [99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300, 99485300], [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]]]
+pulse_sequence = [
+    [
+        [
+            1,
+            0,
+            1,
+            0,
+            1,
+            0,
+            1,
+            0,
+            1,
+            0,
+            1,
+            0,
+            1,
+            0,
+            1,
+            0,
+            1,
+            0,
+            1,
+            1,
+            0,
+            0,
+            1,
+            1,
+            0,
+            1,
+            1,
+            0,
+            0,
+            1,
+            1,
+            0,
+        ],
+        [
+            4936,
+            2691191,
+            2771190,
+            2838189,
+            2918188,
+            2985187,
+            3065186,
+            3132185,
+            3212184,
+            3279183,
+            3359182,
+            3426181,
+            3506180,
+            3573179,
+            3653178,
+            3720177,
+            3800176,
+            4077207,
+            4122991,
+            4286111,
+            4392695,
+            4722709,
+            4809244,
+            4922367,
+            5030207,
+            5108734,
+            5221855,
+            5328439,
+            5508438,
+            5594973,
+            5908111,
+            6019623,
+        ],
+        [
+            380000,
+            68000,
+            54999,
+            68000,
+            54999,
+            68000,
+            54999,
+            68000,
+            54999,
+            68000,
+            54999,
+            68000,
+            54999,
+            68000,
+            54999,
+            68000,
+            54999,
+            34000,
+            99999,
+            99999,
+            68000,
+            68000,
+            99999,
+            99999,
+            68000,
+            99999,
+            99999,
+            68000,
+            68000,
+            99999,
+            99999,
+            34000,
+        ],
+        [
+            80000000,
+            79971814,
+            80020109,
+            79988550,
+            80003372,
+            80005286,
+            79986636,
+            80022022,
+            79969900,
+            80038758,
+            79953164,
+            80055494,
+            79936428,
+            80072230,
+            79919692,
+            80088966,
+            79902956,
+            80027353,
+            79983322,
+            79966812,
+            80004123,
+            79999490,
+            79974157,
+            79994546,
+            80013772,
+            79978362,
+            79998751,
+            80028585,
+            80026058,
+            80003989,
+            79989586,
+            80000149,
+        ],
+        [
+            200000000,
+            200005800,
+            200001500,
+            200005800,
+            200001500,
+            200005800,
+            200001500,
+            200005800,
+            200001500,
+            200005800,
+            200001500,
+            200005800,
+            200001500,
+            200005800,
+            200001500,
+            200005800,
+            200001500,
+            200005800,
+            200000500,
+            200000500,
+            200005800,
+            200005800,
+            200000500,
+            200000500,
+            200005800,
+            200000500,
+            200000500,
+            200005800,
+            200005800,
+            200000500,
+            200000500,
+            200005800,
+        ],
+        [
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+            99485300,
+        ],
+        [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+        ],
+    ]
+]
+
 
 # The recorded dump above uses the legacy nested layout with its two time rows
 # in machine units. Re-encode it into the new float64 SI pulse_record_flat /
@@ -164,8 +406,9 @@ _, sequence = seq.build_sequence_from_lab_pulse_dump(
 # sequence starts on the first pulse.
 sequence = sequence[1:]
 
-print(f'{len(sequence)} events, '
-      f'{sum(isinstance(e, seq.Pulse) for e in sequence)} pulses')
+print(
+    f"{len(sequence)} events, {sum(isinstance(e, seq.Pulse) for e in sequence)} pulses"
+)
 
 
 # %% [markdown]
@@ -175,6 +418,7 @@ print(f'{len(sequence)} events, '
 # any trailing freefall after the Nth pulse is dropped -- it does not change the
 # excitation fraction). `scan_final_pulse` then sweeps the final pulse's detuning
 # for a chosen beam direction `k`.
+
 
 # %%
 def truncate_to_n_pulses(events, n):
@@ -188,7 +432,7 @@ def truncate_to_n_pulses(events, n):
             if n_pulses == n:
                 return out
     raise ValueError(
-        f'Sequence only contains {n_pulses} pulses, cannot truncate to {n}'
+        f"Sequence only contains {n_pulses} pulses, cannot truncate to {n}"
     )
 
 
@@ -197,7 +441,7 @@ def first_pulse_detuning(events):
     for event in events:
         if isinstance(event, seq.Pulse):
             return event.detuning_hz
-    raise ValueError('Sequence contains no pulses')
+    raise ValueError("Sequence contains no pulses")
 
 
 def scan_final_pulse(events, n, k, offsets_recoils, reference_detuning_hz):
@@ -217,15 +461,11 @@ def scan_final_pulse(events, n, k, offsets_recoils, reference_detuning_hz):
     for i, offset in enumerate(offsets_recoils):
         detuning_hz = reference_detuning_hz + offset * sim.RECOIL_FREQUENCY_HZ
         scanned = list(truncated)
-        scanned[-1] = dataclasses.replace(
-            scanned[-1], k=k, detuning_hz=detuning_hz
-        )
-        excitation_fraction[i] = (
-            seq.calculate_excited_fraction_for_pulse_sequence(
-                scanned,
-                velocity=(0.0, 0.0, 0.0),
-                position=(0.0, 0.0, 0.0),
-            )
+        scanned[-1] = dataclasses.replace(scanned[-1], k=k, detuning_hz=detuning_hz)
+        excitation_fraction[i] = seq.calculate_excited_fraction_for_pulse_sequence(
+            scanned,
+            velocity=(0.0, 0.0, 0.0),
+            position=(0.0, 0.0, 0.0),
         )
     return excitation_fraction
 
@@ -269,9 +509,7 @@ scan_halfwidth_recoils = 10.0
 n_points = 201
 N_values = [1, 2, 3, 4, 5]
 
-offsets_recoils = np.linspace(
-    -scan_halfwidth_recoils, scan_halfwidth_recoils, n_points
-)
+offsets_recoils = np.linspace(-scan_halfwidth_recoils, scan_halfwidth_recoils, n_points)
 
 
 def correct_probe_shift(events):
@@ -288,14 +526,15 @@ def correct_probe_shift(events):
     for event in events:
         if isinstance(event, seq.Pulse):
             shift = (
-                event.probe_shift_coefficient
-                * event.effective_stark_rabi_frequency**2
+                event.probe_shift_coefficient * event.effective_stark_rabi_frequency**2
             )
-            out.append(dataclasses.replace(
-                event,
-                detuning_hz=event.detuning_hz - shift,
-                probe_shift_coefficient=0.0,
-            ))
+            out.append(
+                dataclasses.replace(
+                    event,
+                    detuning_hz=event.detuning_hz - shift,
+                    probe_shift_coefficient=0.0,
+                )
+            )
         else:
             out.append(event)
     return out
@@ -328,18 +567,20 @@ def build_variant(beam_is_up, opll):
 
 
 variants = [
-    ('beams up/down, OPLL normal',
-     build_variant(is_up_bool, opll_hz)),
-    ('beams flipped (down/up), OPLL normal',
-     build_variant(np.logical_not(is_up_bool), opll_hz)),
-    ('beams up/down, OPLL inverted (-opll)',
-     build_variant(is_up_bool, -opll_hz)),
-    ('beams flipped (down/up), OPLL inverted (-opll)',
-     build_variant(np.logical_not(is_up_bool), -opll_hz)),
+    ("beams up/down, OPLL normal", build_variant(is_up_bool, opll_hz)),
+    (
+        "beams flipped (down/up), OPLL normal",
+        build_variant(np.logical_not(is_up_bool), opll_hz),
+    ),
+    ("beams up/down, OPLL inverted (-opll)", build_variant(is_up_bool, -opll_hz)),
+    (
+        "beams flipped (down/up), OPLL inverted (-opll)",
+        build_variant(np.logical_not(is_up_bool), -opll_hz),
+    ),
 ]
 
-BEAM_COLOR = {+1: 'tab:blue', -1: 'tab:red'}
-BEAM_NAME = {+1: 'up', -1: 'down'}
+BEAM_COLOR = {+1: "tab:blue", -1: "tab:red"}
+BEAM_NAME = {+1: "up", -1: "down"}
 
 
 def plot_final_pulse_scan(events, suptitle):
@@ -352,45 +593,49 @@ def plot_final_pulse_scan(events, suptitle):
         len(N_values), 1, figsize=(11, 3.2 * len(N_values)), sharex=True
     )
     for ax, N in zip(axes, N_values):
-        exc_up = scan_final_pulse(
-            events, N, +1, offsets_recoils, reference_detuning_hz)
+        exc_up = scan_final_pulse(events, N, +1, offsets_recoils, reference_detuning_hz)
         exc_down = scan_final_pulse(
-            events, N, -1, offsets_recoils, reference_detuning_hz)
+            events, N, -1, offsets_recoils, reference_detuning_hz
+        )
 
-        ax.plot(offsets_recoils, exc_up,
-                color='tab:blue', label='scan: up beam (k = +1)')
-        ax.plot(offsets_recoils, exc_down,
-                color='tab:red', label='scan: down beam (k = -1)')
+        ax.plot(
+            offsets_recoils, exc_up, color="tab:blue", label="scan: up beam (k = +1)"
+        )
+        ax.plot(
+            offsets_recoils, exc_down, color="tab:red", label="scan: down beam (k = -1)"
+        )
 
         # offset 0 = first-pulse resonance (the convention zero)
-        ax.axvline(0.0, color='0.3', linewidth=1.0, linestyle='--',
-                   label='pulse 1 resonance')
+        ax.axvline(
+            0.0, color="0.3", linewidth=1.0, linestyle="--", label="pulse 1 resonance"
+        )
 
         # Vertical dotted line at the detuning the *actual* Nth pulse was run
         # at in this sequence, coloured by the beam it actually used.
         actual_pulse = truncate_to_n_pulses(events, N)[-1]
         design_offset = (
-            (actual_pulse.detuning_hz - reference_detuning_hz)
-            / sim.RECOIL_FREQUENCY_HZ
-        )
+            actual_pulse.detuning_hz - reference_detuning_hz
+        ) / sim.RECOIL_FREQUENCY_HZ
         ax.axvline(
             design_offset,
             color=BEAM_COLOR[actual_pulse.k],
             linewidth=2.0,
-            linestyle=':',
-            label=(f'actual pulse {N} ({BEAM_NAME[actual_pulse.k]} beam) '
-                   f'@ {design_offset:+.2f}'),
+            linestyle=":",
+            label=(
+                f"actual pulse {N} ({BEAM_NAME[actual_pulse.k]} beam) "
+                f"@ {design_offset:+.2f}"
+            ),
         )
 
-        ax.set_ylabel('Excitation fraction')
+        ax.set_ylabel("Excitation fraction")
         ax.set_ylim(-0.02, 1.02)
         ax.grid(True, alpha=0.3)
-        ax.set_title(f'N = {N} pulses')
-        ax.legend(loc='upper right', fontsize=8)
+        ax.set_title(f"N = {N} pulses")
+        ax.legend(loc="upper right", fontsize=8)
 
     axes[-1].set_xlabel(
-        'Final-pulse detuning relative to the first-pulse resonance '
-        '(recoil frequencies)'
+        "Final-pulse detuning relative to the first-pulse resonance "
+        "(recoil frequencies)"
     )
     fig.suptitle(suptitle, y=1.0)
     plt.tight_layout()
@@ -400,7 +645,7 @@ def plot_final_pulse_scan(events, suptitle):
 for title, events in variants:
     plot_final_pulse_scan(
         events,
-        f'Frequency scan of the final pulse -- {title}\n'
-        f'(probe-corrected detunings; ideal atom at rest in the '
-        f'de-Dopplered frame)',
+        f"Frequency scan of the final pulse -- {title}\n"
+        f"(probe-corrected detunings; ideal atom at rest in the "
+        f"de-Dopplered frame)",
     )

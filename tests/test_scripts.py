@@ -4,16 +4,12 @@ import sys
 
 import pytest
 
-SCRIPT_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "notebooks"
-)
+SCRIPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "notebooks")
 
 
 def get_all_scripts():
     return sorted(
-        os.path.join(SCRIPT_DIR, f)
-        for f in os.listdir(SCRIPT_DIR)
-        if f.endswith(".py")
+        os.path.join(SCRIPT_DIR, f) for f in os.listdir(SCRIPT_DIR) if f.endswith(".py")
     )
 
 

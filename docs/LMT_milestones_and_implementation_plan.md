@@ -1,7 +1,7 @@
 # LMT Interferometry Simulation: Milestones and Implementation Plan
 
-**Document Date:** 2026-03-07  
-**Based on:** [[2026-03-06 LMT Monte Carlo]] notes  
+**Document Date:** 2026-03-07
+**Based on:** [[2026-03-06 LMT Monte Carlo]] notes
 **Goal:** Reach accurate 10 LMT simulation with all major noise sources
 
 ---
@@ -15,7 +15,7 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 ## Priority 1: Validation and Core Functionality (Complete First)
 
 ### 1.1 Multi-LMT Validation
-**Status:** Not started  
+**Status:** Not started
 **Purpose:** Verify simulation behavior with increasing LMT order
 **Tasks:**
 - Test with N=2, N=5, N=10 LMTs
@@ -29,7 +29,7 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 - Recoil shifts accumulate correctly
 
 ### 1.2 Computational Baseline
-**Status:** In progress  
+**Status:** In progress
 **Purpose:** Establish performance baseline before adding complexity
 **Tasks:**
 - Profile current code for N=10, N=50, N=100
@@ -45,7 +45,7 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 ## Priority 2: Thermal Effects (High Impact, Required for Realism)
 
 ### 2.1 Classical Mixed States for Temperature Dephasing
-**Status:** Not started  
+**Status:** Not started
 **Purpose:** Model thermal distribution of atoms
 **Tasks:**
 - Implement Maxwell-Boltzmann velocity distribution sampling
@@ -67,7 +67,7 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 ## Priority 3: Spatial Effects (Critical for Large N)
 
 ### 3.1 Wavepacket Spatial Overlap
-**Status:** Planned  
+**Status:** Planned
 **Purpose:** Model finite spatial extent and cloud separation
 **Implementation Plan:**
 1. Start with Gaussian wavepacket defined by trap harmonic oscillator ground state
@@ -85,7 +85,7 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 - Smooth transition from coherent to incoherent regime
 
 ### 3.2 Spatially-Varying Rabi Frequency
-**Status:** Code infrastructure exists  
+**Status:** Code infrastructure exists
 **Purpose:** Model atom movement through Gaussian beam profile
 **Tasks:**
 - Use existing 3D position tracking
@@ -101,7 +101,7 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 ## Priority 4: Laser Noise (Medium Priority)
 
 ### 4.1 Velocity Slicing
-**Status:** Not started  
+**Status:** Not started
 **Purpose:** Model finite momentum resolution from laser linewidth
 **Tasks:**
 - Implement velocity-dependent Rabi frequency
@@ -109,7 +109,7 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 - Model Raman/pulse pair detuning effects
 
 ### 4.2 Laser Frequency and Phase Noise
-**Status:** Not started  
+**Status:** Not started
 **Purpose:** Model technical noise sources
 **Tasks:**
 - Add random phase fluctuations to pulse sequence
@@ -125,7 +125,7 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 ## Priority 5: Computational Optimizations (Required for N>10)
 
 ### 5.1 Eigenstate Consolidation
-**Status:** Planned (reluctantly)  
+**Status:** Planned (reluctantly)
 **Purpose:** Reduce 2^N scaling to linear N scaling
 **Approach:**
 - Combine all momentum eigenstates after each pulse
@@ -140,7 +140,7 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 **Decision Point:** Implement if N=10 baseline is too slow
 
 ### 5.2 State Trimming
-**Status:** Idea stage  
+**Status:** Idea stage
 **Purpose:** Reduce state space by removing negligible components
 **Tasks:**
 - Track population in each eigenstate
@@ -157,13 +157,13 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 ## Priority 6: Advanced Physics (Future Work)
 
 ### 6.1 Clear-Out Pulses
-**Status:** Considered  
+**Status:** Considered
 **Purpose:** Remove unwanted momentum states
 **Benefit:** Simplifies computation, improves contrast
 **Implementation:** Additional π pulses to eject parasitic paths
 
 ### 6.2 Finite Pulse Duration and Pulse Shaping
-**Status:** Framework exists  
+**Status:** Framework exists
 **Current:** Transition treated as instantaneous at pulse start
 **Better:** Transition at pulse center
 **Best:** Full time evolution during pulse (already in formalism)
@@ -194,7 +194,7 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 | **Phase 4** | 5.1 (if needed), 5.2 | 1 week |
 | **Phase 5** | 6.1, 6.2 | Future |
 
-**Total to 10 LMT with noise:** 4-6 weeks  
+**Total to 10 LMT with noise:** 4-6 weeks
 **Stretch goal (100 LMT):** Requires Phase 4 optimization
 
 ---
@@ -220,9 +220,9 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 
 ## Current Sanity Checks Passing
 
-✅ Single π pulse shows recoil shift offset  
-✅ MZ interferometer without propagation shows expected behavior  
-✅ Peak excitation offset correctly modeled  
+✅ Single π pulse shows recoil shift offset
+✅ MZ interferometer without propagation shows expected behavior
+✅ Peak excitation offset correctly modeled
 
 ---
 

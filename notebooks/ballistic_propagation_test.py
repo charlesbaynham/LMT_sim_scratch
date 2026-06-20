@@ -28,7 +28,8 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from scipy import constants
 import sys
-sys.path.insert(0, '..')
+
+sys.path.insert(0, "..")
 
 import version_info as vs
 
@@ -48,9 +49,10 @@ from lmt_sim.lmt_simulation import (
 
 # %%
 # ── Simulation parameters ──────────────────────────────────────────────────
-T_TOF = 5e-3          # Total time-of-flight to track (seconds)
-N_TIME_STEPS = 200    # Number of time points for trajectory recording
-DETUNING_HZ = 0.0    # On-resonance pulses
+T_TOF = 5e-3  # Total time-of-flight to track (seconds)
+N_TIME_STEPS = 200  # Number of time points for trajectory recording
+DETUNING_HZ = 0.0  # On-resonance pulses
+
 
 def maxwell_boltzmann_velocities(temperature_K, n_atoms, rng=None):
     """Draw 3D velocities from a Maxwell–Boltzmann distribution at temperature_K."""
@@ -63,7 +65,7 @@ def maxwell_boltzmann_velocities(temperature_K, n_atoms, rng=None):
 def simulate_trajectory(
     position_xyz,
     velocity_xyz,
-    pulse_schedule,   # list of (t_start, k_sign) – times at which to fire a π-pulse
+    pulse_schedule,  # list of (t_start, k_sign) – times at which to fire a π-pulse
     t_end=T_TOF,
     n_steps=N_TIME_STEPS,
 ):
@@ -85,20 +87,37 @@ def simulate_trajectory(
     traj  : dict with keys 'x', 'y', 'z', each (n_steps,)
         Each value is the *mean* position of the wavefunction (|amp|^2 weighted).
     """
-    vx0, vy0, vz0 = float(velocity_xyz[0]), float(velocity_xyz[1]), float(velocity_xyz[2])
-    px0, py0, pz0 = float(position_xyz[0]), float(position_xyz[1]), float(position_xyz[2])
-
-    state = make_atom_states(
-        position_x=px0, position_y=py0, position_z=pz0,
-        velocity_x=vx0, velocity_y=vy0, initial_velocity_z=vz0,
-        c0=1.0, c1=0.0,
+    vx0, vy0, vz0 = (
+        float(velocity_xyz[0]),
+        float(velocity_xyz[1]),
+        float(velocity_xyz[2]),
+    )
+    px0, py0, pz0 = (
+        float(position_xyz[0]),
+        float(position_xyz[1]),
+        float(position_xyz[2]),
     )
 
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + DETUNING_HZ)
+    state = make_atom_states(
+        position_x=px0,
+        position_y=py0,
+        position_z=pz0,
+        velocity_x=vx0,
+        velocity_y=vy0,
+        initial_velocity_z=vz0,
+        c0=1.0,
+        c1=0.0,
+    )
+
+    transform_detuning_hz = DETUNING_HZ
 
     state = transform_state_vector(
         state,
-        omega_laser=omega_laser, t=0.0, z=pz0, vz=vz0, inverse=False,
+        detuning_hz=transform_detuning_hz,
+        t=0.0,
+        z=pz0,
+        vz=vz0,
+        inverse=False,
     )
 
     # Sort pulse schedule by time
@@ -110,10 +129,10 @@ def simulate_trajectory(
     traj_z = np.empty(n_steps)
 
     # Build a merged list of events: (time, type) where type='snapshot' or 'pulse'
-    events = [(t, 'snapshot', i) for i, t in enumerate(snapshot_times)]
+    events = [(t, "snapshot", i) for i, t in enumerate(snapshot_times)]
     for t_p, ks in pulse_schedule_sorted:
-        events.append((t_p, 'pulse', ks))
-    events.sort(key=lambda e: (e[0], 0 if e[1] == 'snapshot' else 1))
+        events.append((t_p, "pulse", ks))
+    events.sort(key=lambda e: (e[0], 0 if e[1] == "snapshot" else 1))
 
     current_time = 0.0
 
@@ -141,7 +160,7 @@ def simulate_trajectory(
         dt = t_event - current_time
         _free_evolve(dt)
 
-        if event[1] == 'snapshot':
+        if event[1] == "snapshot":
             idx = event[2]
             mp = _mean_position()
             traj_x[idx] = mp[0]
@@ -159,26 +178,39 @@ def simulate_trajectory(
                 vz=vz0,
             )
 
-    return snapshot_times, {'x': traj_x, 'y': traj_y, 'z': traj_z}
+    return snapshot_times, {"x": traj_x, "y": traj_y, "z": traj_z}
 
 
-def plot_xyz_trajectories(ax_x, ax_y, ax_z, times_ms, trajectories, labels=None, colors=None, title_suffix='', alpha=0.75):
+def plot_xyz_trajectories(
+    ax_x,
+    ax_y,
+    ax_z,
+    times_ms,
+    trajectories,
+    labels=None,
+    colors=None,
+    title_suffix="",
+    alpha=0.75,
+):
     """Plot x, y, z trajectories on three provided Axes."""
-    for i, (traj, label) in enumerate(zip(trajectories, labels or [None]*len(trajectories))):
+    for i, (traj, label) in enumerate(
+        zip(trajectories, labels or [None] * len(trajectories))
+    ):
         c = colors[i] if colors is not None else None
         kw = dict(lw=1.2, alpha=alpha, color=c, label=label)
-        ax_x.plot(times_ms, traj['x'] * 1e3, **kw)   # convert to mm
-        ax_y.plot(times_ms, traj['y'] * 1e3, **kw)
-        ax_z.plot(times_ms, traj['z'] * 1e3, **kw)
+        ax_x.plot(times_ms, traj["x"] * 1e3, **kw)  # convert to mm
+        ax_y.plot(times_ms, traj["y"] * 1e3, **kw)
+        ax_z.plot(times_ms, traj["z"] * 1e3, **kw)
 
-    for ax, dim in zip([ax_x, ax_y, ax_z], ['x', 'y', 'z']):
-        ax.set_xlabel('Time (ms)')
-        ax.set_ylabel(f'{dim} (mm)')
-        ax.set_title(f'{dim}-position{" - " + title_suffix if title_suffix else ""}')
+    for ax, dim in zip([ax_x, ax_y, ax_z], ["x", "y", "z"]):
+        ax.set_xlabel("Time (ms)")
+        ax.set_ylabel(f"{dim} (mm)")
+        ax.set_title(f"{dim}-position{' - ' + title_suffix if title_suffix else ''}")
         ax.grid(True, alpha=0.3)
 
-print(f'Recoil velocity: {RECOIL_VELOCITY*1e3:.4f} mm/s')
-print(f'T_PI = {T_PI*1e6:.1f} µs,  RABI_FREQ = {RABI_FREQ:.1f} Hz')
+
+print(f"Recoil velocity: {RECOIL_VELOCITY * 1e3:.4f} mm/s")
+print(f"T_PI = {T_PI * 1e6:.1f} µs,  RABI_FREQ = {RABI_FREQ:.1f} Hz")
 
 # %% [markdown]
 # ## 1 · Free propagation — no pulses, assorted initial velocities
@@ -186,12 +218,12 @@ print(f'T_PI = {T_PI*1e6:.1f} µs,  RABI_FREQ = {RABI_FREQ:.1f} Hz')
 # %%
 # A spread of initial velocities in all three axes; no pulses
 velocity_cases = [
-    ([0.0,    0.0,    0.0  ], 'v=0'),
-    ([1e-3,   0.0,    0.0  ], 'vx=1 mm/s'),
-    ([0.0,    2e-3,   0.0  ], 'vy=2 mm/s'),
-    ([0.0,    0.0,    3e-3 ], 'vz=3 mm/s'),
-    ([4e-3,   4e-3,   4e-3 ], 'v=4 mm/s all'),
-    ([0.0,    0.0,    5e-3 ], 'vz=5 mm/s'),
+    ([0.0, 0.0, 0.0], "v=0"),
+    ([1e-3, 0.0, 0.0], "vx=1 mm/s"),
+    ([0.0, 2e-3, 0.0], "vy=2 mm/s"),
+    ([0.0, 0.0, 3e-3], "vz=3 mm/s"),
+    ([4e-3, 4e-3, 4e-3], "v=4 mm/s all"),
+    ([0.0, 0.0, 5e-3], "vz=5 mm/s"),
 ]
 
 colors1 = cm.tab10(np.linspace(0, 0.6, len(velocity_cases)))
@@ -210,10 +242,16 @@ for vel, label in velocity_cases:
 times_ms = t * 1e3
 
 fig1, axes1 = plt.subplots(1, 3, figsize=(15, 4), sharey=False)
-plot_xyz_trajectories(*axes1, times_ms, trajectories1, labels=labels1, colors=colors1,
-                      title_suffix='no pulses')
+plot_xyz_trajectories(
+    *axes1,
+    times_ms,
+    trajectories1,
+    labels=labels1,
+    colors=colors1,
+    title_suffix="no pulses",
+)
 axes1[0].legend(fontsize=8)
-fig1.suptitle('Scenario 1: Free propagation, no pulses', fontsize=12)
+fig1.suptitle("Scenario 1: Free propagation, no pulses", fontsize=12)
 vs.tag_plot(small=True)
 fig1.tight_layout()
 plt.show()
@@ -225,12 +263,12 @@ plt.show()
 # Each atom starts at rest; pulses impart momentum kicks at evenly spaced times.
 # We try different numbers of +k / -k pulse sequences.
 pulse_cases = [
-    (0,  [],         'No pulses'),
-    (1,  [(0.5e-3, +1)],              '1 pulse +k'),
-    (1,  [(0.5e-3, -1)],              '1 pulse -k'),
-    (3,  [(i*1e-3, +1) for i in range(3)],      '3 pulses +k'),
-    (3,  [(i*1e-3, -1) for i in range(3)],      '3 pulses -k'),
-    (4,  [(i*0.8e-3, +1 if i%2==0 else -1) for i in range(4)], '4 alt ±k'),
+    (0, [], "No pulses"),
+    (1, [(0.5e-3, +1)], "1 pulse +k"),
+    (1, [(0.5e-3, -1)], "1 pulse -k"),
+    (3, [(i * 1e-3, +1) for i in range(3)], "3 pulses +k"),
+    (3, [(i * 1e-3, -1) for i in range(3)], "3 pulses -k"),
+    (4, [(i * 0.8e-3, +1 if i % 2 == 0 else -1) for i in range(4)], "4 alt ±k"),
 ]
 
 colors2 = cm.tab10(np.linspace(0, 0.6, len(pulse_cases)))
@@ -247,10 +285,16 @@ for _n, schedule, label in pulse_cases:
     labels2.append(label)
 
 fig2, axes2 = plt.subplots(1, 3, figsize=(15, 4), sharey=False)
-plot_xyz_trajectories(*axes2, times_ms, trajectories2, labels=labels2, colors=colors2,
-                      title_suffix='LMT kicks')
+plot_xyz_trajectories(
+    *axes2,
+    times_ms,
+    trajectories2,
+    labels=labels2,
+    colors=colors2,
+    title_suffix="LMT kicks",
+)
 axes2[0].legend(fontsize=8)
-fig2.suptitle('Scenario 2: Zero initial velocity, varying pulse sequences', fontsize=12)
+fig2.suptitle("Scenario 2: Zero initial velocity, varying pulse sequences", fontsize=12)
 vs.tag_plot(small=True)
 fig2.tight_layout()
 plt.show()
@@ -259,14 +303,16 @@ plt.show()
 # ## 3 · Maxwell–Boltzmann ensemble at 1 µK with pulses
 
 # %%
-TEMPERATURE = 1e-6   # 1 µK
+TEMPERATURE = 1e-6  # 1 µK
 N_ATOMS = 30
 
 rng3 = np.random.default_rng(42)
 velocities3 = maxwell_boltzmann_velocities(TEMPERATURE, N_ATOMS, rng=rng3)
 
 sigma_v = np.sqrt(constants.k * TEMPERATURE / MASS_ATOM)
-print(f'1 µK thermal velocity σ = {sigma_v*1e3:.4f} mm/s  ({sigma_v/RECOIL_VELOCITY:.2f} v_recoil)')
+print(
+    f"1 µK thermal velocity σ = {sigma_v * 1e3:.4f} mm/s  ({sigma_v / RECOIL_VELOCITY:.2f} v_recoil)"
+)
 
 # Two π-pulses at 1 ms and 3 ms, both +k
 pulse_schedule3 = [(1e-3, +1), (3e-3, +1)]
@@ -285,16 +331,24 @@ t, traj_ref3 = simulate_trajectory(np.zeros(3), np.zeros(3), pulse_schedule3)
 
 fig3, axes3 = plt.subplots(1, 3, figsize=(15, 4), sharey=False)
 colors3 = [cm.Blues(0.4 + 0.5 * i / N_ATOMS) for i in range(N_ATOMS)]
-plot_xyz_trajectories(*axes3, times_ms, trajectories3, colors=colors3,
-                      title_suffix=f'{TEMPERATURE*1e6:.1f} µK MB + {len(pulse_schedule3)} pulses')
+plot_xyz_trajectories(
+    *axes3,
+    times_ms,
+    trajectories3,
+    colors=colors3,
+    title_suffix=f"{TEMPERATURE * 1e6:.1f} µK MB + {len(pulse_schedule3)} pulses",
+)
 # Overlay zero-velocity reference
-for ax, dim in zip(axes3, ['x', 'y', 'z']):
-    ax.plot(times_ms, traj_ref3[dim] * 1e3, 'r--', lw=2, label='v=0 ref')
+for ax, dim in zip(axes3, ["x", "y", "z"]):
+    ax.plot(times_ms, traj_ref3[dim] * 1e3, "r--", lw=2, label="v=0 ref")
     # Mark pulse times
     for tp, _ in pulse_schedule3:
-        ax.axvline(tp * 1e3, color='k', ls=':', lw=1, alpha=0.5)
+        ax.axvline(tp * 1e3, color="k", ls=":", lw=1, alpha=0.5)
 axes3[0].legend(fontsize=8)
-fig3.suptitle(f'Scenario 3: {N_ATOMS} atoms at {TEMPERATURE*1e6:.1f} µK, pulses at {[tp*1e3 for tp,_ in pulse_schedule3]} ms', fontsize=12)
+fig3.suptitle(
+    f"Scenario 3: {N_ATOMS} atoms at {TEMPERATURE * 1e6:.1f} µK, pulses at {[tp * 1e3 for tp, _ in pulse_schedule3]} ms",
+    fontsize=12,
+)
 vs.tag_plot(small=True)
 fig3.tight_layout()
 plt.show()
@@ -326,18 +380,23 @@ for pos, vel in zip(positions4, velocities4):
 
 fig4, axes4 = plt.subplots(1, 3, figsize=(15, 4), sharey=False)
 colors4 = [cm.Oranges(0.4 + 0.5 * i / N_ATOMS4) for i in range(N_ATOMS4)]
-plot_xyz_trajectories(*axes4, times_ms, trajectories4, colors=colors4, alpha=0.1,
-                      title_suffix=f'{TEMPERATURE*1e9:.0f} nK + {POSITION_SIGMA*1e9:.0f} nm spread + {len(pulse_schedule4)} pulses')
-for ax, dim in zip(axes4, ['x', 'y', 'z']):
+plot_xyz_trajectories(
+    *axes4,
+    times_ms,
+    trajectories4,
+    colors=colors4,
+    alpha=0.1,
+    title_suffix=f"{TEMPERATURE * 1e9:.0f} nK + {POSITION_SIGMA * 1e9:.0f} nm spread + {len(pulse_schedule4)} pulses",
+)
+for ax, dim in zip(axes4, ["x", "y", "z"]):
     for tp, _ in pulse_schedule4:
-        ax.axvline(tp * 1e3, color='k', ls=':', lw=1, alpha=1.0)
+        ax.axvline(tp * 1e3, color="k", ls=":", lw=1, alpha=1.0)
 fig4.suptitle(
-    f'Scenario 4: {N_ATOMS4} atoms at {TEMPERATURE*1e9:.0f} nK, '
-    f'$\\sigma_{{pos}}$={POSITION_SIGMA*1e9:.0f} nm, '
-    f'pulses at {[tp*1e3 for tp,_ in pulse_schedule4]} ms',
-    fontsize=12
+    f"Scenario 4: {N_ATOMS4} atoms at {TEMPERATURE * 1e9:.0f} nK, "
+    f"$\\sigma_{{pos}}$={POSITION_SIGMA * 1e9:.0f} nm, "
+    f"pulses at {[tp * 1e3 for tp, _ in pulse_schedule4]} ms",
+    fontsize=12,
 )
 vs.tag_plot(small=True)
 fig4.tight_layout()
 plt.show()
-

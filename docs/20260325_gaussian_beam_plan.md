@@ -30,7 +30,7 @@ where $\Omega_0$ is the on-axis Rabi frequency at the waist.
 
 **Current approach (constant Rabi):** The pulse uses a constant Rabi frequency throughout.
 
-**New approach (Gaussian beam):** 
+**New approach (Gaussian beam):**
 1. Track 3D position $(x, y, z)$ of each state branch
 2. At pulse center, compute the atom's transverse position $(x, y)$
 3. Compute Rabi frequency from Gaussian beam formula
@@ -87,10 +87,10 @@ def calculate_gaussian_rabi_frequency(
 ) -> np.ndarray:
     """
     Calculate Rabi frequency for each state branch based on Gaussian beam profile.
-    
+
     For backward compatibility, set waist_radius to a very large value (e.g., 1e6 m)
     to approximate a flat-top beam (uniform intensity).
-    
+
     Returns array of Rabi frequencies (Hz) for each branch.
     """
 ```

@@ -15,8 +15,16 @@ The guards exist because the underlying physics is not yet correctly handled. Wo
 If you encounter a guard while implementing something, your response should be: explain what guard was hit, what physics limitation it protects, and leave it to the human to decide how to proceed. Do not attempt to make the code "work" by circumventing the check.
 
 Examples of guards to respect (not exhaustive):
-- `ValueError: All pulses must currently use the same detuning for Bordé-frame propagation` in `lmt_sim/lmt_sequence.py` — changing laser frequency between pulses requires frame corrections not yet implemented
-- `TODO: Convert to the integral of laser phase` in `transform_state_vector` — the frame transformation is not valid for time-varying laser frequency
+- `NotImplementedError: Arm-restricted / simultaneous pulses are a stand-in for shaped pulses ...` in `lmt_sim/lmt_sequence.py` — full quantum propagation of shaped pulses is not implemented
+- `ValueError: All states discarded, increase discard_threshold` in `discard_and_renormalise_state_vector` — the renormalisation has nothing left to keep
+
+Note: changing the laser frequency between pulses **is** now supported. The
+lab<->Bordé transform (`transform_state_vector`) uses the genuine integral of the
+laser detuning, carried on `AtomState` as `(t_ref, detuning_ref_hz,
+accumulated_detuning_cycles)` and advanced by
+`change_laser_frequency_in_borde_representation` (which records the step without
+touching the amplitudes). See `docs/arp_frame_change_finding.md`. The ARP composer
+in `lmt_sim/arp.py` is the one piece still paused on this.
 
 ## Notebooks are jupytext scripts, not `.ipynb`
 
@@ -64,7 +72,7 @@ The tracked repository is:
 
 The simulation tracks an ensemble of **state rows**, each representing a branch of the atom's wavefunction. A state row consists of:
 
-- **Momentum quantum number `m`** `(N,)` int array — number of ℏk photon recoils relative to the initial momentum. Actual velocity of branch m is `v_0 + m * v_recoil`. 
+- **Momentum quantum number `m`** `(N,)` int array — number of ℏk photon recoils relative to the initial momentum. Actual velocity of branch m is `v_0 + m * v_recoil`.
 - **Position** `(N,)` float array — z-position of each branch, propagated ballistically using `v(m) = v_0 + m * v_recoil`
 - **Internal amplitude** `(N,)` complex128 array — complex coefficient for that branch
 - **Internal label** `(N,)` bool array — `True` = ground state, `False` = excited state

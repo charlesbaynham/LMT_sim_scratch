@@ -4,7 +4,6 @@ from lmt_sim.lmt_simulation import (
     RABI_FREQ,
     RECOIL_FREQUENCY_HZ,
     T_PI,
-    TRANSITION_FREQUENCY,
     K_WAVEVECTOR,
     make_atom_states,
     pulse_interaction_in_borde_representation,
@@ -24,9 +23,8 @@ PROBE_COEFF_1KHZ = 1000.0 / RABI_FREQ**2
 def _prepared_state(c0=1.0, c1=0.0, pulse_detuning_hz=RECOIL_FREQUENCY_HZ):
     """Make an atom state already transformed into the Borde frame."""
     state = make_atom_states(position_z=0.0, initial_velocity_z=0.0, c0=c0, c1=c1)
-    omega_laser = 2 * np.pi * (TRANSITION_FREQUENCY + pulse_detuning_hz)
     return transform_state_vector(
-        state, omega_laser=omega_laser, t=0.0, z=0.0, vz=0.0, inverse=False
+        state, detuning_hz=pulse_detuning_hz, t=0.0, z=0.0, vz=0.0, inverse=False
     )
 
 
@@ -99,7 +97,9 @@ def test_probe_shift_detunes_a_resonant_pi_pulse():
     resonant = _do_pulse(detuning, probe_shift_coefficient=0.0)
     shifted = _do_pulse(detuning, probe_shift_coefficient=coeff_5khz)
 
-    p_exc_resonant = np.abs(resonant.amplitudes[~resonant.internal_is_ground]).sum() ** 2
+    p_exc_resonant = (
+        np.abs(resonant.amplitudes[~resonant.internal_is_ground]).sum() ** 2
+    )
     p_exc_shifted = np.abs(shifted.amplitudes[~shifted.internal_is_ground]).sum() ** 2
 
     assert p_exc_resonant > 0.99, "pi pulse should be ~fully resonant without shift"
@@ -191,7 +191,9 @@ def test_shaped_pulse_resonant_only_with_true_stark_rabi():
     frac_unmarked = calculate_excited_fraction_for_pulse_sequence(seq_unmarked)
 
     assert frac_marked > 0.99, "true-Rabi shift should restore resonance"
-    assert frac_unmarked < 0.5, "fictitious-Rabi shift should leave the pulse far off-resonance"
+    assert frac_unmarked < 0.5, (
+        "fictitious-Rabi shift should leave the pulse far off-resonance"
+    )
 
 
 def test_pulse_rejects_non_positive_stark_rabi():
