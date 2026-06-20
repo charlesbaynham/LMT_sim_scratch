@@ -146,7 +146,7 @@ def run_phi(phi, detuning_offset_hz, rabi):
 
 
 # %%
-phis = np.linspace(0, 2 * np.pi, 100)
+phis = np.linspace(0, 2 * np.pi, 40)
 offsets = np.linspace(-1.0, 1.0, 5)  # units of recoil frequency
 mults = [0.01, 1.0, 100.0]
 titles = {0.01: "Rabi x0.01", 1.0: "Rabi x1 (normal)", 100.0: "Rabi x100"}
