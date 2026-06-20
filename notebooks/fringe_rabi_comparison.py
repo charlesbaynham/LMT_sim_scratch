@@ -38,8 +38,14 @@ def get_sequence(N, phi, rabi, detuning_offset_hz=0.0):
     t_pi = 0.5 / rabi
     s = []
     s.append(
-        seq.Pulse(k=+1, detuning_hz=+1 * REC + do, phi=0.0, label="BS",
-                  rabi_frequency=rabi, duration=t_pi / 2)
+        seq.Pulse(
+            k=+1,
+            detuning_hz=+1 * REC + do,
+            phi=0.0,
+            label="BS",
+            rabi_frequency=rabi,
+            duration=t_pi / 2,
+        )
     )
     top = []
     for i in range(N):
@@ -47,17 +53,35 @@ def get_sequence(N, phi, rabi, detuning_offset_hz=0.0):
         dm = (-1 if i % 2 == 0 else +1) * (2 * (i + 1) + 1)
         top.append((k, dm))
         s.append(
-            seq.Pulse(k=k, detuning_hz=dm * REC + do, phi=0.0, label=f"ta{i}",
-                      rabi_frequency=rabi, duration=t_pi)
+            seq.Pulse(
+                k=k,
+                detuning_hz=dm * REC + do,
+                phi=0.0,
+                label=f"ta{i}",
+                rabi_frequency=rabi,
+                duration=t_pi,
+            )
         )
     for k, dm in reversed(top):
         s.append(
-            seq.Pulse(k=k, detuning_hz=dm * REC + do, phi=0.0, label="td",
-                      rabi_frequency=rabi, duration=t_pi)
+            seq.Pulse(
+                k=k,
+                detuning_hz=dm * REC + do,
+                phi=0.0,
+                label="td",
+                rabi_frequency=rabi,
+                duration=t_pi,
+            )
         )
     s.append(
-        seq.Pulse(k=+1, detuning_hz=+1 * REC + do, phi=phi, label="mirror",
-                  rabi_frequency=rabi, duration=t_pi)
+        seq.Pulse(
+            k=+1,
+            detuning_hz=+1 * REC + do,
+            phi=phi,
+            label="mirror",
+            rabi_frequency=rabi,
+            duration=t_pi,
+        )
     )
     bot = []
     for i in range(N):
@@ -65,25 +89,47 @@ def get_sequence(N, phi, rabi, detuning_offset_hz=0.0):
         dm = (-1 if i % 2 == 0 else +1) * (2 * (i + 1) + 1)
         bot.append((k, dm))
         s.append(
-            seq.Pulse(k=k, detuning_hz=dm * REC + do, phi=phi, label=f"ba{i}",
-                      rabi_frequency=rabi, duration=t_pi)
+            seq.Pulse(
+                k=k,
+                detuning_hz=dm * REC + do,
+                phi=phi,
+                label=f"ba{i}",
+                rabi_frequency=rabi,
+                duration=t_pi,
+            )
         )
     for k, dm in reversed(bot):
         s.append(
-            seq.Pulse(k=k, detuning_hz=dm * REC + do, phi=phi, label="bd",
-                      rabi_frequency=rabi, duration=t_pi)
+            seq.Pulse(
+                k=k,
+                detuning_hz=dm * REC + do,
+                phi=phi,
+                label="bd",
+                rabi_frequency=rabi,
+                duration=t_pi,
+            )
         )
     s.append(
-        seq.Pulse(k=+1, detuning_hz=+1 * REC + do, phi=phi * 4, label="BSf",
-                  rabi_frequency=rabi, duration=t_pi / 2)
+        seq.Pulse(
+            k=+1,
+            detuning_hz=+1 * REC + do,
+            phi=phi * 4,
+            label="BSf",
+            rabi_frequency=rabi,
+            duration=t_pi / 2,
+        )
     )
     s.append(seq.Freefall(duration=t_pi, label="freefall"))
     return s
 
 
 initial_state = sim.make_atom_states(
-    position_x=0.0, position_y=0.0, position_z=0.0,
-    initial_velocity_z=0.0, c0=1.0, c1=0.0,
+    position_x=0.0,
+    position_y=0.0,
+    position_z=0.0,
+    initial_velocity_z=0.0,
+    c0=1.0,
+    c1=0.0,
 )
 
 
