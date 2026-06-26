@@ -100,8 +100,10 @@ print(f"recoil velocity          v_rec  = {v_recoil * 1e3:.6f} mm/s")
 print(f"recoil freq (angular)    d_rec  = {delta_rec_angular:.6e} rad/s")
 print(f"recoil freq (Hz)         d_rec  = {RECOIL_FREQUENCY_HZ:.6f} Hz")
 print()
-print(f"check: hbar k^2/2M /(2pi) = {delta_rec_angular / (2 * np.pi):.6f} Hz"
-      f"  == RECOIL_FREQUENCY_HZ ({RECOIL_FREQUENCY_HZ:.6f})")
+print(
+    f"check: hbar k^2/2M /(2pi) = {delta_rec_angular / (2 * np.pi):.6f} Hz"
+    f"  == RECOIL_FREQUENCY_HZ ({RECOIL_FREQUENCY_HZ:.6f})"
+)
 print()
 print(f"default pi-pulse Rabi     Omega  = {RABI_FREQ:.3f} Hz")
 print(f"default pi-pulse time     T_pi   = {T_PI * 1e6:.3f} us  (= 1/(2 Omega))")
@@ -241,8 +243,13 @@ pe_single = np.array(pe_single)
 
 fig, ax = plt.subplots(figsize=(7, 4))
 ax.plot(detunings / 1e3, pe_single)
-ax.axvline(RECOIL_FREQUENCY_HZ / 1e3, color="k", ls="--", lw=1,
-           label=f"recoil freq = {RECOIL_FREQUENCY_HZ / 1e3:.2f} kHz")
+ax.axvline(
+    RECOIL_FREQUENCY_HZ / 1e3,
+    color="k",
+    ls="--",
+    lw=1,
+    label=f"recoil freq = {RECOIL_FREQUENCY_HZ / 1e3:.2f} kHz",
+)
 ax.axvline(0.0, color="r", ls=":", lw=1, label="bare detuning = 0")
 ax.set_xlabel("laser detuning (kHz)")
 ax.set_ylabel(r"$P_e$ after a $\pi$-duration pulse")
@@ -251,12 +258,30 @@ ax.legend()
 fig.tight_layout()
 plt.show()
 
-print("P_e at detuning = RECOIL_FREQUENCY_HZ :",
-      abs((sim._single_pulse_propagator_2x2(
-          RECOIL_FREQUENCY_HZ, T_PI, RABI_FREQ, k_sign=+1, m_ground=0) @ psi_ground)[0]) ** 2)
-print("P_e at detuning = 0                   :",
-      abs((sim._single_pulse_propagator_2x2(
-          0.0, T_PI, RABI_FREQ, k_sign=+1, m_ground=0) @ psi_ground)[0]) ** 2)
+print(
+    "P_e at detuning = RECOIL_FREQUENCY_HZ :",
+    abs(
+        (
+            sim._single_pulse_propagator_2x2(
+                RECOIL_FREQUENCY_HZ, T_PI, RABI_FREQ, k_sign=+1, m_ground=0
+            )
+            @ psi_ground
+        )[0]
+    )
+    ** 2,
+)
+print(
+    "P_e at detuning = 0                   :",
+    abs(
+        (
+            sim._single_pulse_propagator_2x2(
+                0.0, T_PI, RABI_FREQ, k_sign=+1, m_ground=0
+            )
+            @ psi_ground
+        )[0]
+    )
+    ** 2,
+)
 
 # %% [markdown]
 # This reproduces `test_resonant_centre_is_one_recoil` and
@@ -275,8 +300,12 @@ print("P_e at detuning = 0                   :",
 # %%
 T = 200e-6
 sp_demo = arp.make_arp_subpulses(
-    T=T, delta_sweep_hz=2.0e4, omega0_hz=RABI_FREQ, n=200,
-    sweep_shape="tanh", omega_shape="sin2",
+    T=T,
+    delta_sweep_hz=2.0e4,
+    omega0_hz=RABI_FREQ,
+    n=200,
+    sweep_shape="tanh",
+    omega_shape="sin2",
 )
 t_centres = (np.arange(len(sp_demo)) + 0.5) * (T / len(sp_demo))
 det_profile = np.array([s.detuning_hz for s in sp_demo])
@@ -323,14 +352,18 @@ plt.show()
 # the wrong answer. `arp.compose_arp_2x2` now does the bare product. Let me show
 # both, and that only the bare product matches the independent ODE in Section 6.
 
+
 # %%
 def staircase_bare_product(subpulses, **kw):
     """Ordered product of per-block propagators — the correct ARP composer."""
     U = np.eye(2, dtype=complex)
     for s in subpulses:
-        U = sim._single_pulse_propagator_2x2(
-            s.detuning_hz, s.duration, s.rabi_freq_hz, k_sign=+1, m_ground=0, **kw
-        ) @ U
+        U = (
+            sim._single_pulse_propagator_2x2(
+                s.detuning_hz, s.duration, s.rabi_freq_hz, k_sign=+1, m_ground=0, **kw
+            )
+            @ U
+        )
     return U
 
 
@@ -346,19 +379,29 @@ def staircase_with_frame_change(subpulses):
     for s in subpulses:
         if s.detuning_hz != cur:
             df = s.detuning_hz - cur
-            U = np.diag([np.exp(+1j * np.pi * df * t), np.exp(-1j * np.pi * df * t)]) @ U
+            U = (
+                np.diag([np.exp(+1j * np.pi * df * t), np.exp(-1j * np.pi * df * t)])
+                @ U
+            )
             cur = s.detuning_hz
-        U = sim._single_pulse_propagator_2x2(
-            s.detuning_hz, s.duration, s.rabi_freq_hz, k_sign=+1, m_ground=0
-        ) @ U
+        U = (
+            sim._single_pulse_propagator_2x2(
+                s.detuning_hz, s.duration, s.rabi_freq_hz, k_sign=+1, m_ground=0
+            )
+            @ U
+        )
         t += s.duration
     return U
 
 
 # Confirm arp.compose_arp_2x2 IS the bare product (ref_detuning_hz=None default).
 sp_check = arp.make_arp_subpulses(
-    T=200e-6, delta_sweep_hz=4.0e5, omega0_hz=1.19e4, n=400,
-    sweep_shape="linear", omega_shape="const",
+    T=200e-6,
+    delta_sweep_hz=4.0e5,
+    omega0_hz=1.19e4,
+    n=400,
+    sweep_shape="linear",
+    omega_shape="const",
 )
 U_arp = arp.compose_arp_2x2(sp_check)
 U_bare = staircase_bare_product(sp_check)
@@ -402,15 +445,24 @@ def arp_rhs(t, y):
 
 
 sol = solve_ivp(
-    arp_rhs, [0, T_ode], psi_ground, rtol=1e-11, atol=1e-13,
-    max_step=T_ode / 40000, dense_output=False,
+    arp_rhs,
+    [0, T_ode],
+    psi_ground,
+    rtol=1e-11,
+    atol=1e-13,
+    max_step=T_ode / 40000,
+    dense_output=False,
 )
 pe_ode = abs(sol.y[0, -1]) ** 2
 
 # Staircase, bare product (correct) vs with-frame-change (wrong).
 sp_ode = arp.make_arp_subpulses(
-    T=T_ode, delta_sweep_hz=dsweep_ode, omega0_hz=omega0_ode, n=8000,
-    sweep_shape="linear", omega_shape="const",
+    T=T_ode,
+    delta_sweep_hz=dsweep_ode,
+    omega0_hz=omega0_ode,
+    n=8000,
+    sweep_shape="linear",
+    omega_shape="const",
 )
 pe_bare = abs((staircase_bare_product(sp_ode) @ psi_ground)[0]) ** 2
 pe_fc = abs((staircase_with_frame_change(sp_ode) @ psi_ground)[0]) ** 2
@@ -424,7 +476,9 @@ print(f"staircase, WITH frame change (old, BUG) P_e = {pe_fc:.4f}   <-- wrong")
 print(f"analytic Landau-Zener                   P_e = {pe_lz:.4f}")
 print()
 print(f"|bare - ODE|         = {abs(pe_bare - pe_ode):.2e}")
-print(f"|frame-change - ODE| = {abs(pe_fc - pe_ode):.2e}  (off by ~factor 2 in exponent)")
+print(
+    f"|frame-change - ODE| = {abs(pe_fc - pe_ode):.2e}  (off by ~factor 2 in exponent)"
+)
 
 # %% [markdown]
 # The bare product matches the independent ODE to ~$10^{-3}$ (staircase
@@ -445,8 +499,12 @@ ns = [50, 100, 200, 400, 800, 1600, 3200, 6400]
 pe_bare_n, pe_fc_n = [], []
 for n in ns:
     sp_n = arp.make_arp_subpulses(
-        T=T_ode, delta_sweep_hz=dsweep_ode, omega0_hz=omega0_ode, n=n,
-        sweep_shape="linear", omega_shape="const",
+        T=T_ode,
+        delta_sweep_hz=dsweep_ode,
+        omega0_hz=omega0_ode,
+        n=n,
+        sweep_shape="linear",
+        omega_shape="const",
     )
     pe_bare_n.append(abs((staircase_bare_product(sp_n) @ psi_ground)[0]) ** 2)
     pe_fc_n.append(abs((staircase_with_frame_change(sp_n) @ psi_ground)[0]) ** 2)
@@ -481,8 +539,12 @@ sweeps = np.linspace(1.5e5, 8e5, 18)
 pe_scan, pe_lz_scan = [], []
 for ds in sweeps:
     sp = arp.make_arp_subpulses(
-        T=T_ode, delta_sweep_hz=ds, omega0_hz=omega0_ode, n=3000,
-        sweep_shape="linear", omega_shape="const",
+        T=T_ode,
+        delta_sweep_hz=ds,
+        omega0_hz=omega0_ode,
+        n=3000,
+        sweep_shape="linear",
+        omega_shape="const",
     )
     pe_scan.append(abs((arp.compose_arp_2x2(sp) @ psi_ground)[0]) ** 2)
     pe_lz_scan.append(1.0 - np.exp(-(np.pi**2) * omega0_ode**2 * T_ode / ds))
@@ -491,7 +553,12 @@ pe_lz_scan = np.array(pe_lz_scan)
 
 fig, ax = plt.subplots(figsize=(7, 4))
 ax.plot(sweeps / 1e3, pe_scan, "o", label="staircase (compose_arp_2x2)")
-ax.plot(sweeps / 1e3, pe_lz_scan, "-", label=r"$1-e^{-\pi^2\Omega_0^2 T/\Delta_\mathrm{sweep}}$")
+ax.plot(
+    sweeps / 1e3,
+    pe_lz_scan,
+    "-",
+    label=r"$1-e^{-\pi^2\Omega_0^2 T/\Delta_\mathrm{sweep}}$",
+)
 ax.set_xlabel(r"sweep width $\Delta_\mathrm{sweep}$ (kHz)")
 ax.set_ylabel(r"$P_e$")
 ax.set_title("Landau-Zener diabatic tail (wide linear sweep, constant Omega)")
@@ -518,11 +585,16 @@ print("max |staircase - LZ| over the scan =", np.max(np.abs(pe_scan - pe_lz_scan
 # $\Omega_0 = $ RABI) tops out near $P_e \approx 0.998$ — genuinely not fully
 # adiabatic.
 
+
 # %%
 def pe_tanh_sin2(T, ds, w0, n=400):
     sp = arp.make_arp_subpulses(
-        T=T, delta_sweep_hz=ds, omega0_hz=w0, n=n,
-        sweep_shape="tanh", omega_shape="sin2",
+        T=T,
+        delta_sweep_hz=ds,
+        omega0_hz=w0,
+        n=n,
+        sweep_shape="tanh",
+        omega_shape="sin2",
     )
     return abs((arp.compose_arp_2x2(sp) @ psi_ground)[0]) ** 2
 
@@ -551,7 +623,9 @@ print(f"finding-doc point P_e (fringe)    : {pe_fringe:.6f}  (tops out ~0.998)")
 # Show the plateau really is insensitive to +/-10% in each parameter.
 neigh = [
     pe_tanh_sin2(600e-6 * fT, 3.0e4 * fd, 1.5 * RABI_FREQ * fw)
-    for fT in (0.9, 1.0, 1.1) for fd in (0.9, 1.0, 1.1) for fw in (0.9, 1.0, 1.1)
+    for fT in (0.9, 1.0, 1.1)
+    for fd in (0.9, 1.0, 1.1)
+    for fw in (0.9, 1.0, 1.1)
 ]
 print(f"plateau neighbourhood (+/-10% in T, ds, w0): min P_e = {min(neigh):.6f}")
 
@@ -567,8 +641,12 @@ errs = np.linspace(-8e3, 8e3, 41)
 pe_err = []
 for de in errs:
     sp = arp.make_arp_subpulses(
-        T=200e-6, delta_sweep_hz=2.0e4, omega0_hz=RABI_FREQ, n=400,
-        sweep_shape="tanh", omega_shape="sin2",
+        T=200e-6,
+        delta_sweep_hz=2.0e4,
+        omega0_hz=RABI_FREQ,
+        n=400,
+        sweep_shape="tanh",
+        omega_shape="sin2",
         delta_centre_hz=res_centre + de,
     )
     pe_err.append(abs((arp.compose_arp_2x2(sp) @ psi_ground)[0]) ** 2)
@@ -611,8 +689,13 @@ print(f"max |P_e(+de) - P_e(-de)| over the scan = {asym:.2e}  (even to this leve
 
 # %%
 sp_phase = arp.make_arp_subpulses(
-    T=120e-6, delta_sweep_hz=7.0e4, omega0_hz=RABI_FREQ, n=400,
-    sweep_shape="tanh", omega_shape="sin2", delta_centre_hz=4.0e4,
+    T=120e-6,
+    delta_sweep_hz=7.0e4,
+    omega0_hz=RABI_FREQ,
+    n=400,
+    sweep_shape="tanh",
+    omega_shape="sin2",
+    delta_centre_hz=4.0e4,
 )
 Phi = sum(s.detuning_hz * s.duration for s in sp_phase)  # cycles
 T_total = sum(s.duration for s in sp_phase)
@@ -621,7 +704,9 @@ residual = Phi - ref * T_total
 
 U_none = arp.compose_arp_2x2(sp_phase)  # instantaneous Borde frame
 U_ref = arp.compose_arp_2x2(sp_phase, ref_detuning_hz=ref)
-expected_corr = np.diag([np.exp(-1j * np.pi * residual), np.exp(+1j * np.pi * residual)])
+expected_corr = np.diag(
+    [np.exp(-1j * np.pi * residual), np.exp(+1j * np.pi * residual)]
+)
 
 print(f"Phi = integral of detuning   = {Phi:.6f} cycles")
 print(f"residual = Phi - ref*T_total = {residual:.6f} cycles")
@@ -638,15 +723,31 @@ probe = AtomState(
     internal_is_ground=np.array([False, True]),
 )
 boundary = sim.transform_state_vector(
-    probe, detuning_hz=Phi / T_total, t=T_total, z=0.0, vz=0.0,
-    omega_0=0.0, inverse=True,
+    probe,
+    detuning_hz=Phi / T_total,
+    t=T_total,
+    z=0.0,
+    vz=0.0,
+    omega_0=0.0,
+    inverse=True,
 )
-print("transform_state_vector(inverse=True) excited factor:",
-      boundary.amplitudes[0], " expected exp(-i pi Phi):", np.exp(-1j * np.pi * Phi))
-print("                                     ground  factor:",
-      boundary.amplitudes[1], " expected exp(+i pi Phi):", np.exp(+1j * np.pi * Phi))
-assert np.allclose(boundary.amplitudes,
-                   [np.exp(-1j * np.pi * Phi), np.exp(+1j * np.pi * Phi)], atol=1e-12)
+print(
+    "transform_state_vector(inverse=True) excited factor:",
+    boundary.amplitudes[0],
+    " expected exp(-i pi Phi):",
+    np.exp(-1j * np.pi * Phi),
+)
+print(
+    "                                     ground  factor:",
+    boundary.amplitudes[1],
+    " expected exp(+i pi Phi):",
+    np.exp(+1j * np.pi * Phi),
+)
+assert np.allclose(
+    boundary.amplitudes,
+    [np.exp(-1j * np.pi * Phi), np.exp(+1j * np.pi * Phi)],
+    atol=1e-12,
+)
 print("OK: ref_detuning_hz uses the same sign/size as the lab-boundary transform.")
 
 # %% [markdown]
@@ -659,8 +760,12 @@ ns_ph = [50, 100, 200, 400, 800, 1600]
 phases = []
 for n in ns_ph:
     sp = arp.make_arp_subpulses(
-        T=200e-6, delta_sweep_hz=2.0e4, omega0_hz=RABI_FREQ, n=n,
-        sweep_shape="tanh", omega_shape="sin2",
+        T=200e-6,
+        delta_sweep_hz=2.0e4,
+        omega0_hz=RABI_FREQ,
+        n=n,
+        sweep_shape="tanh",
+        omega_shape="sin2",
     )
     c_e = (arp.compose_arp_2x2(sp, ref_detuning_hz=0.0) @ psi_ground)[0]
     phases.append(np.angle(c_e))
@@ -688,8 +793,12 @@ print("phase(n=800) - phase(n=400) =", phases[-2] - phases[-3], "rad (assert < 1
 
 # %%
 sp_match = arp.make_arp_subpulses(
-    T=60e-6, delta_sweep_hz=1.0e5, omega0_hz=RABI_FREQ, n=5,
-    sweep_shape="linear", omega_shape="const",
+    T=60e-6,
+    delta_sweep_hz=1.0e5,
+    omega0_hz=RABI_FREQ,
+    n=5,
+    sweep_shape="linear",
+    omega_shape="const",
 )
 
 # 2x2 path.
@@ -697,8 +806,14 @@ c_e_2x2, c_g_2x2 = arp.compose_arp_2x2(sp_match) @ psi_ground
 
 # Row path.
 pulse_sequence = [
-    Pulse(k=+1, detuning_hz=s.detuning_hz, phi=0.0, label=f"arp_{i}",
-          rabi_frequency=s.rabi_freq_hz, duration=s.duration)
+    Pulse(
+        k=+1,
+        detuning_hz=s.detuning_hz,
+        phi=0.0,
+        label=f"arp_{i}",
+        rabi_frequency=s.rabi_freq_hz,
+        duration=s.duration,
+    )
     for i, s in enumerate(sp_match)
 ]
 row_state0 = AtomState(
@@ -709,7 +824,10 @@ row_state0 = AtomState(
     internal_is_ground=np.array([True]),
 )
 final_state, _, _ = run_pulse_sequence_in_borde_representation(
-    row_state0, pulse_sequence, initial_velocity_z=0.0, discard_threshold=0.0,
+    row_state0,
+    pulse_sequence,
+    initial_velocity_z=0.0,
+    discard_threshold=0.0,
 )
 is_g = final_state.internal_is_ground
 c_g_row = final_state.amplitudes[is_g & (final_state.m_values == 0)].sum()
@@ -718,8 +836,10 @@ c_e_row = final_state.amplitudes[(~is_g) & (final_state.m_values == 1)].sum()
 print(f"2x2 composer : c_e = {c_e_2x2:.10f}   c_g = {c_g_2x2:.10f}")
 print(f"row composer : c_e = {c_e_row:.10f}   c_g = {c_g_row:.10f}")
 print(f"|dc_e| = {abs(c_e_2x2 - c_e_row):.2e}   |dc_g| = {abs(c_g_2x2 - c_g_row):.2e}")
-print(f"row composer kept {len(final_state.amplitudes)} rows for the same 2-state physics "
-      f"(2^{len(sp_match)} = {2 ** len(sp_match)})")
+print(
+    f"row composer kept {len(final_state.amplitudes)} rows for the same 2-state physics "
+    f"(2^{len(sp_match)} = {2 ** len(sp_match)})"
+)
 assert np.isclose(c_e_2x2, c_e_row, atol=1e-10)
 assert np.isclose(c_g_2x2, c_g_row, atol=1e-10)
 print("OK: 2x2 composer == collapsed row composer.")
@@ -739,11 +859,16 @@ print("OK: 2x2 composer == collapsed row composer.")
 # We propagate the 2×2 state block by block (the same bare product), recording the
 # state after each block.
 
+
 # %%
 def bloch_trajectory(T, ds, w0, n, sweep_shape, omega_shape):
     sp = arp.make_arp_subpulses(
-        T=T, delta_sweep_hz=ds, omega0_hz=w0, n=n,
-        sweep_shape=sweep_shape, omega_shape=omega_shape,
+        T=T,
+        delta_sweep_hz=ds,
+        omega0_hz=w0,
+        n=n,
+        sweep_shape=sweep_shape,
+        omega_shape=omega_shape,
     )
     psi = psi_ground.copy()
     sx, sy, sz, tgrid, Om3s = [], [], [], [], []
@@ -766,19 +891,34 @@ def bloch_trajectory(T, ds, w0, n, sweep_shape, omega_shape):
 
 # Adiabatic (slow, smooth) vs diabatic (fast, wide) — same plotting machinery.
 t_ad, sx_ad, sy_ad, sz_ad, Om3_ad = bloch_trajectory(
-    600e-6, 3.0e4, 1.5 * RABI_FREQ, 600, "tanh", "sin2")
+    600e-6, 3.0e4, 1.5 * RABI_FREQ, 600, "tanh", "sin2"
+)
 t_di, sx_di, sy_di, sz_di, Om3_di = bloch_trajectory(
-    200e-6, 4.0e5, 1.19e4, 2000, "linear", "const")
+    200e-6, 4.0e5, 1.19e4, 2000, "linear", "const"
+)
 
 fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
 for ax, (t_, sx_, sz_, Om3_, title) in zip(
     axes,
-    [(t_ad, sx_ad, sz_ad, Om3_ad, "Adiabatic: state follows the sweep -> full inversion"),
-     (t_di, sx_di, sz_di, Om3_di, "Diabatic: state left behind -> partial transfer")],
+    [
+        (
+            t_ad,
+            sx_ad,
+            sz_ad,
+            Om3_ad,
+            "Adiabatic: state follows the sweep -> full inversion",
+        ),
+        (t_di, sx_di, sz_di, Om3_di, "Diabatic: state left behind -> partial transfer"),
+    ],
 ):
     ax.plot(t_ * 1e6, (sz_ + 1) / 2, label=r"$P_e = (s_z+1)/2$")
-    ax.plot(t_ * 1e6, np.sign(Om3_) * 0.5 + 0.5, "k--", lw=1,
-            label=r"sign of $\Omega_3(t)$ (resonance crossing)")
+    ax.plot(
+        t_ * 1e6,
+        np.sign(Om3_) * 0.5 + 0.5,
+        "k--",
+        lw=1,
+        label=r"sign of $\Omega_3(t)$ (resonance crossing)",
+    )
     ax.set_xlabel("time (us)")
     ax.set_ylabel(r"$P_e$")
     ax.set_ylim(-0.05, 1.05)
