@@ -27,10 +27,13 @@ both diagonal and coupling carrying the same minus sign. The code follows this
 
 ## Corroborating (modern review)
 
-**Cronin_Schmiedmayer_Pritchard_2009_RevModPhys.81.1051_optics_interferometry_atoms_molecules.pdf**
-A. D. Cronin, J. Schmiedmayer & D. E. Pritchard, *"Optics and interferometry with
-atoms and molecules,"* Rev. Mod. Phys. **81**, 1051 (2009); open access as
-arXiv:0712.3703.
+**Cronin_Schmiedmayer_Pritchard_arXiv0712.3703_atom_interferometers.pdf**
+A. D. Cronin, J. Schmiedmayer & D. E. Pritchard. The PDF is the arXiv preprint
+(arXiv:0712.3703v1, 21 Dec 2007), whose title is *"Atom Interferometers"*. The
+same work was **retitled on publication** to *"Optics and interferometry with
+atoms and molecules,"* Rev. Mod. Phys. **81**, 1051 (2009) — same authors, same
+content. (So the title printed on the PDF differs from the journal citation; both
+name the same review.)
 
 Corroborates the formalism the code uses: the detuning convention
 `Δ = ω_laser − ω_atom`, the generalized Rabi frequency `Ω_R = √(Ω₁² + Δ²)`, the
