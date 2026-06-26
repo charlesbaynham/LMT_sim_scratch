@@ -9,6 +9,10 @@
 *.pkl
 hifais_data/
 
+# ...but DO track reference papers stored under docs/references/.
+!docs/references/
+!docs/references/*.pdf
+
 # Claude / vendored deps
 .claude/worktrees
 .claude/settings.local.json
