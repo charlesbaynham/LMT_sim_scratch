@@ -5,20 +5,6 @@ to analytic limits (no-frame-change consistency, Landau-Zener diabatic tail,
 adiabatic full inversion).
 """
 
-import pytest
-
-# PARKED: the ARP composer (lmt_sim.arp) is on hold pending the Bordé
-# frame-change rework. The row-based path has been corrected to rebase the frame
-# at a laser-frequency step (no inter-block frame change), so the still-paused 2x2
-# ARP composer -- which deliberately keeps the old (wrong) inter-block frame
-# change -- no longer matches the row composer. The whole ARP test module is
-# skipped until we return to the ARP composer. See docs/arp_frame_change_finding.md.
-pytest.skip(
-    "ARP composer parked pending the Bordé frame-change rework "
-    "(see docs/arp_frame_change_finding.md).",
-    allow_module_level=True,
-)
-
 import numpy as np
 
 from lmt_sim import arp
@@ -59,9 +45,11 @@ def test_arp_2x2_matches_row_composer():
     """The 2x2 ARP composer must equal the full row-based composer at small N.
 
     Run with discard_threshold=0.0 so no renormalisation perturbs amplitudes,
-    then collapse the redundant rows. Both paths end in the frame of the last
-    sub-pulse, so amplitudes compare directly. This is the standing tripwire
-    against the two propagation paths drifting apart.
+    then collapse the redundant rows. Both paths leave the amplitudes in the
+    instantaneous Bordé frame (no inter-block frame change; the row path's
+    change_laser_frequency_in_borde_representation does not touch amplitudes), so
+    they compare directly. This is the standing tripwire against the two
+    propagation paths drifting apart.
     """
     subpulses = arp.make_arp_subpulses(
         T=60e-6,
@@ -127,6 +115,61 @@ def test_arp_phi_bookkeeping_no_frame_change():
     np.testing.assert_allclose(U_staircase, U_single, atol=1e-12, rtol=0)
 
 
+def test_arp_ref_detuning_matches_lab_boundary_convention():
+    """The ``ref_detuning_hz`` correction must use the lab-boundary sign/size.
+
+    Relative to the un-referenced (Bordé-frame) composer, passing
+    ``ref_detuning_hz`` applies exactly the laser-detuning factor that
+    ``transform_state_vector(inverse=True)`` puts on at the lab boundary:
+    excited ``exp(-i pi (Phi - ref*T))``, ground ``exp(+i pi (Phi - ref*T))`` with
+    ``Phi = sum_k detuning_k * dt_k``. This pins the convention so it can't drift
+    from the core transform.
+    """
+    subpulses = arp.make_arp_subpulses(
+        T=120e-6,
+        delta_sweep_hz=7.0e4,
+        omega0_hz=RABI_FREQ,
+        n=23,
+        sweep_shape="tanh",
+        omega_shape="sin2",
+        delta_centre_hz=4.0e4,  # non-trivial, non-integer Phi
+    )
+    ref = 1.3e4
+    U_none = arp.compose_arp_2x2(subpulses)
+    U_ref = arp.compose_arp_2x2(subpulses, ref_detuning_hz=ref)
+
+    phi_cycles = sum(s.detuning_hz * s.duration for s in subpulses)
+    total_time = sum(s.duration for s in subpulses)
+    residual = phi_cycles - ref * total_time
+    expected = np.diag([np.exp(-1j * np.pi * residual), np.exp(+1j * np.pi * residual)])
+    np.testing.assert_allclose(U_ref, expected @ U_none, atol=1e-13, rtol=0)
+
+    # Cross-check the sign against transform_state_vector itself (omega_0 and the
+    # spatial term zeroed, so only the detuning factor exp(-/+ i pi Phi) remains).
+    probe = AtomState(
+        m_values=np.array([1, 0]),
+        positions=np.zeros((2, 3)),
+        velocities=np.zeros((2, 3)),
+        amplitudes=np.array([1.0 + 0j, 1.0 + 0j]),
+        internal_is_ground=np.array([False, True]),
+    )
+    boundary = sim.transform_state_vector(
+        probe,
+        detuning_hz=phi_cycles / total_time,  # constant-rate frame with same Phi
+        t=total_time,
+        z=0.0,
+        vz=0.0,
+        omega_0=0.0,
+        inverse=True,
+    )
+    np.testing.assert_allclose(
+        boundary.amplitudes,
+        [np.exp(-1j * np.pi * phi_cycles), np.exp(+1j * np.pi * phi_cycles)],
+        atol=1e-12,
+        rtol=0,
+    )
+
+
 def _arp_excited_population_and_phase(
     *, T, delta_sweep_hz, omega0_hz, n, sweep_shape, omega_shape, delta_centre_hz=None
 ):
@@ -162,30 +205,18 @@ def test_arp_staircase_convergence():
     assert abs(dphi) < 1e-2
 
 
-# FIXME(frame-change): These three tests are xfailed only because
-# compose_arp_2x2 applies the inter-block frame change. Removing that frame
-# change (see the FIXME in lmt_sim/arp.py) makes them pass -- so flip these back
-# to plain (must-pass) tests as part of the fix. docs/arp_frame_change_finding.md
-_FRAME_CHANGE_XFAIL = pytest.mark.xfail(
-    reason=(
-        "compose_arp_2x2 currently applies the inter-block frame change, which "
-        "double-counts the laser-frequency change for a chirp (the detuning is "
-        "already in the per-block Hamiltonian diagonal). The staircase therefore "
-        "converges to the wrong physics. Removing the frame change makes these "
-        "pass (matches the continuous-sweep ODE and Landau-Zener). PAUSED pending "
-        "investigation of the row-composer frame change -- see docs/arp_frame_change_finding.md."
-    ),
-    strict=False,
-)
-
-
-@_FRAME_CHANGE_XFAIL
 def test_arp_adiabatic_inversion():
-    """A strongly adiabatic ARP pulse must fully invert the population."""
+    """A strongly adiabatic ARP pulse must fully invert the population.
+
+    These parameters sit on a robust adiabatic plateau (P_e ~ 1.0, insensitive to
+    +/-10% changes in T / delta_sweep / omega0), not a diabatic-residual fringe --
+    a genuine test of adiabatic passage. (The narrower, shorter sweep the finding
+    doc cites tops out at P_e ~ 0.998, i.e. not fully adiabatic.)
+    """
     pe, _ = _arp_excited_population_and_phase(
-        T=200e-6,
-        delta_sweep_hz=2.0e4,
-        omega0_hz=RABI_FREQ,
+        T=600e-6,
+        delta_sweep_hz=3.0e4,
+        omega0_hz=1.5 * RABI_FREQ,
         n=400,
         sweep_shape="tanh",
         omega_shape="sin2",
@@ -193,7 +224,6 @@ def test_arp_adiabatic_inversion():
     assert pe > 0.999
 
 
-@_FRAME_CHANGE_XFAIL
 def test_arp_landau_zener_diabatic_tail():
     """A constant-Omega wide linear sweep approaches the Landau-Zener transfer.
 
@@ -217,7 +247,6 @@ def test_arp_landau_zener_diabatic_tail():
     assert abs(pe - expected) < 0.03
 
 
-@_FRAME_CHANGE_XFAIL
 def test_arp_symmetric_about_resonance():
     """Auto-centred ARP is symmetric: P_e is even in the static detuning error."""
     resonant = arp.resonant_centre_detuning_hz()

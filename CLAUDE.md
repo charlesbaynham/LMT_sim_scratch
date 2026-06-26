@@ -24,7 +24,8 @@ laser detuning, carried on `AtomState` as `(t_ref, detuning_ref_hz,
 accumulated_detuning_cycles)` and advanced by
 `change_laser_frequency_in_borde_representation` (which records the step without
 touching the amplitudes). See `docs/arp_frame_change_finding.md`. The ARP composer
-in `lmt_sim/arp.py` is the one piece still paused on this.
+in `lmt_sim/arp.py` now follows the same rule (it composes the per-block
+propagators directly, with no inter-block frame change) and is no longer paused.
 
 ## Notebooks are jupytext scripts, not `.ipynb`
 

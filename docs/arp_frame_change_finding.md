@@ -1,24 +1,31 @@
 # ARP frame-change finding (back-to-back pulses double-count the chirp)
 
-**Status:** the **core/row path is now FIXED**; the **ARP composer remains
-paused**. The row-based path no longer applies any inter-block frame change: at a
+**Status:** RESOLVED. Both the core/row path **and** the ARP composer are now
+fixed. The row-based path no longer applies any inter-block frame change: at a
 laser-frequency step it rebases the Bordé frame *without touching the amplitudes*
 (`change_laser_frequency_in_borde_representation`), carrying the laser-detuning
 integral on `AtomState` as `(t_ref, detuning_ref_hz, accumulated_detuning_cycles)` and
 applying it only at the lab boundary (`transform_state_vector`). The old
-`_frame_change_phases` (`exp(±iπ Δf t)`) was removed from the core; a local copy
-survives only inside `lmt_sim/arp.py` so the paused ARP composer keeps its old
-behaviour. `lmt_sim.arp` and `tests/test_arp.py` are parked (the test module is
-skipped) until the ARP composer is revisited. The note below ("No core sequence
-code has been changed") describes the state *before* that fix.
+`_frame_change_phases` (`exp(±iπ Δf t)`) was removed from the core.
+
+`lmt_sim.arp.compose_arp_2x2` now composes the per-block propagators **directly**
+(no inter-block frame change), so the Bordé-frame amplitudes match the row
+composer exactly. The local `_frame_change_phases` copy is gone. Its
+`ref_detuning_hz` argument optionally reproduces the lab-boundary laser-phase
+integral `exp(±iπ (Φ − ref·T))` with `Φ = Σ_k detuning_k·dt_k`, for referencing an
+imprinted phase to a fixed frame across a parameter scan. `tests/test_arp.py` is
+un-parked and the three former-xfail physics tests (ODE / Landau–Zener / adiabatic
+inversion / resonance symmetry) now pass. The note below ("No core sequence code
+has been changed") describes the state *before* these fixes.
 
 ## TL;DR
 
 Modelling an ARP sweep as a staircase of short, back-to-back, fixed-detuning
 sub-pulses is correct **only if you do not apply the inter-block frame change**.
-The current `lmt_sim.arp.compose_arp_2x2` *does* apply it (mirroring the
-row-based composer), and that double-counts the laser-frequency change, so it
-converges to the wrong physics.
+An early `lmt_sim.arp.compose_arp_2x2` *did* apply it (mirroring the then row-based
+composer), which double-counted the laser-frequency change and converged to the
+wrong physics. Both paths have since dropped the inter-block frame change (see
+Status above); the table below is the diagnosis that motivated the fix.
 
 | case (Δsweep = 4e5 Hz, Ω₀ = 11.9 kHz, T = 200 µs, linear sweep / const Ω) | P_e |
 |---|---|
@@ -98,30 +105,33 @@ for s in sp:
                                          k_sign=+1, m_ground=0) @ U
 pe_nofc = abs((U @ [0, 1 + 0j])[0]) ** 2
 
-pe_fc = abs((arp.compose_arp_2x2(sp) @ [0, 1 + 0j])[0]) ** 2  # with frame change
-
-print(pe_ode, pe_nofc, pe_fc)        # ~0.4932  0.4932  0.2784
+# Since the fix, arp.compose_arp_2x2(sp) == the no-frame-change product above,
+# so abs((arp.compose_arp_2x2(sp) @ [0, 1 + 0j])[0])**2 now also gives ~0.4932.
+print(pe_ode, pe_nofc)               # ~0.4932  0.4932
 ```
+
+(Historically `compose_arp_2x2` applied the inter-block frame change and gave the
+wrong `pe_fc ~ 0.2784`; that frame change has since been removed.)
 
 ## What is and isn't established
 
 - **Solid:** for *back-to-back* sub-pulses (no free evolution between them),
   the frame change is wrong and "no frame change" is correct (matches the ODE and
-  Landau–Zener). This makes the row composer give wrong results for back-to-back
-  pulses with different detunings.
-- **Open (your investigation):** whether the frame change is correct in its
-  *intended* regime — pulses separated by **free evolution** at a fixed reference
-  frequency, where there genuinely is an accumulated cross-frame offset to
-  reconcile. This has not been audited here, and the core sequence code was left
-  untouched. Suggested test: a `pulse(Δ₁) — freefall(τ) — pulse(Δ₂)` sequence
-  compared against an independent single-fixed-frame (atomic-resonance, RWA)
-  integration where the chirp lives entirely in the coupling phase.
+  Landau–Zener). The row composer and `compose_arp_2x2` both now do this.
+- **Resolved (was open):** the frame change is *not* needed in its once-intended
+  regime either — pulses separated by **free evolution**. The row path carries the
+  laser-detuning integral on `AtomState` and applies it only at the lab boundary
+  (`transform_state_vector`), rebasing at a frequency step *without touching the
+  amplitudes*. The `pulse(Δ₁) — freefall(τ) — pulse(Δ₂)` regression (a same-frequency
+  rebase is an exact no-op; a two-detuning sequence matches the no-frame-change
+  reference) lives in the core test suite.
 
-## Corrected path (when un-paused)
+## Corrected path (done)
 
-Make `compose_arp_2x2` compose the per-block propagators directly (no inter-block
-frame change). This still reuses the shared `_single_pulse_propagator_2x2`
-primitive, so the pulse physics stays single-sourced; it simply does not use the
-frame change, which is the wrong tool for a chirp. The imprinted-phase reference
-across a detuning-error scan then needs an integral-of-laser-phase correction
-(`exp(±i·2π·δ_err·T)`) rather than a frame change.
+`compose_arp_2x2` composes the per-block propagators directly (no inter-block frame
+change), reusing the shared `_single_pulse_propagator_2x2` primitive so the pulse
+physics stays single-sourced. The imprinted-phase reference across a detuning-error
+scan is handled by the optional `ref_detuning_hz` argument, which applies the
+integral-of-laser-phase `exp(±iπ (Φ − ref·T))` (`Φ = Σ_k detuning_k·dt_k`; the g–e
+*relative* phase is the `exp(±i·2π·δ_err·T)` quoted earlier) rather than a frame
+change. Implemented and covered by `tests/test_arp.py`.
