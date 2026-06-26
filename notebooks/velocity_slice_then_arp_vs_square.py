@@ -438,3 +438,243 @@ print(f"\n450 µs ARP, worst <F> over ±15% in (T, sweep, Omega0) = {worst:.5f}"
 # ~$10^{-4}$ infidelity (limited only by the most extreme sidelobe survivors; a
 # wider sweep pushes it lower still) — the regime LMT needs, where per-pulse losses
 # compound over tens of pulses.
+
+# %% [markdown]
+# ---
+# # Part II — adding a Gaussian-beam Rabi inhomogeneity
+#
+# ## 8. The beam is not a flat top
+#
+# A real TEM00 beam drives an atom at transverse position $r$ with a Rabi frequency
+#
+# $$ \Omega(r) = \Omega_0\,e^{-r^2/w_0^2}, $$
+#
+# where $w_0$ is the beam waist (1/e field radius) — this is
+# `lmt_simulation.gaussian_rabi` with the Rayleigh-range and in-pulse-motion terms
+# dropped (we freeze the cloud during each pulse, as asked). We Monte-Carlo **each
+# atom's Rabi factor** $\eta \equiv \Omega/\Omega_0 = e^{-r^2/w_0^2}$ alongside its
+# velocity.
+#
+# Model the cloud as a Gaussian of RMS transverse radius $\sigma_r = f\,w_0$. The
+# waist then **cancels**: with $x, y \sim \mathcal{N}(0, \sigma_r)$,
+# $\eta = \exp[-(x^2+y^2)/w_0^2]$ where $x/w_0, y/w_0 \sim \mathcal{N}(0, f)$ — so we
+# just draw $x, y \sim \mathcal{N}(0, f)$ and set $\eta = e^{-(x^2+y^2)}$. The **same**
+# $\eta$ scales every pulse that atom sees (slice and next pulse share the beam).
+#
+# Three cloud sizes: $f = 1\%,\ 10\%,\ 100\%$ of the waist.
+
+# %%
+CLOUD_FRACTIONS = [0.01, 0.10, 1.00]  # cloud RMS radius / beam waist
+N_CLOUD = 8000
+rng_beam = np.random.default_rng(31415)
+
+
+def sample_eta(fraction, n):
+    """Rabi factor eta = exp(-r^2/w0^2) for a Gaussian cloud, sigma_r = fraction*w0."""
+    x = rng_beam.normal(0.0, fraction, n)
+    y = rng_beam.normal(0.0, fraction, n)
+    return np.exp(-(x**2 + y**2))
+
+
+fig, ax = plt.subplots(figsize=(7.5, 4))
+for frac, color in zip(CLOUD_FRACTIONS, ["tab:green", "tab:orange", "tab:red"]):
+    eta = sample_eta(frac, N_CLOUD)
+    ax.hist(
+        eta,
+        bins=np.linspace(0, 1.0001, 80),
+        histtype="step",
+        lw=2,
+        color=color,
+        label=f"{frac * 100:.0f}% of waist  (mean η = {eta.mean():.2f})",
+    )
+ax.set_xlabel(r"Rabi factor $\eta = \Omega/\Omega_0$")
+ax.set_ylabel("atoms")
+ax.set_title("Beam-induced Rabi inhomogeneity across the cloud")
+ax.legend()
+fig.tight_layout()
+plt.show()
+
+# %% [markdown]
+# ## 9. Slice + clearout with inhomogeneity
+#
+# The slice π pulse now also depends on $\eta$: an off-centre atom is driven weaker,
+# under-rotates the 200 µs pulse, and is **less likely to survive the clearout**. So
+# the clearout does double duty — it selects in velocity *and* in Rabi, preferentially
+# keeping atoms near $\eta = 1$. This self-cleans the inhomogeneity for small clouds;
+# only the 100% cloud keeps survivors with substantially reduced $\eta$ (and at a big
+# hit to survival).
+
+
+# %%
+def slice_pe_inhom(v, eta):
+    """P(|e,+1>) after the slice pulse for an atom of velocity v and Rabi factor eta."""
+    U = sim._single_pulse_propagator_2x2(
+        DET_SLICE, T_SLICE, eta * RABI_SLICE, k_sign=+1, vz=v, m_ground=0
+    )
+    return np.abs((U @ GROUND)[0]) ** 2
+
+
+def run_cloud(fraction):
+    """Sample (v, eta), velocity-slice, clearout; return surviving (v, eta)."""
+    eta = sample_eta(fraction, N_CLOUD)
+    v = rng_beam.normal(0.0, sigma_v, N_CLOUD)
+    pe = np.array([slice_pe_inhom(vi, ei) for vi, ei in zip(v, eta)])
+    keep = rng_beam.uniform(size=N_CLOUD) < pe  # the do_clearout projection
+    return v[keep], eta[keep]
+
+
+clouds = {frac: run_cloud(frac) for frac in CLOUD_FRACTIONS}
+for frac, (vs, es) in clouds.items():
+    print(
+        f"cloud {frac * 100:5.0f}% :  survival {len(vs) / N_CLOUD * 100:4.1f}%   "
+        f"survivor η mean={es.mean():.3f} std={es.std():.3f} min={es.min():.3f}   "
+        f"v σ={vs.std() * 1e3:.2f} mm/s"
+    )
+
+# %% [markdown]
+# ## 10. Re-optimising the ARP for the inhomogeneous cloud
+#
+# The velocity-only ARP (450 µs, 80 kHz sweep, $\Omega_0 = 3\times$) assumed full
+# drive. A weakly-driven atom ($\eta \ll 1$) sees only $\eta\,\Omega_0$, so its
+# adiabaticity (which scales like $\Omega_0^2 T / \Delta_\mathrm{sweep}$) collapses.
+# To keep even the low-$\eta$ survivors adiabatic we must **raise $\Omega_0$ and/or
+# lengthen $T$**. We scan over the hardest (100%) survivor ensemble.
+
+# %%
+ARP_PREV = (450e-6, 8.0e4, 3.0)  # velocity-only optimum (full-drive assumption)
+
+
+def arp_ensemble(v_arr, e_arr, T, delta_sweep_hz, omega0_factor, n=150):
+    """Mean ARP transfer fidelity over a (v, eta) sample (eta scales the drive)."""
+    return float(
+        np.mean(
+            [
+                transfer_fidelity_arp(vi, T, delta_sweep_hz, ei * omega0_factor, n)
+                for vi, ei in zip(v_arr, e_arr)
+            ]
+        )
+    )
+
+
+vs100, es100 = clouds[1.00]
+sub = rng_beam.choice(len(vs100), size=min(300, len(vs100)), replace=False)
+vsub, esub = vs100[sub], es100[sub]
+
+best = None
+for T in (450e-6, 700e-6, 1000e-6):
+    for w0 in (4.0, 6.0, 8.0):
+        f = arp_ensemble(vsub, esub, T, 8.0e4, w0, n=120)
+        if best is None or f > best[0]:
+            best = (f, T, 8.0e4, w0)
+ARP_REOPT = best[1:]
+print(
+    f"re-optimised ARP: T = {ARP_REOPT[0] * 1e6:.0f} µs, sweep = {ARP_REOPT[1] / 1e3:.0f} kHz, "
+    f"Ω₀ = {ARP_REOPT[2]:.0f}×   ->   <F>(100% cloud, subsample) = {best[0]:.4f}"
+)
+print("(Higher Ω₀ and longer T keep the weakly-driven low-η survivors adiabatic.)")
+
+# %% [markdown]
+# ## 11. Square vs ARP across the three cloud sizes
+#
+# For each cloud we average the next-pulse transfer fidelity over its survivors for
+# three pulses: the square π, the full-drive ARP, and the re-optimised ARP.
+
+
+# %%
+def square_ensemble(v_arr, e_arr):
+    return float(
+        np.mean(
+            [
+                transfer_fidelity_square(vi, rabi=ei * RABI_FREQ)
+                for vi, ei in zip(v_arr, e_arr)
+            ]
+        )
+    )
+
+
+rows = []
+for frac in CLOUD_FRACTIONS:
+    vs, es = clouds[frac]
+    f_sq = square_ensemble(vs, es)
+    f_prev = arp_ensemble(vs, es, *ARP_PREV)
+    f_reopt = arp_ensemble(vs, es, *ARP_REOPT)
+    rows.append((frac, f_sq, f_prev, f_reopt))
+    print(
+        f"cloud {frac * 100:5.0f}% :  square={f_sq:.4f} (infid {1 - f_sq:.1e})   "
+        f"ARP-prev={f_prev:.4f}   ARP-reopt={f_reopt:.5f} (infid {1 - f_reopt:.1e})"
+    )
+
+fig, ax = plt.subplots(figsize=(8, 4.5))
+x = np.arange(len(rows))
+w = 0.27
+ax.bar(x - w, [1 - r[1] for r in rows], w, label="square π, 45 µs", color="tab:orange")
+ax.bar(x, [1 - r[2] for r in rows], w, label="ARP (full-drive)", color="tab:purple")
+ax.bar(
+    x + w, [1 - r[3] for r in rows], w, label="ARP (re-optimised)", color="tab:green"
+)
+ax.set_yscale("log")
+ax.set_xticks(x)
+ax.set_xticklabels([f"{int(r[0] * 100)}%" for r in rows])
+ax.set_xlabel("cloud size (fraction of beam waist)")
+ax.set_ylabel(r"ensemble infidelity $1 - \langle F\rangle$")
+ax.set_title("Next-pulse infidelity vs cloud size and pulse type")
+ax.legend()
+fig.tight_layout()
+plt.show()
+
+# %% [markdown]
+# ## 12. Where the square pulse fails: the $(v, \eta)$ plane
+#
+# Survivors of the 100% cloud, coloured by transfer fidelity — square π (left) vs
+# re-optimised ARP (right). The square pulse fails wherever the atom is off-resonance
+# (large $|v|$) **or** weakly driven (small $\eta$); the ARP is flat across almost the
+# whole population, only dropping for the most extreme deep-wing atoms.
+
+# %%
+vs, es = clouds[1.00]
+F_sq_scatter = np.array(
+    [transfer_fidelity_square(vi, rabi=ei * RABI_FREQ) for vi, ei in zip(vs, es)]
+)
+F_arp_scatter = np.array(
+    [
+        transfer_fidelity_arp(vi, ARP_REOPT[0], ARP_REOPT[1], ei * ARP_REOPT[2], 150)
+        for vi, ei in zip(vs, es)
+    ]
+)
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), sharey=True)
+for axis, F, title in zip(
+    axes, [F_sq_scatter, F_arp_scatter], ["square π, 45 µs", "re-optimised ARP"]
+):
+    sc = axis.scatter(vs * 1e3, es, c=F, vmin=0, vmax=1, cmap="viridis", s=14)
+    axis.set_xlabel("velocity $v_z$ (mm/s)")
+    axis.set_title(title)
+axes[0].set_ylabel(r"Rabi factor $\eta$")
+fig.colorbar(sc, ax=axes, label="transfer fidelity $F$")
+plt.show()
+
+# %% [markdown]
+# ## 13. Summary (with beam inhomogeneity)
+#
+# Modelling the beam as a Gaussian and Monte-Carlo-sampling each atom's Rabi factor
+# $\eta = e^{-r^2/w_0^2}$ adds a second axis of imperfection on top of the Doppler
+# spread. Two things happen:
+#
+# * **The slice + clearout self-cleans small clouds.** Because the 200 µs slice is a
+#   Rabi-sensitive π pulse, off-centre (low-$\eta$) atoms under-rotate and are
+#   preferentially thrown away by the clearout. For a **1%** or **10%** cloud the
+#   survivors have $\eta \approx 0.98$–$1.0$, so the inhomogeneity barely matters: the
+#   square pulse stays at ~0.91 and a re-optimised ARP is essentially perfect — the
+#   same picture as the velocity-only case.
+# * **The 100% cloud is genuinely hard.** Survival collapses (only the central few
+#   percent of the beam gives a clean π), and the survivors still span $\eta$ from
+#   ~0.06 to 1. The square π pulse averages only ~0.68 — it fails on every weakly-driven
+#   *or* off-resonant atom. The ARP recovers to ~0.999, **but only after
+#   re-optimisation**: it needs a much stronger drive ($\Omega_0 \sim 8\times$) and a
+#   longer sweep ($\sim$1 ms) so that even the low-$\eta$ atoms stay adiabatic.
+#
+# The headline: ARP's robustness extends from detuning (velocity) to **drive
+# strength (Rabi)** as well — a single adiabatic sweep tolerates both — but that
+# robustness is bought with optical power and time, and it cannot rescue atoms the
+# beam barely illuminates. The practical lever remains keeping the cloud small
+# compared to the beam: at ≤10% of the waist the inhomogeneity is a non-issue.
