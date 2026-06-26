@@ -308,42 +308,47 @@ print(
 )
 
 # %% [markdown]
-# ## 6. ARP transfer
+# ## 6. ARP transfer — at the *same* Rabi frequency
 #
-# An ARP sweep (tanh detuning chirp + $\sin^2$ amplitude envelope) adiabatically
-# follows the dressed state through resonance, so it inverts robustly across a band
-# of detunings — provided it is given enough time to be adiabatic. We show two:
+# **Constraint:** the ARP's peak Rabi is pinned to the square pulse's,
+# $\Omega_0 = $ `RABI_FREQ` (no extra laser power is available). That removes the
+# drive knob — the only levers left are the **sweep duration** and the **sweep
+# width**, and duration is the one we can spend freely.
 #
-# * **Same duration (45 µs):** even matched to the square pulse's time, a
-#   well-chosen ARP already beats it.
-# * **Time-extended (450 µs):** given ~10× the time it becomes essentially perfect
-#   across the whole slice.
+# An ARP (tanh detuning chirp + $\sin^2$ amplitude envelope) adiabatically follows
+# the dressed state through resonance, inverting robustly across a band of detunings
+# — *provided it is slow enough to be adiabatic at this fixed Rabi*. So it must be
+# much longer than the 45 µs square π. We show two durations to make the
+# time-for-fidelity trade explicit:
 #
-# Sweep parameters: $\Delta_\mathrm{sweep} = 80\,$kHz, peak Rabi
-# $\Omega_0 = 3\times$ the nominal. The 80 kHz sweep spans $\pm 40\,$kHz of detuning,
-# i.e. $\pm\,40\text{kHz}\,\lambda \approx \pm 28\,$mm/s — wide enough to also catch
-# the sinc-sidelobe survivors a square pulse leaves far off resonance. This breadth
-# is the whole point: ARP can be made robust over a band the square π pulse simply
-# cannot cover.
+# * **450 µs** — at this 80 kHz sweep it is *not yet adiabatic* at the fixed Rabi,
+#   and actually comes out a touch *worse* than the square pulse: a half-measure
+#   does not pay (you'd be better off keeping the square π).
+# * **1.5 ms** — long enough (≈33× the square π) to reach ~$10^{-4}$ infidelity
+#   across the whole slice, sidelobes included.
+#
+# Sweep width $\Delta_\mathrm{sweep} = 80\,$kHz spans $\pm 28\,$mm/s, covering the
+# sinc-sidelobe survivors too. (At a fixed peak Rabi the $\sin^2$ envelope beats a
+# flat top — its smooth turn-on/off avoids diabatic jumps at the sweep ends.)
 
 # %%
 ARP_SWEEP_HZ = 8.0e4
-ARP_OMEGA0_FAC = 3.0
+ARP_OMEGA0_FAC = 1.0  # peak Rabi pinned to the square pulse's (no extra power)
 
-F_arp45_ens, F_arp45_v = ensemble_fidelity(
-    lambda v: transfer_fidelity_arp(v, 45e-6, ARP_SWEEP_HZ, ARP_OMEGA0_FAC)
-)
-F_arp450_ens, F_arp450_v = ensemble_fidelity(
+F_arp_short_ens, F_arp_short_v = ensemble_fidelity(
     lambda v: transfer_fidelity_arp(v, 450e-6, ARP_SWEEP_HZ, ARP_OMEGA0_FAC)
 )
+F_arp_long_ens, F_arp_long_v = ensemble_fidelity(
+    lambda v: transfer_fidelity_arp(v, 1500e-6, ARP_SWEEP_HZ, ARP_OMEGA0_FAC)
+)
 
 print(
-    f"<F_ARP  (45 us)>   over the slice = {F_arp45_ens:.5f}   "
-    f"infidelity = {1 - F_arp45_ens:.2e}"
+    f"<F_ARP  (450 us)>  over the slice = {F_arp_short_ens:.5f}   "
+    f"infidelity = {1 - F_arp_short_ens:.2e}"
 )
 print(
-    f"<F_ARP (450 us)>   over the slice = {F_arp450_ens:.6f}   "
-    f"infidelity = {1 - F_arp450_ens:.2e}"
+    f"<F_ARP (1500 us)>  over the slice = {F_arp_long_ens:.6f}   "
+    f"infidelity = {1 - F_arp_long_ens:.2e}"
 )
 
 # %% [markdown]
@@ -351,7 +356,8 @@ print(
 #
 # The top panel overlays each pulse's transfer fidelity $F(v)$ on the surviving
 # slice's velocity density. The square pulse's fidelity sags as soon as the atom is
-# off-resonance; the time-extended ARP is flat at 1.0000 across the entire slice.
+# off-resonance; the 1.5 ms ARP is flat near unity across the entire slice — at the
+# **same peak Rabi**, bought purely with time.
 
 # %%
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8), height_ratios=[2, 1])
@@ -359,13 +365,13 @@ fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8), height_ratios=[2, 1])
 ax1.plot(v_axis * 1e3, F_square_v, color="tab:orange", lw=2, label="square π, 45 µs")
 ax1.plot(
     v_axis * 1e3,
-    F_arp45_v,
+    F_arp_short_v,
     color="tab:purple",
     lw=1.5,
     ls="--",
-    label="ARP, 45 µs (same time)",
+    label="ARP, 450 µs",
 )
-ax1.plot(v_axis * 1e3, F_arp450_v, color="tab:green", lw=2, label="ARP, 450 µs")
+ax1.plot(v_axis * 1e3, F_arp_long_v, color="tab:green", lw=2, label="ARP, 1.5 ms")
 ax1.fill_between(
     v_axis * 1e3,
     0,
@@ -376,11 +382,11 @@ ax1.fill_between(
 )
 ax1.set_ylabel(r"transfer fidelity $F(v) = P(|g,+2\rangle)$")
 ax1.set_ylim(0, 1.02)
-ax1.set_title("Next-pulse transfer fidelity across the velocity slice")
+ax1.set_title("Next-pulse transfer fidelity across the velocity slice (fixed Rabi)")
 ax1.legend(loc="lower center")
 
-labels = ["square\n45 µs", "ARP\n45 µs", "ARP\n450 µs"]
-infids = [1 - F_square_ens, 1 - F_arp45_ens, 1 - F_arp450_ens]
+labels = ["square\n45 µs", "ARP\n450 µs", "ARP\n1.5 ms"]
+infids = [1 - F_square_ens, 1 - F_arp_short_ens, 1 - F_arp_long_ens]
 ax2.bar(labels, infids, color=["tab:orange", "tab:purple", "tab:green"])
 ax2.set_yscale("log")
 ax2.set_ylabel("ensemble infidelity\n" r"$1-\langle F\rangle$")
@@ -391,16 +397,18 @@ fig.tight_layout()
 plt.show()
 
 # %% [markdown]
-# ### Robustness and convergence of the 450 µs ARP
+# ### Robustness and convergence of the 1.5 ms ARP
 #
 # Two sanity checks that the near-unity ARP fidelity is real, not a fringe: it is
 # (a) converged in the staircase resolution `n`, and (b) insensitive to ±15%
-# changes in pulse time / sweep width / Rabi.
+# changes in pulse time and sweep width (the peak Rabi is fixed by the power
+# constraint, so we do not vary it here — its *down*-ward robustness is exactly
+# what Part II stress-tests).
 
 # %%
 for n in (100, 200, 400):
     f, _ = ensemble_fidelity(
-        lambda v: transfer_fidelity_arp(v, 450e-6, ARP_SWEEP_HZ, ARP_OMEGA0_FAC, n=n)
+        lambda v: transfer_fidelity_arp(v, 1500e-6, ARP_SWEEP_HZ, ARP_OMEGA0_FAC, n=n)
     )
     print(f"  n = {n:3d}:  <F> = {f:.6f}   infidelity = {1 - f:.2e}")
 
@@ -408,15 +416,14 @@ v_coarse = np.linspace(-28e-3, 28e-3, 351)  # coarse grid for the robustness sca
 worst = 1.0
 for fT in (0.85, 1.0, 1.15):
     for fd in (0.85, 1.0, 1.15):
-        for fw in (0.85, 1.0, 1.15):
-            f, _ = ensemble_fidelity(
-                lambda v: transfer_fidelity_arp(
-                    v, 450e-6 * fT, ARP_SWEEP_HZ * fd, ARP_OMEGA0_FAC * fw, n=100
-                ),
-                grid=v_coarse,
-            )
-            worst = min(worst, f)
-print(f"\n450 µs ARP, worst <F> over ±15% in (T, sweep, Omega0) = {worst:.5f}")
+        f, _ = ensemble_fidelity(
+            lambda v: transfer_fidelity_arp(
+                v, 1500e-6 * fT, ARP_SWEEP_HZ * fd, ARP_OMEGA0_FAC, n=100
+            ),
+            grid=v_coarse,
+        )
+        worst = min(worst, f)
+print(f"\n1.5 ms ARP, worst <F> over ±15% in (T, sweep) = {worst:.5f}")
 
 # %% [markdown]
 # ## Summary
@@ -424,8 +431,8 @@ print(f"\n450 µs ARP, worst <F> over ±15% in (T, sweep, Omega0) = {worst:.5f}"
 # | next pulse (down beam, `|e,+1⟩ → |g,+2⟩`) | duration | ⟨F⟩ over slice | infidelity |
 # |---|---|---|---|
 # | square π | 45 µs | ~0.91 | ~9 × 10⁻² |
-# | ARP (same time) | 45 µs | ~0.98 | ~2 × 10⁻² |
-# | ARP (time-extended) | 450 µs | ~0.9999 | ~1 × 10⁻⁴ |
+# | ARP (too short) | 450 µs | ~0.90 | ~1 × 10⁻¹ (≈ square — not yet adiabatic) |
+# | ARP | 1.5 ms | ~0.9995 | ~5 × 10⁻⁴ |
 #
 # After a 200 µs velocity slice + clearout at 1 µK, the surviving cloud still has a
 # residual Doppler spread (here $\sigma_v \approx 3\,$mm/s, plus sinc-sidelobe atoms
@@ -433,11 +440,12 @@ print(f"\n450 µs ARP, worst <F> over ±15% in (T, sweep, Omega0) = {worst:.5f}"
 # its fidelity sags as soon as the atom is off resonance and collapses on the
 # sidelobe survivors, costing ~9% per pulse. An adiabatic sweep follows the dressed
 # state through resonance and is **flat at unity across the whole band**, removing
-# that velocity-dependent loss almost entirely. The price is duration: matched to
-# 45 µs the ARP already beats the square pulse, and given ~10× the time it reaches
-# ~$10^{-4}$ infidelity (limited only by the most extreme sidelobe survivors; a
-# wider sweep pushes it lower still) — the regime LMT needs, where per-pulse losses
-# compound over tens of pulses.
+# that velocity-dependent loss almost entirely. At a **fixed peak Rabi** (the same
+# as the square pulse — no extra power), that robustness is bought entirely with
+# *time*: the ARP must run ~33× longer than the 45 µs square π to reach ~$5\times10^{-4}$
+# infidelity. Time is cheap here; per-pulse fidelity, compounded over tens of LMT
+# pulses, is not — so the trade is worth it. (A 2.5 ms / longer pulse pushes the
+# infidelity lower still, as long as we ignore in-pulse atomic motion, as asked.)
 
 # %% [markdown]
 # ---
@@ -532,16 +540,19 @@ for frac, (vs, es) in clouds.items():
     )
 
 # %% [markdown]
-# ## 10. Re-optimising the ARP for the inhomogeneous cloud
+# ## 10. Re-optimising the ARP for the inhomogeneous cloud (fixed Rabi)
 #
-# The velocity-only ARP (450 µs, 80 kHz sweep, $\Omega_0 = 3\times$) assumed full
-# drive. A weakly-driven atom ($\eta \ll 1$) sees only $\eta\,\Omega_0$, so its
-# adiabaticity (which scales like $\Omega_0^2 T / \Delta_\mathrm{sweep}$) collapses.
-# To keep even the low-$\eta$ survivors adiabatic we must **raise $\Omega_0$ and/or
-# lengthen $T$**. We scan over the hardest (100%) survivor ensemble.
+# At the **fixed peak Rabi** we cannot raise $\Omega_0$ to rescue weakly-driven
+# atoms — the lever is gone. A low-$\eta$ atom sees only $\eta\,\Omega_0$, so its
+# adiabaticity ($\propto \Omega_0^2 T / \Delta_\mathrm{sweep}$) is set by $\eta$ and
+# nothing we control. All we can do is spend more **time** and **narrow the sweep**
+# (trading some velocity coverage for adiabaticity). We scan $T$ and
+# $\Delta_\mathrm{sweep}$ at $\Omega_0 = 1\times$ over the hardest (100%) survivor
+# ensemble. There is a hard floor: atoms with $\eta \to 0$ cannot be inverted at any
+# duration when the drive is weak.
 
 # %%
-ARP_PREV = (450e-6, 8.0e4, 3.0)  # velocity-only optimum (full-drive assumption)
+ARP_VEL = (1500e-6, 8.0e4, 1.0)  # the velocity-only optimum from Part I (Ω₀ = 1×)
 
 
 def arp_ensemble(v_arr, e_arr, T, delta_sweep_hz, omega0_factor, n=150):
@@ -561,23 +572,24 @@ sub = rng_beam.choice(len(vs100), size=min(300, len(vs100)), replace=False)
 vsub, esub = vs100[sub], es100[sub]
 
 best = None
-for T in (450e-6, 700e-6, 1000e-6):
-    for w0 in (4.0, 6.0, 8.0):
-        f = arp_ensemble(vsub, esub, T, 8.0e4, w0, n=120)
+for T in (1000e-6, 1500e-6, 2500e-6):
+    for ds in (3.0e4, 4.0e4, 8.0e4):
+        f = arp_ensemble(vsub, esub, T, ds, 1.0, n=120)
         if best is None or f > best[0]:
-            best = (f, T, 8.0e4, w0)
+            best = (f, T, ds, 1.0)
 ARP_REOPT = best[1:]
 print(
-    f"re-optimised ARP: T = {ARP_REOPT[0] * 1e6:.0f} µs, sweep = {ARP_REOPT[1] / 1e3:.0f} kHz, "
-    f"Ω₀ = {ARP_REOPT[2]:.0f}×   ->   <F>(100% cloud, subsample) = {best[0]:.4f}"
+    f"re-optimised ARP (fixed Ω₀ = 1×): T = {ARP_REOPT[0] * 1e6:.0f} µs, "
+    f"sweep = {ARP_REOPT[1] / 1e3:.0f} kHz   ->   <F>(100% cloud, subsample) = {best[0]:.4f}"
 )
-print("(Higher Ω₀ and longer T keep the weakly-driven low-η survivors adiabatic.)")
+print("(Only longer T and a narrower sweep are available; the η→0 atoms set a floor.)")
 
 # %% [markdown]
 # ## 11. Square vs ARP across the three cloud sizes
 #
 # For each cloud we average the next-pulse transfer fidelity over its survivors for
-# three pulses: the square π, the full-drive ARP, and the re-optimised ARP.
+# three pulses, **all at the same peak Rabi**: the square π, the velocity-tuned ARP
+# (1.5 ms, Part I), and the cloud-re-optimised ARP.
 
 
 # %%
@@ -596,19 +608,19 @@ rows = []
 for frac in CLOUD_FRACTIONS:
     vs, es = clouds[frac]
     f_sq = square_ensemble(vs, es)
-    f_prev = arp_ensemble(vs, es, *ARP_PREV)
+    f_vel = arp_ensemble(vs, es, *ARP_VEL)
     f_reopt = arp_ensemble(vs, es, *ARP_REOPT)
-    rows.append((frac, f_sq, f_prev, f_reopt))
+    rows.append((frac, f_sq, f_vel, f_reopt))
     print(
         f"cloud {frac * 100:5.0f}% :  square={f_sq:.4f} (infid {1 - f_sq:.1e})   "
-        f"ARP-prev={f_prev:.4f}   ARP-reopt={f_reopt:.5f} (infid {1 - f_reopt:.1e})"
+        f"ARP-vel={f_vel:.4f}   ARP-reopt={f_reopt:.5f} (infid {1 - f_reopt:.1e})"
     )
 
 fig, ax = plt.subplots(figsize=(8, 4.5))
 x = np.arange(len(rows))
 w = 0.27
 ax.bar(x - w, [1 - r[1] for r in rows], w, label="square π, 45 µs", color="tab:orange")
-ax.bar(x, [1 - r[2] for r in rows], w, label="ARP (full-drive)", color="tab:purple")
+ax.bar(x, [1 - r[2] for r in rows], w, label="ARP (velocity-tuned)", color="tab:purple")
 ax.bar(
     x + w, [1 - r[3] for r in rows], w, label="ARP (re-optimised)", color="tab:green"
 )
@@ -668,13 +680,17 @@ plt.show()
 #   same picture as the velocity-only case.
 # * **The 100% cloud is genuinely hard.** Survival collapses (only the central few
 #   percent of the beam gives a clean π), and the survivors still span $\eta$ from
-#   ~0.06 to 1. The square π pulse averages only ~0.68 — it fails on every weakly-driven
-#   *or* off-resonant atom. The ARP recovers to ~0.999, **but only after
-#   re-optimisation**: it needs a much stronger drive ($\Omega_0 \sim 8\times$) and a
-#   longer sweep ($\sim$1 ms) so that even the low-$\eta$ atoms stay adiabatic.
+#   ~0.06 to 1. The square π pulse averages only ~0.64 — it fails on every weakly-driven
+#   *or* off-resonant atom. At the **fixed Rabi** the ARP cannot simply out-drive the
+#   problem; re-optimising what we *can* change (longer $T \sim 2.5\,$ms, a narrower
+#   ~30 kHz sweep) recovers it to ~0.97, far better than the square pulse but no
+#   longer near-unity. The remaining ~3% is a hard floor: atoms in the deep beam
+#   wings ($\eta \to 0$) see almost no drive and cannot be inverted by *any* pulse.
 #
 # The headline: ARP's robustness extends from detuning (velocity) to **drive
-# strength (Rabi)** as well — a single adiabatic sweep tolerates both — but that
-# robustness is bought with optical power and time, and it cannot rescue atoms the
-# beam barely illuminates. The practical lever remains keeping the cloud small
-# compared to the beam: at ≤10% of the waist the inhomogeneity is a non-issue.
+# strength (Rabi)** as well — a single adiabatic sweep tolerates both — but at a
+# fixed peak Rabi that robustness is bought entirely with **time**, and it cannot
+# rescue atoms the beam barely illuminates. The practical lever is therefore the
+# cloud-to-beam ratio: at ≤10% of the waist the inhomogeneity self-cleans away and a
+# longer ARP is essentially perfect; at 100% no fixed-power pulse can fully recover
+# the weakly-lit wings, and the real fix is a bigger beam (smaller relative cloud).
