@@ -384,6 +384,95 @@ def propagate_states_in_borde_representation(
     )
 
 
+def _branch_row_with_propagator(
+    idx,
+    state: AtomState,
+    prop_matrix,
+    m_ground,
+    m_excited,
+    vz,
+    *,
+    t_total,
+    kick_fraction,
+    new_amplitudes,
+    new_m_values,
+    new_positions,
+    new_velocities,
+    ind_excited,
+):
+    """Apply one row's 2x2 propagator and write its two output branches.
+
+    ``prop_matrix`` acts on ``[c_excited, c_ground]``. The input row ``idx`` is
+    split into a ground-output branch (written to ``idx``) and an excited-output
+    branch (written to ``ind_excited + idx``). Shared by the square-pulse
+    interaction (``pulse_interaction_in_borde_representation``) and the composite
+    interaction (``composite_pulse_interaction_in_borde_representation``) so the
+    branching / velocity / position bookkeeping lives in exactly one place.
+
+    ``t_total`` is the full event duration used for ballistic propagation;
+    ``kick_fraction`` in ``[0, 1]`` is the fraction of it spent at the OLD
+    velocity before the discrete ``m -> m+-k`` recoil is imparted (0.5 =
+    midpoint). A no-change branch (ground->ground or excited->excited) keeps its
+    velocity for the whole duration.
+
+    TODO (stationary-atom approximation): each branch moves at a single (old or
+    new) velocity across the whole pulse and the position/beam is read once. For
+    long composite/ARP pulses the atom moves appreciably DURING the pulse, so
+    this is a poor approximation; the proper fix is per-sub-slice position
+    re-evaluation at each slice's midpoint. See section 6.2 of
+    docs/LMT_milestones_and_implementation_plan.md.
+    """
+    # Borde notation: state = [excited_amp, ground_amp] (b, a)
+    if state.internal_is_ground[idx]:
+        amplitude_vector_in = np.array([0, state.amplitudes[idx]], dtype=complex)
+    else:
+        amplitude_vector_in = np.array([state.amplitudes[idx], 0], dtype=complex)
+
+    amplitude_vector_out = prop_matrix @ amplitude_vector_in
+
+    # Build 3D velocity vectors for the two output branches. vz for each branch is
+    # the reference velocity plus m * RECOIL_VELOCITY, consistent with the
+    # invariant velocities[idx, 2] == vz + m_values[idx] * RECOIL_VELOCITY. vx and
+    # vy are taken from the input velocities (unchanged).
+    vz_ground = vz + m_ground * RECOIL_VELOCITY
+    vz_excited = vz + m_excited * RECOIL_VELOCITY
+    vel_ground_3d = np.array(
+        [state.velocities[idx, 0], state.velocities[idx, 1], vz_ground]
+    )
+    vel_excited_3d = np.array(
+        [state.velocities[idx, 0], state.velocities[idx, 1], vz_excited]
+    )
+
+    # Ground-output branch: m = m_ground
+    new_amplitudes[idx] = amplitude_vector_out[1]
+    new_m_values[idx] = m_ground
+    new_velocities[idx] = vel_ground_3d
+    # Excited-output branch: m = m_excited
+    new_amplitudes[ind_excited + idx] = amplitude_vector_out[0]
+    new_m_values[ind_excited + idx] = m_excited
+    new_velocities[ind_excited + idx] = vel_excited_3d
+
+    # Positions: a transition branch spends kick_fraction of the pulse at the OLD
+    # velocity and the remainder at the NEW velocity (the recoil is imparted at
+    # that instant). kick_fraction=0.5 reproduces the square-pulse midpoint rule.
+    t_before = kick_fraction * t_total
+    t_after = t_total - t_before
+    if state.internal_is_ground[idx]:  # start in ground
+        # ground->ground: stays at ground velocity
+        new_positions[idx] = state.positions[idx] + vel_ground_3d * t_total
+        # ground->excited: old = ground, new = excited
+        new_positions[ind_excited + idx] = (
+            state.positions[idx] + vel_ground_3d * t_before + vel_excited_3d * t_after
+        )
+    else:  # start in excited
+        # excited->excited: stays at excited velocity
+        new_positions[idx] = state.positions[idx] + vel_excited_3d * t_total
+        # excited->ground: old = excited, new = ground
+        new_positions[ind_excited + idx] = (
+            state.positions[idx] + vel_excited_3d * t_before + vel_ground_3d * t_after
+        )
+
+
 def pulse_interaction_in_borde_representation(
     state: AtomState,
     pulse_detuning: float,
@@ -481,20 +570,17 @@ def pulse_interaction_in_borde_representation(
     new_is_ground[ind_excited:] = False
 
     for idx in range(N):
-        # Build input state vector for propagate_pulse
         # Borde notation: state = [excited_amp, ground_amp] (b, a)
         if state.internal_is_ground[idx]:
             # The ground state has m = m_a, so the relevant excited state for
             # the pulse is m = m_a +- 1
             m_ground = state.m_values[idx]
             m_excited = state.m_values[idx] + k_sign
-            amplitude_vector_in = np.array([0, state.amplitudes[idx]], dtype=complex)
         else:
             # This excited state has m = m_b, so the relevant ground state for
             # the pulse is m = m_b -+ 1
             m_ground = state.m_values[idx] - k_sign
             m_excited = state.m_values[idx]
-            amplitude_vector_in = np.array([state.amplitudes[idx], 0], dtype=complex)
 
         effective_detuning_hz = _effective_detuning_hz(
             pulse_detuning, probe_shift_coefficient, stark_rabi_arr[idx]
@@ -511,56 +597,22 @@ def pulse_interaction_in_borde_representation(
             m_ground=m_ground,
         )
 
-        amplitude_vector_out = prop_matrix @ amplitude_vector_in
-
-        # Build 3D velocity vectors for the two output branches.
-        # vz for each branch is computed from the reference velocity plus
-        # m * RECOIL_VELOCITY, consistent with the invariant
-        # velocities[idx, 2] == vz + m_values[idx] * RECOIL_VELOCITY.
-        # vx and vy are taken from the input velocities (unchanged).
-        vz_ground = vz + m_ground * RECOIL_VELOCITY
-        vz_excited = vz + m_excited * RECOIL_VELOCITY
-
-        vel_ground_3d = np.array(
-            [state.velocities[idx, 0], state.velocities[idx, 1], vz_ground]
+        # Square pulse: recoil imparted at the midpoint (kick_fraction=0.5).
+        _branch_row_with_propagator(
+            idx,
+            state,
+            prop_matrix,
+            m_ground,
+            m_excited,
+            vz,
+            t_total=t_pulse,
+            kick_fraction=0.5,
+            new_amplitudes=new_amplitudes,
+            new_m_values=new_m_values,
+            new_positions=new_positions,
+            new_velocities=new_velocities,
+            ind_excited=ind_excited,
         )
-        vel_excited_3d = np.array(
-            [state.velocities[idx, 0], state.velocities[idx, 1], vz_excited]
-        )
-
-        # Ground-output branch: m = m_ground, velocity = vel_ground_3d
-        new_amplitudes[idx] = amplitude_vector_out[1]
-        new_m_values[idx] = m_ground
-        new_velocities[idx] = vel_ground_3d
-
-        # Excited-output branch: m = m_excited, velocity = vel_excited_3d
-        new_amplitudes[ind_excited + idx] = amplitude_vector_out[0]
-        new_m_values[ind_excited + idx] = m_excited
-        new_velocities[ind_excited + idx] = vel_excited_3d
-
-        # Update the positions. If this state didn't change (i.e. ground->ground
-        # or excited->excited) we can just use the input velocity for the whole
-        # pulse duration. If it did change, we use the midpoint approximation:
-        # half the pulse with the old velocity, half the pulse with the new
-        # velocity.
-        if state.internal_is_ground[idx]:  # start in ground
-            # ground->ground
-            new_positions[idx] = state.positions[idx] + vel_ground_3d * t_pulse
-            # ground->excited
-            new_positions[ind_excited + idx] = (
-                state.positions[idx]
-                + vel_ground_3d * (t_pulse / 2)
-                + vel_excited_3d * (t_pulse / 2)
-            )
-        else:  # start in excited
-            # excited->excited
-            new_positions[idx] = state.positions[idx] + vel_excited_3d * t_pulse
-            # excited->ground
-            new_positions[ind_excited + idx] = (
-                state.positions[idx]
-                + vel_ground_3d * (t_pulse / 2)
-                + vel_excited_3d * (t_pulse / 2)
-            )
 
     return AtomState(
         m_values=new_m_values,
@@ -569,6 +621,151 @@ def pulse_interaction_in_borde_representation(
         amplitudes=new_amplitudes,
         internal_is_ground=new_is_ground,
         # The pulse doubles the rows but does not change the laser frame.
+        t_ref=state.t_ref,
+        detuning_ref_hz=state.detuning_ref_hz,
+        accumulated_detuning_cycles=state.accumulated_detuning_cycles,
+    )
+
+
+def composite_pulse_interaction_in_borde_representation(
+    state: AtomState,
+    subpulses,
+    *,
+    k_sign=+1,
+    pulse_phase=0.0,
+    momentum_kick_fraction=0.5,
+    k_wavevector=K_WAVEVECTOR,
+    vz: float = 0.0,
+    probe_shift_coefficient: float = 0.0,
+):
+    r"""Apply a composite (multi-block) pulse as a SINGLE branching event.
+
+    Like :func:`pulse_interaction_in_borde_representation` this couples
+    ``|a, m>`` to ``|b, m+-k>`` and doubles the row count, but each row's 2x2
+    mixing matrix is the composed product of the staircase of fixed-parameter
+    sub-blocks (:func:`lmt_sim.arp.compose_arp_2x2`) instead of one square-pulse
+    propagator. This is how an adiabatic-rapid-passage (ARP) frequency sweep --
+    hundreds of tiny sub-pulses -- enters the sequence WITHOUT the ``2**N`` row
+    explosion that branching every sub-pulse would cause: the whole sweep is one
+    branching event.
+
+    The frame fields ``(t_ref, detuning_ref_hz, accumulated_detuning_cycles)``
+    are carried forward UNCHANGED, exactly like the square interaction: the
+    sweep's laser-phase integral and end-frame are folded by the sequence loop
+    via :func:`advance_composite_frame_integral`.
+
+    Parameters
+    ----------
+    state : AtomState
+    subpulses : sequence
+        The staircase; each item exposes ``detuning_hz`` / ``rabi_freq_hz`` /
+        ``duration`` (e.g. :class:`lmt_sim.arp.ARPSubPulse`).
+    k_sign : int, optional
+        Laser direction (+1 / -1), by default +1.
+    pulse_phase : float, optional
+        Constant optical phase across the staircase (rad), by default 0.0.
+    momentum_kick_fraction : float, optional
+        Fraction of the total pulse duration before the discrete ``m -> m+-k``
+        recoil is imparted, for ballistic position propagation only (0.5 =
+        midpoint), by default 0.5.
+    k_wavevector : float, optional
+        Wavevector magnitude, by default K_WAVEVECTOR.
+    vz : float, optional
+        Reference z-velocity (v_0); the per-row recoil shift is added internally
+        by :func:`_borde_frame_constants`, by default 0.0.
+    probe_shift_coefficient : float, optional
+        Probe (light) shift coefficient (1/Hz), by default 0.0. Applied per
+        sub-block against that block's Rabi frequency to the DYNAMICS only; the
+        laser-phase integral and the end detuning the sequence loop folds use the
+        NOMINAL sub-block detunings (the probe shift is an atom-frame energy
+        shift, not a change to the laser program).
+
+    Returns
+    -------
+    AtomState
+        Atom state after the pulse, with ``N*2`` rows and the frame fields
+        unchanged.
+    """
+    # Late import: arp imports this module, so importing it at module load time
+    # would be circular.
+    from lmt_sim import arp
+
+    N = state.amplitudes.shape[0]
+    new_num_rows = N * 2
+
+    new_amplitudes = np.empty(new_num_rows, dtype=state.amplitudes.dtype)
+    new_m_values = np.empty(new_num_rows, dtype=state.m_values.dtype)
+    new_positions = np.empty((new_num_rows, 3), dtype=state.positions.dtype)
+    new_velocities = np.empty((new_num_rows, 3), dtype=state.velocities.dtype)
+    new_is_ground = np.empty(new_num_rows, dtype=state.internal_is_ground.dtype)
+
+    # Ground-output rows first, excited-output rows second
+    ind_excited = N
+    new_is_ground[:ind_excited] = True
+    new_is_ground[ind_excited:] = False
+
+    # The DYNAMICS see the probe (light) shift per sub-block; the laser-frame
+    # bookkeeping (done by the sequence loop) uses the nominal detunings.
+    if probe_shift_coefficient != 0.0:
+        dynamics_subpulses = [
+            replace(
+                sub,
+                detuning_hz=_effective_detuning_hz(
+                    sub.detuning_hz, probe_shift_coefficient, sub.rabi_freq_hz
+                ),
+            )
+            for sub in subpulses
+        ]
+    else:
+        dynamics_subpulses = subpulses
+
+    t_total = sum(sub.duration for sub in subpulses)
+
+    for idx in range(N):
+        if state.internal_is_ground[idx]:
+            m_ground = state.m_values[idx]
+            m_excited = state.m_values[idx] + k_sign
+        else:
+            m_ground = state.m_values[idx] - k_sign
+            m_excited = state.m_values[idx]
+
+        # Compose the staircase for THIS row's two-level pair. Pass the BARE
+        # reference vz and the row's m_ground -- _borde_frame_constants adds the
+        # m_ground recoil/Doppler terms internally, so do NOT pass
+        # vz + m*RECOIL_VELOCITY here (that would double-count the recoil shift).
+        prop_matrix = arp.compose_arp_2x2(
+            dynamics_subpulses,
+            k_sign=k_sign,
+            vz=vz,
+            m_ground=m_ground,
+            pulse_phase=pulse_phase,
+        )
+
+        _branch_row_with_propagator(
+            idx,
+            state,
+            prop_matrix,
+            m_ground,
+            m_excited,
+            vz,
+            t_total=t_total,
+            kick_fraction=momentum_kick_fraction,
+            new_amplitudes=new_amplitudes,
+            new_m_values=new_m_values,
+            new_positions=new_positions,
+            new_velocities=new_velocities,
+            ind_excited=ind_excited,
+        )
+
+    return AtomState(
+        m_values=new_m_values,
+        positions=new_positions,
+        velocities=new_velocities,
+        amplitudes=new_amplitudes,
+        internal_is_ground=new_is_ground,
+        # The interaction doubles the rows but does not change the laser frame;
+        # the sequence loop folds the staircase integral / end-frame afterwards
+        # (advance_composite_frame_integral).
         t_ref=state.t_ref,
         detuning_ref_hz=state.detuning_ref_hz,
         accumulated_detuning_cycles=state.accumulated_detuning_cycles,
@@ -632,6 +829,79 @@ def change_laser_frequency_in_borde_representation(
         state,
         t_ref=time,
         detuning_ref_hz=new_detuning_hz,
+        accumulated_detuning_cycles=new_accumulated,
+    )
+
+
+def advance_composite_frame_integral(
+    state: AtomState,
+    phi_cycles: float,
+    end_detuning_hz: float,
+    start_time: float,
+    end_time: float,
+):
+    r"""Fold a composite/ARP pulse's laser-phase integral and move to its end frame.
+
+    A composite pulse sweeps the laser detuning WITHIN the pulse, so the genuine
+    integral of the laser detuning over ``[start_time, end_time]`` is the
+    staircase sum ``phi_cycles = sum_k detuning_k * dt_k`` (cycles), **not**
+    ``rate * duration``. This is the one place a closed segment's integral is not
+    ``rate * duration``, so it cannot go through
+    :func:`change_laser_frequency_in_borde_representation`.
+
+    Like that function the **amplitudes are NOT touched**: the laser phase is
+    continuous, so the instantaneous Bordé frames coincide at each boundary. The
+    output amplitudes of ``compose_arp_2x2`` are already in the instantaneous
+    frame at the sweep's end detuning, which becomes the new reference.
+
+    This advances the piecewise-linear integral by
+
+    1. closing the OPEN segment ``[t_ref, start_time]`` at the OLD rate
+       ``detuning_ref_hz`` (the laser frequency just before the sweep), and
+    2. adding the swept-segment integral ``phi_cycles`` over
+       ``[start_time, end_time]``,
+
+    then sets ``t_ref = end_time`` and ``detuning_ref_hz = end_detuning_hz``. It
+    therefore subsumes the usual frequency-step rebase (step 1) AND the swept
+    fold (step 2) in one call, so the caller does not separately invoke
+    ``change_laser_frequency_in_borde_representation`` for a composite pulse.
+
+    See docs/arp_frame_change_finding.md.
+
+    Parameters
+    ----------
+    state : AtomState
+        State just after the composite interaction; its frame fields still hold
+        the pre-pulse reference.
+    phi_cycles : float
+        Genuine laser-phase integral over the sweep, ``sum_k detuning_k * dt_k``
+        (cycles), using the NOMINAL sub-block detunings.
+    end_detuning_hz : float
+        Laser detuning at the end of the sweep (the new frame reference).
+    start_time, end_time : float
+        Global simulation times (s) at the start and end of the sweep.
+
+    Returns
+    -------
+    AtomState
+        State with the frame integral advanced past the sweep; ``amplitudes`` are
+        unchanged.
+    """
+    if end_time < start_time or start_time < state.t_ref:
+        raise ValueError(
+            "advance_composite_frame_integral expects t_ref <= start_time <= "
+            f"end_time (got t_ref={state.t_ref}, start_time={start_time}, "
+            f"end_time={end_time})"
+        )
+    new_accumulated = (
+        state.accumulated_detuning_cycles
+        + state.detuning_ref_hz * (start_time - state.t_ref)
+        + phi_cycles
+    )
+    return replace(
+        state,
+        t_ref=end_time,
+        detuning_ref_hz=end_detuning_hz,
         accumulated_detuning_cycles=new_accumulated,
     )
 

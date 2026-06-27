@@ -173,6 +173,21 @@ The simulation now correctly implements MT (Multi-pulse Transition) using Borde'
 - Solution: Segment pulse into time bins
 - Treat each bin as static, small enough for constant dynamics
 
+**⚠️ Composite / ARP pulses make this acute (TODO — knowingly deferred):**
+`CompositePulse` (see `lmt_sim/lmt_sequence.py`, `lmt_sim/lmt_simulation.py`
+`composite_pulse_interaction_in_borde_representation`) applies a whole ARP
+frequency sweep as a SINGLE branching event. Such pulses can be **hundreds of µs
+long**, over which the atom moves appreciably — yet the current implementation
+evaluates the atom's position (and hence the beam profile / Rabi) **once** for
+the whole pulse and imparts the discrete recoil at a single instant
+(`momentum_kick_fraction`, default the midpoint). This is a poor approximation
+for long pulses and we are shipping it knowingly. The proper fix:
+- re-evaluate the atom's position **per sub-slice**, not once per pulse, and
+- evaluate that position at each slice's **midpoint** (not its start or end),
+- which also lets the Gaussian-beam Rabi vary slice-by-slice (ties into §3.2).
+The code carries matching `TODO`s at `_branch_row_with_propagator` and the
+trajectory flip step in `compute_spacetime_trajectory`.
+
 ### 6.3 Wavefront Aberrations
 **Status:** Deferred (breaks consolidation simplification)
 **Purpose:** Model imperfect optics
