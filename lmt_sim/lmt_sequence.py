@@ -129,9 +129,13 @@ class CompositePulse:
             raise ValueError("CompositePulse momentum_kick_fraction must be in [0, 1]")
         for sub in self.subpulses:
             if sub.duration < 0.0:
-                raise ValueError("CompositePulse sub-pulse duration must be non-negative")
+                raise ValueError(
+                    "CompositePulse sub-pulse duration must be non-negative"
+                )
             if sub.rabi_freq_hz <= 0.0:
-                raise ValueError("CompositePulse sub-pulse rabi_freq_hz must be positive")
+                raise ValueError(
+                    "CompositePulse sub-pulse rabi_freq_hz must be positive"
+                )
 
     @property
     def duration(self):
@@ -1489,9 +1493,9 @@ def _plot_spacetime(sequence, clouds, clearout_times, *, include_gravity=False):
                 )
                 next_m = cloud.m[i + 1]
                 next_ground = cloud.is_ground[i + 1]
-                end_position = mid_position + next_m * sim.RECOIL_VELOCITY * (
-                    1.0 - frac
-                ) * dt
+                end_position = (
+                    mid_position + next_m * sim.RECOIL_VELOCITY * (1.0 - frac) * dt
+                )
 
                 times.extend([mid_time, event_end_time])
                 positions.extend([mid_position, end_position])

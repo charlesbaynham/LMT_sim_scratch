@@ -173,7 +173,9 @@ def test_composite_arp_pi_pulse_then_clearout_keeps_excited():
     # The clearout projects onto excited; only the excited m=1 branch survives.
     assert np.all(~final.internal_is_ground)
     assert np.all(final.m_values == 1)
-    np.testing.assert_allclose(final.velocities[:, 2], RECOIL_VELOCITY, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(
+        final.velocities[:, 2], RECOIL_VELOCITY, rtol=0, atol=1e-12
+    )
 
 
 def test_composite_pulse_trailing_noops_are_consistent():
@@ -268,9 +270,7 @@ def test_composite_pulse_trajectory_partial_transfer_forks():
         sweep_shape="tanh",
         omega_shape="sin2",
     )
-    p = abs(
-        arp.compose_arp_2x2(cp.subpulses, k_sign=+1, vz=0.0, m_ground=0)[0, 1]
-    ) ** 2
+    p = abs(arp.compose_arp_2x2(cp.subpulses, k_sign=+1, vz=0.0, m_ground=0)[0, 1]) ** 2
     # Guard the premise: genuinely intermediate so the heuristic forks it.
     assert 0.25 < p < 0.75
     clouds, _ = compute_spacetime_trajectory([cp], plot=False, flip_threshold=0.75)
