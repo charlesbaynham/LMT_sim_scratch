@@ -4,6 +4,7 @@ import warnings
 
 import numpy as np
 import lmt_sim.lmt_simulation as sim
+from lmt_sim import arp
 from lmt_sim.lmt_simulation import RABI_FREQ, T_PI
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,143 @@ class Pulse:
 
 
 @dataclass(frozen=True)
+class CompositePulse:
+    """A pulse built from an explicit staircase of fixed-parameter sub-blocks.
+
+    Each sub-block is a constant-``(detuning, rabi, duration)`` segment (an
+    :class:`lmt_sim.arp.ARPSubPulse`, or any object exposing
+    ``detuning_hz`` / ``rabi_freq_hz`` / ``duration``). The whole staircase is
+    applied as a SINGLE branching event: like an ordinary :class:`Pulse` it
+    splits each row once (ground at ``m``, excited at ``m+-k``), but the 2x2
+    mixing matrix is the composed product of the per-block propagators
+    (:func:`lmt_sim.arp.compose_arp_2x2`) rather than one square-pulse
+    propagator. This is how an adiabatic-rapid-passage (ARP) frequency sweep --
+    chopped into hundreds of tiny sub-pulses -- enters the sequence WITHOUT the
+    ``2**N`` row explosion that branching every sub-pulse would cause.
+
+    The generic sub-block list is also the entry point for future
+    optimal-control / shaped pulses (which are not sweeps); use :meth:`arp` for
+    the ARP convenience constructor.
+
+    Because the collapsed staircase has no internal time resolution of WHEN the
+    recoil is imparted, ``momentum_kick_fraction`` (default 0.5 = midpoint) sets
+    the instant within the pulse at which ``m -> m+-k`` is applied for ballistic
+    position propagation. This is a position-only choice; it does not affect the
+    amplitudes. See docs/arp_frame_change_finding.md for the frame bookkeeping.
+    """
+
+    subpulses: tuple
+    k: int
+    phi: float = 0.0
+    label: str = "composite_pulse"
+    # Position-only: fraction of the total pulse duration that elapses before the
+    # discrete m -> m+-k recoil kick is imparted (ballistic propagation only).
+    # 0.5 = midpoint, matching the square-pulse convention in
+    # pulse_interaction_in_borde_representation.
+    momentum_kick_fraction: float = 0.5
+    # Probe (light) shift coefficient in 1/Hz, applied per sub-block against that
+    # block's own Rabi frequency (see composite_pulse_interaction). Default 0.0
+    # disables it.
+    probe_shift_coefficient: float = 0.0
+
+    def __post_init__(self):
+        if self.k not in (-1, +1):
+            raise ValueError("CompositePulse k must be either +1 or -1")
+        if len(self.subpulses) == 0:
+            raise ValueError("CompositePulse needs at least one sub-pulse")
+        if not (0.0 <= self.momentum_kick_fraction <= 1.0):
+            raise ValueError("CompositePulse momentum_kick_fraction must be in [0, 1]")
+        for sub in self.subpulses:
+            if sub.duration < 0.0:
+                raise ValueError(
+                    "CompositePulse sub-pulse duration must be non-negative"
+                )
+            if sub.rabi_freq_hz <= 0.0:
+                raise ValueError(
+                    "CompositePulse sub-pulse rabi_freq_hz must be positive"
+                )
+
+    @property
+    def duration(self):
+        return sum(sub.duration for sub in self.subpulses)
+
+    @property
+    def start_detuning_hz(self):
+        return self.subpulses[0].detuning_hz
+
+    @property
+    def end_detuning_hz(self):
+        """Laser detuning the amplitudes are left co-rotating with after the pulse.
+
+        ``compose_arp_2x2`` is the bare product of per-block propagators, so the
+        output amplitudes sit in the instantaneous Borde frame at the LAST
+        sub-block's detuning -- not the sweep centre, not any nominal detuning.
+        """
+        return self.subpulses[-1].detuning_hz
+
+    @property
+    def phi_cycles(self):
+        """Genuine laser-phase integral over the staircase, ``sum_k detuning_k*dt_k``.
+
+        This is the (cycles) increment to ``accumulated_detuning_cycles`` across
+        the pulse. It is NOT ``detuning * duration`` because the detuning varies
+        within the pulse -- the one place a closed segment's integral is not
+        ``rate * duration``. Uses the NOMINAL sub-block detunings (a probe shift
+        is an atom-frame energy shift, not a change to the laser program).
+        """
+        return sum(sub.detuning_hz * sub.duration for sub in self.subpulses)
+
+    @classmethod
+    def arp(
+        cls,
+        *,
+        T,
+        delta_sweep_hz,
+        omega0_hz,
+        k,
+        n=400,
+        sweep_shape="tanh",
+        omega_shape="sin2",
+        tanh_beta=3.0,
+        m_ground=0,
+        vz=0.0,
+        delta_centre_hz=None,
+        phi=0.0,
+        label="arp",
+        momentum_kick_fraction=0.5,
+        probe_shift_coefficient=0.0,
+    ):
+        """Build an ARP frequency-sweep CompositePulse via :func:`arp.make_arp_subpulses`.
+
+        ``m_ground`` / ``k`` / ``vz`` here only pick the resonant CENTRE of the
+        sweep (one fixed laser program). The per-row recoil shift for the actual
+        propagation is computed at interaction time from each row's own ``m`` and
+        ``vz``, so a single sweep correctly addresses rows of different momentum.
+        """
+        subpulses = arp.make_arp_subpulses(
+            T=T,
+            delta_sweep_hz=delta_sweep_hz,
+            omega0_hz=omega0_hz,
+            n=n,
+            sweep_shape=sweep_shape,
+            omega_shape=omega_shape,
+            tanh_beta=tanh_beta,
+            m_ground=m_ground,
+            k_sign=k,
+            vz=vz,
+            delta_centre_hz=delta_centre_hz,
+        )
+        return cls(
+            subpulses=tuple(subpulses),
+            k=k,
+            phi=phi,
+            label=label,
+            momentum_kick_fraction=momentum_kick_fraction,
+            probe_shift_coefficient=probe_shift_coefficient,
+        )
+
+
+@dataclass(frozen=True)
 class Clearout:
     duration: float
     label: str = "clearout"
@@ -97,6 +235,20 @@ class Freefall:
     def __post_init__(self):
         if self.duration < 0.0:
             raise ValueError("Freefall duration must be non-negative")
+
+
+def _event_frame_detuning_hz(event):
+    """The laser detuning a pulse-like event establishes the Bordé frame at.
+
+    Used only to pick the initial frame for a sequence. A ``CompositePulse``
+    establishes the frame at its sweep START detuning. Returns ``None`` for
+    events that do not set a laser frame (``Freefall``, ``Clearout``).
+    """
+    if isinstance(event, Pulse):
+        return event.detuning_hz
+    if isinstance(event, CompositePulse):
+        return event.start_detuning_hz
+    return None
 
 
 def build_mach_zehnder_pulse_sequence(
@@ -167,11 +319,13 @@ def run_pulse_sequence_in_lab_frame(
         raise ValueError("pulse_sequence must contain at least one pulse")
 
     for event in pulse_sequence:
-        if not isinstance(event, (Pulse, Clearout, Freefall)):
+        if not isinstance(event, (Pulse, CompositePulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
 
     detunings_hz = [
-        pulse.detuning_hz for pulse in pulse_sequence if isinstance(pulse, Pulse)
+        d
+        for d in (_event_frame_detuning_hz(event) for event in pulse_sequence)
+        if d is not None
     ]
     if len(detunings_hz) == 0:
         # Freefall-only or clearout-only sequences are valid; use the
@@ -251,7 +405,7 @@ def iter_pulse_sequence_in_borde_representation(
     consumers can detect this by counting yields against ``len(pulse_sequence) + 1``.
     """
     for event in pulse_sequence:
-        if not isinstance(event, (Pulse, Clearout, Freefall)):
+        if not isinstance(event, (Pulse, CompositePulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
         if isinstance(event, Pulse) and (
             event.restrict_to_m_ground is not None or event.simultaneous_with_previous
@@ -266,7 +420,9 @@ def iter_pulse_sequence_in_borde_representation(
             )
 
     detunings_hz = [
-        pulse.detuning_hz for pulse in pulse_sequence if isinstance(pulse, Pulse)
+        d
+        for d in (_event_frame_detuning_hz(event) for event in pulse_sequence)
+        if d is not None
     ]
     current_detuning_hz = detunings_hz[0] if len(detunings_hz) > 0 else 0.0
     current_time = 0.0
@@ -328,6 +484,42 @@ def iter_pulse_sequence_in_borde_representation(
             )
 
             # If any states are below the discard threshold, discard them and renormalise
+            state = sim.discard_and_renormalise_state_vector(state, discard_threshold)
+
+        elif isinstance(event, CompositePulse):
+            # A composite (e.g. ARP) pulse is applied as a SINGLE branching event
+            # using the composed staircase propagator -- no 2**N explosion.
+            #
+            # 1. Apply the interaction (row doubling). The frame fields are
+            #    carried forward unchanged here; the staircase laser-phase
+            #    integral and end-frame are folded in step 2.
+            state = sim.composite_pulse_interaction_in_borde_representation(
+                state,
+                event.subpulses,
+                k_sign=event.k,
+                pulse_phase=event.phi,
+                momentum_kick_fraction=event.momentum_kick_fraction,
+                k_wavevector=sim.K_WAVEVECTOR,
+                vz=initial_velocity_z,
+                probe_shift_coefficient=event.probe_shift_coefficient,
+            )
+
+            # 2. Fold the GENUINE staircase integral (phi_cycles = sum_k
+            #    detuning_k*dt_k, NOT rate*duration) and move the frame reference
+            #    to the sweep's END detuning at the sweep end. This single call
+            #    also closes the previous open segment at the old detuning, so we
+            #    do NOT separately call change_laser_frequency for a composite
+            #    pulse. See advance_composite_frame_integral and
+            #    docs/arp_frame_change_finding.md.
+            state = sim.advance_composite_frame_integral(
+                state,
+                phi_cycles=event.phi_cycles,
+                end_detuning_hz=event.end_detuning_hz,
+                start_time=current_time,
+                end_time=current_time + event.duration,
+            )
+            current_detuning_hz = event.end_detuning_hz
+
             state = sim.discard_and_renormalise_state_vector(state, discard_threshold)
 
         elif isinstance(event, Clearout):
@@ -466,6 +658,39 @@ def _transition_probability(m, is_ground, pulse: Pulse):
         m_ground=m_ground,
     )
     return float(abs(B) ** 2)
+
+
+def _composite_transition_probability(m, is_ground, pulse: "CompositePulse"):
+    """Ground<->excited transfer probability of a composite pulse for class ``m``.
+
+    The composite analogue of :func:`_transition_probability`: build the composed
+    staircase 2x2 for this row's two-level pair (the same primitive the full
+    simulation uses) and read off the excited-from-ground coupling ``|U[0,1]|^2``.
+    Same stationary on-axis ``vz=0`` convention as :func:`_transition_probability`.
+    """
+    k = pulse.k
+    m_ground = m if is_ground else m - k
+    if pulse.probe_shift_coefficient != 0.0:
+        subpulses = [
+            replace(
+                sub,
+                detuning_hz=sim._effective_detuning_hz(
+                    sub.detuning_hz, pulse.probe_shift_coefficient, sub.rabi_freq_hz
+                ),
+            )
+            for sub in pulse.subpulses
+        ]
+    else:
+        subpulses = pulse.subpulses
+    U = arp.compose_arp_2x2(
+        subpulses,
+        k_sign=k,
+        vz=0.0,
+        m_ground=m_ground,
+        pulse_phase=pulse.phi,
+    )
+    # U acts on [c_excited, c_ground]; |U[0,1]|^2 is excited-from-ground.
+    return float(abs(U[0, 1]) ** 2)
 
 
 def _addressed_momentum_classes(pulse: Pulse):
@@ -1072,7 +1297,7 @@ def compute_spacetime_trajectory(
 
     previous_event = None
     for event in sequence:
-        if not isinstance(event, (Pulse, Clearout, Freefall)):
+        if not isinstance(event, (Pulse, CompositePulse, Clearout, Freefall)):
             raise TypeError(f"Unsupported sequence event type: {type(event)!r}")
         if (
             isinstance(event, Pulse)
@@ -1134,18 +1359,34 @@ def compute_spacetime_trajectory(
                         cloud.alive = False
             continue
 
-        # Pulse
+        # Pulse or CompositePulse
         t += dt
+        # A CompositePulse imparts the recoil momentum_kick_fraction of the way
+        # through the (possibly long) pulse; a plain Pulse imparts it at the start
+        # (the kick_frac=0 limit), which preserves the existing Pulse behaviour.
+        is_composite = isinstance(event, CompositePulse)
+        kick_frac = event.momentum_kick_fraction if is_composite else 0.0
+
+        def _flipped_z(c, new_m):
+            v_old = c.m[-1] * sim.RECOIL_VELOCITY
+            v_new = new_m * sim.RECOIL_VELOCITY
+            return c.z[-1] + v_old * kick_frac * dt + v_new * (1.0 - kick_frac) * dt
+
         new_clouds = []
         for cloud in clouds:
             if not cloud.alive:
                 new_clouds.append(cloud)
                 continue
-            p = _transition_probability(cloud.m[-1], cloud.is_ground[-1], event)
+            if is_composite:
+                p = _composite_transition_probability(
+                    cloud.m[-1], cloud.is_ground[-1], event
+                )
+            else:
+                p = _transition_probability(cloud.m[-1], cloud.is_ground[-1], event)
             if p >= flip_threshold:
                 dm = event.k if cloud.is_ground[-1] else -event.k
                 new_m = cloud.m[-1] + dm
-                new_z = cloud.z[-1] + new_m * sim.RECOIL_VELOCITY * dt
+                new_z = _flipped_z(cloud, new_m)
                 cloud.times.append(t)
                 cloud.z.append(new_z)
                 cloud.m.append(new_m)
@@ -1172,7 +1413,7 @@ def compute_spacetime_trajectory(
                 drifter.labels.append(event.label)
                 dm = event.k if flipper.is_ground[-1] else -event.k
                 new_m = flipper.m[-1] + dm
-                new_z = flipper.z[-1] + new_m * sim.RECOIL_VELOCITY * dt
+                new_z = _flipped_z(flipper, new_m)
                 flipper.times.append(t)
                 flipper.z.append(new_z)
                 flipper.m.append(new_m)
@@ -1237,14 +1478,24 @@ def _plot_spacetime(sequence, clouds, clearout_times, *, include_gravity=False):
             )
             event_end_time = current_time + dt
 
-            if isinstance(event, Pulse):
-                mid_time = current_time + dt / 2
+            if isinstance(event, (Pulse, CompositePulse)):
+                # The velocity kink (recoil) is at the kick fraction through the
+                # pulse: 0.5 for a Pulse (the established midpoint-plot
+                # convention), momentum_kick_fraction for a CompositePulse.
+                frac = (
+                    event.momentum_kick_fraction
+                    if isinstance(event, CompositePulse)
+                    else 0.5
+                )
+                mid_time = current_time + frac * dt
                 mid_position = (
-                    current_position + current_m * sim.RECOIL_VELOCITY * dt / 2
+                    current_position + current_m * sim.RECOIL_VELOCITY * frac * dt
                 )
                 next_m = cloud.m[i + 1]
                 next_ground = cloud.is_ground[i + 1]
-                end_position = mid_position + next_m * sim.RECOIL_VELOCITY * dt / 2
+                end_position = (
+                    mid_position + next_m * sim.RECOIL_VELOCITY * (1.0 - frac) * dt
+                )
 
                 times.extend([mid_time, event_end_time])
                 positions.extend([mid_position, end_position])
@@ -1274,8 +1525,14 @@ def _plot_spacetime(sequence, clouds, clearout_times, *, include_gravity=False):
         # the z/ground trace (Pulse) or 1 (everything else), and 3 or 1 to the
         # momentum trace.
         fi = max(0, cloud.fork_index - 1)
-        z_start = sum(2 if isinstance(sequence[i], Pulse) else 1 for i in range(fi))
-        m_start = sum(3 if isinstance(sequence[i], Pulse) else 1 for i in range(fi))
+        z_start = sum(
+            2 if isinstance(sequence[i], (Pulse, CompositePulse)) else 1
+            for i in range(fi)
+        )
+        m_start = sum(
+            3 if isinstance(sequence[i], (Pulse, CompositePulse)) else 1
+            for i in range(fi)
+        )
 
         return (
             np.asarray(times[z_start:]),
