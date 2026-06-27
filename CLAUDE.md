@@ -24,7 +24,8 @@ laser detuning, carried on `AtomState` as `(t_ref, detuning_ref_hz,
 accumulated_detuning_cycles)` and advanced by
 `change_laser_frequency_in_borde_representation` (which records the step without
 touching the amplitudes). See `docs/arp_frame_change_finding.md`. The ARP composer
-in `lmt_sim/arp.py` is the one piece still paused on this.
+in `lmt_sim/arp.py` now follows the same rule (it composes the per-block
+propagators directly, with no inter-block frame change) and is no longer paused.
 
 ## Notebooks are jupytext scripts, not `.ipynb`
 
@@ -95,9 +96,11 @@ Propagates all rows through a free-fall period of duration `time`. Updates posit
 Returns `(m_values, new_positions, new_amplitude)`.
 
 ### `do_pulse(m_values, positions, internal_amplitude, internal_is_ground, initial_velocity_z=0, laser_direction=+1, pulse_detuning=0, pulse_duration=T_PI, pulse_rabi_freq=RABI_FREQ, pulse_phase=0)`
-Applies a laser pulse using Bordé's 2×2 formalism. For each row, builds the rotating-frame Hamiltonian:
+Applies a laser pulse using Bordé's 2×2 formalism. For each row, builds the rotating-frame Hamiltonian (state order `[excited, ground]`):
 
-$$H/\hbar = \pi\bigl(-\delta_\text{eff}(m)\,\sigma_z + \Omega\cos\phi\,\sigma_x + \Omega\sin\phi\,\sigma_y\bigr)$$
+$$H/\hbar = \pi\bigl(-\delta_\text{eff}(m)\,\sigma_z - \Omega\cos\phi\,\sigma_x - \Omega\sin\phi\,\sigma_y\bigr)$$
+
+Note the **minus sign on the coupling** terms: this is Bordé's sign convention. Bordé writes the spinor generator with a `+i` (Eq. 6/9: $\partial_t\psi = +\tfrac{i}{2}(\vec\Omega\cdot\vec\sigma + \Omega_0)\psi$), so the effective Hamiltonian in $\psi=\exp(-iHt)\psi_0$ is $H/\hbar = -\tfrac12\vec\Omega\cdot\vec\sigma$, i.e. *both* the $\delta_\text{eff}$ diagonal and the coupling carry the same minus sign. This reproduces Bordé's transition matrix (Eq. 13) verbatim — `lmt_simulation._single_pulse_propagator_2x2`, verified by recovering $H = i\log(U)/t$ numerically. (Flipping the overall sign of $H$ leaves all populations unchanged, which is why the difference is invisible in $|c|^2$; it matters only for the imprinted phase.)
 
 where the **effective detuning includes the m-dependent recoil shift** (Bordé Eqs. 7-8):
 

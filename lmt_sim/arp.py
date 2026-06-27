@@ -11,34 +11,25 @@ two-level system, so the full row-based composer's ``2**N`` row growth over ``N`
 sub-pulses is pure redundancy. This module composes the **2x2** propagator
 directly, but it does **not** reimplement the pulse physics: the per-pulse
 propagator comes from
-:func:`lmt_sim.lmt_simulation._single_pulse_propagator_2x2`. The inter-block
-frame phase uses a local :func:`_frame_change_phases` (a paused-state copy of the
-old, since-removed core primitive -- see below).
+:func:`lmt_sim.lmt_simulation._single_pulse_propagator_2x2`, the same primitive
+the production row-based composer applies per row.
 
-.. warning::
+Inter-block bookkeeping mirrors the (corrected) row path. Across a laser-detuning
+step the row composer does **not** touch the amplitudes
+(``change_laser_frequency_in_borde_representation`` only records the laser-phase
+integral on the state); the staircase is therefore simply the product of the
+per-block propagators. A chirp written as instantaneous detuning in each block's
+Hamiltonian diagonal (``Omega_3``) is complete on its own -- applying an extra
+inter-block frame rotation would double-count the laser-frequency change (the bug
+diagnosed in ``docs/arp_frame_change_finding.md``). The composer reproduces the
+textbook continuous-sweep ODE and Landau-Zener; ``tests/test_arp.py`` pins it to
+the row composer and to those analytic limits.
 
-    **WORK IN PROGRESS / PAUSED -- the composer is currently physically wrong.**
-
-    The production row-based composer no longer applies any inter-block frame
-    change: it rebases the Bordé frame at a laser-frequency step without touching
-    the amplitudes (``change_laser_frequency_in_borde_representation``), and the
-    old ``_frame_change_phases`` primitive was removed from the core. This module
-    still applies the old (wrong) inter-block frame change via a LOCAL copy of
-    that function, so it is now out of step with the row composer and remains
-    paused. :func:`compose_arp_2x2` applies the local frame change between
-    sub-pulses.
-    For a chirp this *double-counts* the laser-frequency change: the detuning is
-    already carried in each block's Hamiltonian diagonal (``Omega_3``), so the
-    extra frame rotation injects a spurious phase. The staircase then converges
-    (n-independent) to the wrong answer -- e.g. it disagrees with the textbook
-    continuous-sweep ODE and with Landau-Zener by a factor of 2 in the exponent.
-
-    Removing the frame change (composing the per-block propagators directly)
-    reproduces the ODE and Landau-Zener exactly. This is the corrected path, but
-    it is **not** applied here yet: building the ARP composer is paused pending a
-    deeper look at where/whether the row composer's frame change is correct (it
-    is reused, as planned, for pulses separated by free evolution). See
-    ``docs/arp_frame_change_finding.md`` for the full diagnosis and reproduction.
+The laser-phase integral the row path defers to the lab boundary
+(``transform_state_vector`` applies ``exp(+/- i pi Phi)`` with
+``Phi = sum_k detuning_k * dt_k``) is reproduced here on demand by the
+``ref_detuning_hz`` argument of :func:`compose_arp_2x2`, so an imprinted phase can
+be referenced to a fixed frame for cross-scan comparison.
 """
 
 from dataclasses import dataclass
@@ -46,31 +37,6 @@ from dataclasses import dataclass
 import numpy as np
 
 from lmt_sim import lmt_simulation as sim
-
-
-def _frame_change_phases(old_detuning_hz, new_detuning_hz, time):
-    r"""Per-state Bordé frame-change phases for a laser-frequency change.
-
-    Returns ``(phase_excited, phase_ground)``: the factors to multiply the
-    excited- and ground-state amplitudes by when re-expressing them from the
-    ``old`` to the ``new`` laser-frequency frame at **global** ``time``. Excited
-    gains ``exp(+i pi Df t)`` and ground ``exp(-i pi Df t)`` with
-    ``Df = new - old`` (Hz).
-
-    FIXME(frame-change): This phase is the WRONG tool for a chirp -- it
-    double-counts the laser-frequency change (the detuning already lives in each
-    block's Hamiltonian diagonal). It used to live in :mod:`lmt_sim.lmt_simulation`
-    as the shared row/ARP frame-change primitive, but the row path has been fixed
-    (it now rebases via ``change_laser_frequency_in_borde_representation`` and does
-    not use this phase). This local copy is kept ONLY so the PAUSED ARP composer
-    below keeps its previous (known-wrong) behaviour without depending on a symbol
-    that no longer exists in the core. Do not use it for new code. See
-    docs/arp_frame_change_finding.md.
-    """
-    delta_f = new_detuning_hz - old_detuning_hz
-    phase_exc = np.exp(+1j * np.pi * delta_f * time)
-    phase_gnd = np.exp(-1j * np.pi * delta_f * time)
-    return phase_exc, phase_gnd
 
 
 @dataclass(frozen=True)
@@ -205,10 +171,15 @@ def compose_arp_2x2(
 
     The returned matrix ``U`` acts on the amplitude vector ordered
     ``[c_excited, c_ground]`` (the convention of
-    :func:`lmt_sim.lmt_simulation._single_pulse_propagator_2x2`). The global
-    clock starts at 0 and advances by each sub-pulse duration, mirroring
-    ``iter_pulse_sequence_in_borde_representation`` so the frame bookkeeping is
-    identical to the row-based composer.
+    :func:`lmt_sim.lmt_simulation._single_pulse_propagator_2x2`).
+
+    The staircase is the plain product of the per-block propagators -- no
+    inter-block frame change. The chirp is carried entirely by the per-block
+    detuning in each Hamiltonian diagonal (``Omega_3``); the row composer rebases
+    the Bordé frame at a detuning step without touching the amplitudes
+    (``change_laser_frequency_in_borde_representation``), so the Bordé-frame
+    amplitudes are exactly this product. This reproduces the continuous-sweep ODE
+    and Landau-Zener (see docs/arp_frame_change_finding.md).
 
     Parameters
     ----------
@@ -219,10 +190,21 @@ def compose_arp_2x2(
     pulse_phase : float, optional
         Optical phase (rad), constant across the staircase for a pure-chirp ARP.
     ref_detuning_hz : float or None, optional
-        If given, append a final frame change to this fixed reference frame at
-        ``t = T_total`` so the result does not live in the (error-dependent)
-        frame of the last sub-pulse -- important when comparing imprinted phases
-        across a parameter scan.
+        ``None`` (default) leaves ``U`` in the instantaneous Bordé frame -- the
+        product of the per-block propagators, directly comparable to the row
+        composer in the Bordé representation.
+
+        If given, apply the laser-phase integral the row path defers to the lab
+        boundary, referenced to a fixed frame at ``ref_detuning_hz``:
+        ``exp(-/+ i pi (Phi - ref_detuning_hz * T_total))`` (excited -, ground +,
+        the same detuning-part sign as ``transform_state_vector(inverse=True)``),
+        where ``Phi = sum_k detuning_k * dt_k`` (cycles) is the genuine integral
+        of the laser detuning over the staircase. This fixes the imprinted phase
+        to a frame independent of the (error-dependent) last sub-pulse, so phases
+        can be compared across a parameter scan. (Note this is the rotating-frame
+        imprinted phase: like the rest of this 2x2 composer it omits the trivial
+        ``omega_0 * t`` transition-frequency evolution that the full lab transform
+        also carries.)
 
     Returns
     -------
@@ -233,25 +215,10 @@ def compose_arp_2x2(
         raise ValueError("compose_arp_2x2 needs at least one sub-pulse")
 
     U = np.eye(2, dtype=complex)
-    current_detuning = subpulses[0].detuning_hz
-    current_time = 0.0
+    phi_cycles = 0.0  # integral of the laser detuning, sum_k detuning_k * dt_k
+    total_time = 0.0
 
     for sub in subpulses:
-        if sub.detuning_hz != current_detuning:
-            # FIXME(frame-change): This inter-block frame change is WRONG for a
-            # back-to-back chirp. The detuning is already carried in each block's
-            # Hamiltonian diagonal (Omega_3), so applying exp(-/+ i pi Df t) here
-            # double-counts the laser-frequency change and converges to the wrong
-            # physics (off from the continuous-sweep ODE / Landau-Zener by a
-            # factor of 2 in the exponent). The correct staircase is the plain
-            # product of the per-block propagators -- delete this block.
-            # See docs/arp_frame_change_finding.md.
-            phase_exc, phase_gnd = _frame_change_phases(
-                current_detuning, sub.detuning_hz, current_time
-            )
-            U = np.diag([phase_exc, phase_gnd]) @ U
-            current_detuning = sub.detuning_hz
-
         P = sim._single_pulse_propagator_2x2(
             sub.detuning_hz,
             sub.duration,
@@ -262,16 +229,18 @@ def compose_arp_2x2(
             m_ground=m_ground,
         )
         U = P @ U
-        current_time += sub.duration
+        phi_cycles += sub.detuning_hz * sub.duration
+        total_time += sub.duration
 
-    if ref_detuning_hz is not None and ref_detuning_hz != current_detuning:
-        # FIXME(frame-change): For the corrected (no inter-block frame change)
-        # composer, re-referencing the imprinted phase across a parameter scan
-        # needs an integral-of-laser-phase correction (exp(+/- i 2pi delta_err T)),
-        # NOT this frame change. See docs/arp_frame_change_finding.md.
-        phase_exc, phase_gnd = _frame_change_phases(
-            current_detuning, ref_detuning_hz, current_time
-        )
+    if ref_detuning_hz is not None:
+        # Laser-phase integral relative to a fixed reference frame, with the SAME
+        # sign convention the lab boundary (transform_state_vector, inverse=True)
+        # uses for the detuning part: excited exp(-i pi Phi), ground exp(+i pi Phi).
+        # Offset so the reference is ref_detuning_hz rather than 0. This is NOT a
+        # frame change; the detuning is already in each block's diagonal.
+        residual_cycles = phi_cycles - ref_detuning_hz * total_time
+        phase_exc = np.exp(-1j * np.pi * residual_cycles)
+        phase_gnd = np.exp(+1j * np.pi * residual_cycles)
         U = np.diag([phase_exc, phase_gnd]) @ U
 
     return U

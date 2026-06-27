@@ -52,6 +52,3 @@ target-version = "py310"
 # semicolons (E701/E702/E703) and lambdas (E731), and keep imports/redefinitions
 # around for interactive use (F401/F811). Format them, but don't fight the style.
 "notebooks/**" = ["E402", "E701", "E702", "E703", "E731", "F401", "F811"]
-# Module-level pytest.skip(..., allow_module_level=True) must run before the
-# imports it guards, which trips E402.
-"tests/test_arp.py" = ["E402"]

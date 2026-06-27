@@ -53,6 +53,7 @@ sys.path.insert(0, "..")
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
+import version_info as vs
 
 import lmt_sim.lmt_simulation as sim
 import lmt_sim.lmt_sequence as seq
@@ -1048,6 +1049,8 @@ ax.legend(
 clouds, clearout_times = seq.compute_spacetime_trajectory(
     sequence, plot=True, max_branches=16, include_gravity=False
 )
+vs.tag_plot(small=True)
+plt.savefig("trajectory.svg")
 
 
 # %%
