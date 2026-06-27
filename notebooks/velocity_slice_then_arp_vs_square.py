@@ -457,11 +457,16 @@ print(f"\n1.5 ms ARP, worst <F> over ±15% in (T, sweep) = {worst:.5f}")
 #
 # $$ \Omega(r) = \Omega_0\,e^{-r^2/w_0^2}, $$
 #
-# where $w_0$ is the beam waist (1/e field radius) — this is
-# `lmt_simulation.gaussian_rabi` with the Rayleigh-range and in-pulse-motion terms
-# dropped (we freeze the cloud during each pulse, as asked). We Monte-Carlo **each
-# atom's Rabi factor** $\eta \equiv \Omega/\Omega_0 = e^{-r^2/w_0^2}$ alongside its
-# velocity.
+# where $w_0$ is the beam waist (1/e field radius). We get this straight from the
+# library — `lmt_simulation.gaussian_rabi` evaluated at $z=0$ (so the Rayleigh-range
+# and in-pulse-motion terms freeze out, as asked) — rather than re-deriving the
+# Gaussian here. We Monte-Carlo **each atom's Rabi factor** $\eta \equiv \Omega/\Omega_0
+# = e^{-r^2/w_0^2}$ alongside its velocity.
+#
+# (We can't run the survivors through `do_gaussian_pulse` / the full `AtomState`
+# rows: this analysis chops every pulse into many tiny ARP sub-pulses, and branching
+# the state on each one would blow up the row count. So we keep the scalar
+# $(v, \eta)$ Monte-Carlo and only borrow the beam profile from the library.)
 #
 # Model the cloud as a Gaussian of RMS transverse radius $\sigma_r = f\,w_0$. The
 # waist then **cancels**: with $x, y \sim \mathcal{N}(0, \sigma_r)$,
@@ -477,11 +482,20 @@ N_CLOUD = 8000
 rng_beam = np.random.default_rng(31415)
 
 
+BEAM_WAIST = 1.0  # arbitrary: eta = Omega/Omega_0 is independent of w0 (it cancels)
+
+
 def sample_eta(fraction, n):
-    """Rabi factor eta = exp(-r^2/w0^2) for a Gaussian cloud, sigma_r = fraction*w0."""
-    x = rng_beam.normal(0.0, fraction, n)
-    y = rng_beam.normal(0.0, fraction, n)
-    return np.exp(-(x**2 + y**2))
+    """Rabi factor eta = Omega/Omega_0 for a Gaussian cloud, sigma_r = fraction*w0.
+
+    The beam profile is sourced from ``lmt_simulation.gaussian_rabi`` (evaluated at
+    z = 0 with on_axis_rabi = 1) rather than re-derived here, so the Gaussian lives in
+    exactly one place. With x, y ~ N(0, fraction*w0) the waist cancels, so its value is
+    arbitrary; we keep the transverse term only (z = 0 freezes out the Rayleigh range)."""
+    x = rng_beam.normal(0.0, fraction * BEAM_WAIST, n)
+    y = rng_beam.normal(0.0, fraction * BEAM_WAIST, n)
+    positions = np.column_stack([x, y, np.zeros(n)])
+    return sim.gaussian_rabi(positions, on_axis_rabi=1.0, beam_waist=BEAM_WAIST)
 
 
 fig, ax = plt.subplots(figsize=(7.5, 4))
