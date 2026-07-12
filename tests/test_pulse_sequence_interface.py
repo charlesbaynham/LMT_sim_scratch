@@ -1231,9 +1231,7 @@ def test_decode_pulse_record_flat_round_trips_si_values():
     np.testing.assert_allclose(dump.delivery_hz, delivery_hz)
     np.testing.assert_allclose(dump.delivery_setpoint, delivery_setpoint)
     # Legacy 7-row records have no phase row -> zero phase for every pulse.
-    np.testing.assert_array_equal(
-        dump.interferometry_phase_turns, np.zeros(len(is_up))
-    )
+    np.testing.assert_array_equal(dump.interferometry_phase_turns, np.zeros(len(is_up)))
 
 
 def test_decode_pulse_record_flat_decodes_eighth_phase_row():
