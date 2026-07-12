@@ -742,6 +742,12 @@ class LabPulseDump:
     switch_hz: np.ndarray  # Hz
     delivery_hz: np.ndarray  # Hz
     delivery_setpoint: np.ndarray  # volts
+    # Per-pulse interferometry (optical) phase in TURNS (1 turn = 2*pi rad), as
+    # recorded in the optional 8th row of the pulse record. This is the raw
+    # ARTIQ/DDS phase convention; build_sequence_from_lab_pulse_dump multiplies
+    # by 2*pi to get the radians that Pulse.phi expects. Defaults to all-zeros
+    # for legacy 7-row dumps that predate the phase row.
+    interferometry_phase_turns: np.ndarray = None
 
 
 def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
@@ -761,15 +767,23 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
           reused (returned as the same object).
         - ``-2.0`` -> "pulse-sequence storage was disabled for this shot",
           decoded as ``None``.
-    * Regular record of length ``1 + 7 * num_pulses``::
+    * Regular record of length ``1 + 7 * num_pulses`` (legacy) or
+      ``1 + 8 * num_pulses`` (current)::
 
-        [num_pulses, dir.., start.., dur.., opll.., switch.., delivery.., setpoint..]
+        [num_pulses, dir.., start.., dur.., opll.., switch.., delivery..,
+         setpoint.., phase..]
 
-      i.e. ``num_pulses`` followed by seven contiguous rows, each
-      ``num_pulses`` long, in the order direction, start_time, duration,
-      opll_freq, switch_freq, delivery_freq, delivery_setpoint. All values are
-      already in SI units (seconds for the times, Hz for the frequencies, volts
-      for the setpoint); **no** machine-unit -> seconds conversion is applied.
+      i.e. ``num_pulses`` followed by seven (legacy) or eight (current)
+      contiguous rows, each ``num_pulses`` long, in the order direction,
+      start_time, duration, opll_freq, switch_freq, delivery_freq,
+      delivery_setpoint, and -- when present -- the per-pulse interferometry
+      phase. All values are already in SI units (seconds for the times, Hz for
+      the frequencies, volts for the setpoint); **no** machine-unit -> seconds
+      conversion is applied. The phase row is in **turns** (1 turn = 2*pi rad),
+      the raw DDS convention; it is carried through as
+      ``LabPulseDump.interferometry_phase_turns``. Legacy 7-row records (which
+      predate the phase row) decode with a zero phase array, so old archived
+      dumps keep working unchanged.
 
     ``num_pulses`` and the sentinels are integer-valued floats and are handled
     defensively (rounded / compared with a tolerance).
@@ -824,18 +838,27 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
                 f"{PULSE_RECORD_DISABLED_SENTINEL})"
             )
 
-        # Regular record: num_pulses followed by 7 rows of num_pulses values.
+        # Regular record: num_pulses followed by 7 (legacy) or 8 (current) rows
+        # of num_pulses values. The optional 8th row is the interferometry
+        # phase; a record that omits it is an older dump and decodes with a zero
+        # phase array.
         num_pulses = int(round(float(record[0])))
         if num_pulses < 0:
             raise ValueError(f"Pulse record {i} has negative num_pulses ({num_pulses})")
-        expected_len = 1 + 7 * num_pulses
-        if len(record) != expected_len:
+        if num_pulses == 0:
+            n_rows = 7  # no data either way; nothing to disambiguate
+        elif len(record) - 1 == 8 * num_pulses:
+            n_rows = 8
+        elif len(record) - 1 == 7 * num_pulses:
+            n_rows = 7
+        else:
             raise ValueError(
                 f"Pulse record {i} has length {len(record)} but num_pulses="
-                f"{num_pulses} implies {expected_len}"
+                f"{num_pulses} implies {1 + 7 * num_pulses} (legacy 7-row) or "
+                f"{1 + 8 * num_pulses} (current 8-row with phase)"
             )
 
-        rows = record[1:].reshape(7, num_pulses)
+        rows = record[1:].reshape(n_rows, num_pulses)
         (
             directions,
             start_times_s,
@@ -844,7 +867,12 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
             switch_hz,
             delivery_hz,
             delivery_setpoint,
-        ) = rows
+        ) = rows[:7]
+        # 8th row is the per-pulse interferometry phase in turns; absent in
+        # legacy dumps, in which case there is no imprinted phase.
+        interferometry_phase_turns = (
+            rows[7].copy() if n_rows == 8 else np.zeros(num_pulses)
+        )
 
         dump = LabPulseDump(
             is_up=np.round(directions).astype(bool),
@@ -854,6 +882,7 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
             switch_hz=switch_hz.copy(),
             delivery_hz=delivery_hz.copy(),
             delivery_setpoint=delivery_setpoint.copy(),
+            interferometry_phase_turns=interferometry_phase_turns,
         )
         decoded.append(dump)
         previous = dump
@@ -869,6 +898,7 @@ def build_sequence_from_lab_pulse_dump(
     switch_hz,
     delivery_hz,
     delivery_setpoint,
+    interferometry_phase_turns=None,
     probe_induced_alpha_up=1.8153e-05,
     probe_induced_alpha_down=1.8153e-05,
     pi_pulse_threshold_s=50e-6,
@@ -914,6 +944,14 @@ def build_sequence_from_lab_pulse_dump(
     delivery_hz = np.asarray(delivery_hz, dtype=float)
     delivery_setpoint = np.asarray(delivery_setpoint, dtype=float)
 
+    # The interferometry phase is optional: legacy 7-row dumps (and callers that
+    # build a dump by hand) don't supply it, in which case every pulse gets zero
+    # phase. It arrives in TURNS (the raw DDS convention) and is converted to the
+    # radians Pulse.phi expects below.
+    if interferometry_phase_turns is None:
+        interferometry_phase_turns = np.zeros(len(is_up))
+    interferometry_phase_turns = np.asarray(interferometry_phase_turns, dtype=float)
+
     lengths = {
         len(is_up),
         len(start_times_s),
@@ -922,6 +960,7 @@ def build_sequence_from_lab_pulse_dump(
         len(switch_hz),
         len(delivery_hz),
         len(delivery_setpoint),
+        len(interferometry_phase_turns),
     }
 
     # delivery_setpoint is now a full-precision per-pulse value in volts (the
@@ -1015,16 +1054,21 @@ def build_sequence_from_lab_pulse_dump(
     sequence = []
     t_now = 0.0
 
+    # Optical phase per pulse, converted from the recorded turns to radians.
+    interferometry_phase_rad = 2 * np.pi * interferometry_phase_turns
+
     for (
         this_is_up,
         this_timestamp,
         this_duration,
         this_effective_laser_detuning_hz,
+        this_phase_rad,
     ) in zip(
         is_up,
         timestamps,
         durations,
         effective_laser_detuning_hz,
+        interferometry_phase_rad,
     ):
         if this_timestamp < t_now:
             raise ValueError(
@@ -1049,7 +1093,7 @@ def build_sequence_from_lab_pulse_dump(
             Pulse(
                 k=+1 if this_is_up else -1,
                 detuning_hz=this_effective_laser_detuning_hz,
-                phi=0.0,
+                phi=this_phase_rad,
                 label="LMT",
                 rabi_frequency=rabi_freq_hz,
                 duration=this_duration,
@@ -1071,6 +1115,7 @@ def calibrate_probe_shift_and_velocity_from_dump(
     switch_hz,
     delivery_hz,
     delivery_setpoint,
+    interferometry_phase_turns=None,
     pi_pulse_threshold_s=50e-6,
 ):
     r"""Infer ``(probe_shift_alpha, initial_velocity_z)`` from a lab pulse dump.
@@ -1111,6 +1156,9 @@ def calibrate_probe_shift_and_velocity_from_dump(
       anchor pulse in effective-detuning space, for either beam order).
 
     Parameters match :func:`build_sequence_from_lab_pulse_dump`.
+    ``interferometry_phase_turns`` is accepted (so a whole ``LabPulseDump`` can
+    be splatted in with ``dataclasses.asdict``) but ignored: the optical phase
+    does not enter the recoil-ladder/Doppler anchoring this fit performs.
 
     Returns
     -------

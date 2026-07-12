@@ -1170,8 +1170,13 @@ def _encode_regular_record(
     switch_hz,
     delivery_hz,
     delivery_setpoint,
+    interferometry_phase_turns=None,
 ):
-    """Encode one shot into a flat float64 record, mirroring the producer."""
+    """Encode one shot into a flat float64 record, mirroring the producer.
+
+    Passing ``interferometry_phase_turns`` appends the 8th (phase) row, giving
+    the current-format record; omitting it produces a legacy 7-row record.
+    """
     rows = [
         np.asarray(is_up, dtype=float),
         np.asarray(start_times_s, dtype=float),
@@ -1181,6 +1186,8 @@ def _encode_regular_record(
         np.asarray(delivery_hz, dtype=float),
         np.asarray(delivery_setpoint, dtype=float),
     ]
+    if interferometry_phase_turns is not None:
+        rows.append(np.asarray(interferometry_phase_turns, dtype=float))
     num_pulses = len(rows[0])
     return np.concatenate([[float(num_pulses)]] + rows)
 
@@ -1223,6 +1230,72 @@ def test_decode_pulse_record_flat_round_trips_si_values():
     np.testing.assert_allclose(dump.switch_hz, switch_hz)
     np.testing.assert_allclose(dump.delivery_hz, delivery_hz)
     np.testing.assert_allclose(dump.delivery_setpoint, delivery_setpoint)
+    # Legacy 7-row records have no phase row -> zero phase for every pulse.
+    np.testing.assert_array_equal(
+        dump.interferometry_phase_turns, np.zeros(len(is_up))
+    )
+
+
+def test_decode_pulse_record_flat_decodes_eighth_phase_row():
+    """A current-format 8-row record round-trips the interferometry phase
+    (in turns) into LabPulseDump, while the 7 documented rows are unaffected."""
+    is_up = [1.0, 0.0, 1.0]
+    start_times_s = [0.0, 1.5e-3, 4.2e-3]
+    durations_s = [380e-6, 68e-6, 55e-6]
+    opll_hz = [80e6, 79.9e6, 80.1e6]
+    switch_hz = [200e6, 200.005e6, 200.001e6]
+    delivery_hz = [99e6, 99e6, 99e6]
+    delivery_setpoint = [1.234, 2.718, 0.577]
+    phase_turns = [0.0, 0.25, 1.5]
+
+    record = _encode_regular_record(
+        is_up,
+        start_times_s,
+        durations_s,
+        opll_hz,
+        switch_hz,
+        delivery_hz,
+        delivery_setpoint,
+        interferometry_phase_turns=phase_turns,
+    )
+    # Sanity: this really is the 8-row layout (1 + 8 * num_pulses).
+    assert len(record) == 1 + 8 * len(is_up)
+
+    decoded = decode_pulse_record_flat(np.asarray(record, dtype=np.float64), [0])
+    dump = decoded[0]
+    assert isinstance(dump, LabPulseDump)
+    # The seven original rows still decode exactly as before.
+    np.testing.assert_allclose(dump.start_times_s, start_times_s)
+    np.testing.assert_allclose(dump.delivery_setpoint, delivery_setpoint)
+    # ...and the new 8th row is carried through verbatim (still in turns).
+    np.testing.assert_allclose(dump.interferometry_phase_turns, phase_turns)
+
+
+def test_decode_pulse_record_flat_rejects_ambiguous_row_count():
+    """A record whose length matches neither the 7- nor 8-row layout raises."""
+    # num_pulses=3 -> valid lengths are 22 (7-row) or 25 (8-row); make it 23.
+    bad = np.concatenate([[3.0], np.zeros(22)])
+    with pytest.raises(ValueError, match="7-row|8-row"):
+        decode_pulse_record_flat(bad, [0])
+
+
+def test_build_sequence_threads_interferometry_phase_turns_to_radians():
+    """The recorded phase (turns) reaches Pulse.phi as radians (x 2*pi)."""
+    dump = _minimal_lab_dump([True, False])
+    dump["interferometry_phase_turns"] = np.array([0.0, 0.25])
+    _, sequence = build_sequence_from_lab_pulse_dump(**dump)
+    phis = [event.phi for event in sequence if isinstance(event, Pulse)]
+    np.testing.assert_allclose(phis, [0.0, np.pi / 2])
+
+
+def test_build_sequence_defaults_phase_to_zero_when_omitted():
+    """Callers that don't supply the phase (legacy dumps / hand-built dicts)
+    get zero phase on every pulse, matching the old hard-coded behaviour."""
+    dump = _minimal_lab_dump([True, False])
+    assert "interferometry_phase_turns" not in dump
+    _, sequence = build_sequence_from_lab_pulse_dump(**dump)
+    phis = [event.phi for event in sequence if isinstance(event, Pulse)]
+    assert phis == [0.0, 0.0]
 
 
 def test_decode_pulse_record_flat_feeds_build_sequence():
