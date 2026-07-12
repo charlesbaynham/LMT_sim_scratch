@@ -1662,7 +1662,11 @@ def test_decode_partial_record_after_same_as_last_sentinel():
     )
     full = _encode_regular_record(**base)
     flat = np.concatenate(
-        [full, [PULSE_RECORD_SAME_AS_LAST_SENTINEL], _encode_partial_record(1, {7: [0.5]})]
+        [
+            full,
+            [PULSE_RECORD_SAME_AS_LAST_SENTINEL],
+            _encode_partial_record(1, {7: [0.5]}),
+        ]
     )
     offsets = np.array([0, len(full), len(full) + 1], dtype=np.int64)
     decoded = decode_pulse_record_flat(flat, offsets)

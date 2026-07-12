@@ -833,9 +833,7 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
             delivery_setpoint,
         ) = rows[:7]
         phase_turns = (
-            np.asarray(rows[7]).copy()
-            if len(rows) == 8
-            else np.zeros(len(directions))
+            np.asarray(rows[7]).copy() if len(rows) == 8 else np.zeros(len(directions))
         )
         return LabPulseDump(
             is_up=np.round(directions).astype(bool),
@@ -894,7 +892,10 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
         # where flag_k >= 0.5 means row k is present (changed) and the present
         # rows follow in order. Rebuilt into a full row set, then decoded like a
         # regular record.
-        if abs(float(record[0]) - PULSE_RECORD_PARTIAL_SENTINEL) < _PULSE_RECORD_SENTINEL_TOL:
+        if (
+            abs(float(record[0]) - PULSE_RECORD_PARTIAL_SENTINEL)
+            < _PULSE_RECORD_SENTINEL_TOL
+        ):
             if previous_rows is None:
                 raise ValueError(
                     f"Pulse record {i} is a partial record but there is no "
