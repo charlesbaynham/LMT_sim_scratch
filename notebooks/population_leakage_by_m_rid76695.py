@@ -540,3 +540,87 @@ print(f"sim final population in {main}:            {final_main:.4f}")
 #   102.9 us (vs 56 us used), for the 8-recoil spacing T = 51.4 or 78.6 us
 #   (vs 67 us used). Detuning-selective durations — or shaped/ARP pulses —
 #   are the real fix.
+
+# %% [markdown]
+# ## Why there is no π/2 in the record — and how the lab still saw fringes
+#
+# The lab design *does* contain beamsplitters:
+# `symmetric_mach_zehnder_sequence` (icl_experiments `declarative-lmt` branch,
+# `repository/lib/lmt_sequence.py`) declares `bs1` and `bs2` as
+# `pi2(Beam.DOWN, ...)` events, and pulse 1 / pulse 19 of this dump are exactly
+# those events by their recorded frequencies. But this run used the
+# **global-parameter** mixin (`LMTGlobalParamsSymmetricMachZehnderMixin`), and
+# its duration binding, `lmt_global_duration_attr`, returns the shared
+# `lmt_up_duration` / `lmt_down_duration` handle for *every* full-intensity
+# pulse **regardless of `event.area`**. Neither the engine kernel nor
+# `_fire_pulse` scales duration (or DDS amplitude) by area — the π/2's
+# `EFFECT_SUPERPOSE` is recorded as intent metadata only. So bs1/bs2 were
+# physically fired for the full 67 us down-beam π time, exactly as the dump
+# records. (Per-pulse mode would have defaulted them to
+# `area / (2 rabi)` = half duration; global mode loses that.)
+#
+# With bs1 executing as a π, the ideal walk is single-path — yet the lab saw
+# fringes when scanning the phase. The sim reproduces that too: the parasitic
+# amplitudes split off by the off-resonant kicks **are coherent**, are
+# resonantly transported by the very arm-B pulses that were meant for the real
+# second arm, and recombine at the final pulses. Sweeping φ (pulses 10-18
+# carry φ, pulse 19 carries 4φ) modulates those recombinations:
+
+# %%
+def run_at_phase(phi_turns):
+    d = dataclasses.asdict(dump)
+    turns = np.zeros(n_pulses)
+    turns[10:19] = phi_turns
+    turns[19] = 4 * phi_turns
+    d["interferometry_phase_turns"] = turns
+    _, sequence_phi = seq.build_sequence_from_lab_pulse_dump(
+        **d,
+        probe_induced_alpha_up=alpha,
+        probe_induced_alpha_down=alpha,
+        initial_velocity_z=v0,
+    )
+    final, _, _ = seq.run_pulse_sequence_in_borde_representation(
+        sim.make_atom_states(c0=1, c1=0, initial_velocity_z=0.0),
+        sequence_phi,
+        initial_velocity_z=0.0,
+        discard_threshold=1e-12,
+    )
+    return coherent_populations_by_m(final)
+
+
+phis = np.linspace(0, 1, 41)
+excited_fraction = []
+port_g2 = []
+for phi in phis:
+    pg, pe = run_at_phase(phi)
+    excited_fraction.append(sum(pe.values()))
+    port_g2.append(pg.get(2, 0.0))
+
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.plot(phis, excited_fraction, "-o", label="total excited fraction", color="tab:red")
+ax.plot(phis, port_g2, "-o", label="main port $|g, +2\\rangle$", color="tab:blue")
+ax.set_xlabel("interferometry phase $\\varphi$ (turns)")
+ax.set_ylabel("projection probability")
+ax.grid(alpha=0.25)
+ax.legend()
+ax.set_title(
+    "Fringes with NO π/2 pulses: interference of the leakage paths "
+    "(RID 76695, all-π sequence)"
+)
+plt.show()
+
+exc = np.array(excited_fraction)
+print(f"excited-fraction fringe: min {exc.min():.3f}, max {exc.max():.3f}, "
+      f"peak-to-peak {exc.max() - exc.min():.3f}")
+
+# %% [markdown]
+# The total excited fraction swings by ≈ 0.2 peak-to-peak, and the individual
+# leaked ports fringe with near-unity contrast — despite every pulse being a
+# π pulse. So the experimentally observed interference is entirely consistent
+# with this record: **the "leakage" paths are the only interferometer this
+# sequence has**. The fringe is also visibly non-sinusoidal (the recombining
+# paths carry different multiples of φ), which is a testable signature in the
+# lab data. Restoring the intended π/2 areas for the `bs1`/`bs2` events in
+# global-parameter mode (e.g. scaling the shared duration by `event.area`, or
+# giving π/2 events their own duration handle) should multiply the contrast
+# several-fold and make the fringe sinusoidal.

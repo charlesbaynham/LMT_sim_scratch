@@ -67,7 +67,7 @@ Do not modify vendored code directly — changes will be lost on next clone.
 The tracked repository is:
 
 - `icl_experiments` from `https://gitlab.com/aion-physics/code/artiq/experiment-repositories/icl_experiments.git`
-- always cloned from `master`
+- always cloned from `declarative-lmt` (the branch the lab is currently running)
 
 ## Architecture
 
