@@ -721,6 +721,11 @@ def _addressed_momentum_classes(pulse: Pulse):
 # float64 and so must be compared with a tolerance, not for exact equality.
 PULSE_RECORD_SAME_AS_LAST_SENTINEL = -1.0
 PULSE_RECORD_DISABLED_SENTINEL = -2.0
+# Marker (first value) of a *partial* record: one that stores only the field
+# rows that changed since the previous stored record, reusing the rest. This is
+# what makes a phase-only scan cheap - only the phase row is re-emitted each
+# shot. Layout is documented in ``decode_pulse_record_flat``.
+PULSE_RECORD_PARTIAL_SENTINEL = -3.0
 # Sentinels and num_pulses are integer-valued floats; anything within this of an
 # integer is treated as that integer.
 _PULSE_RECORD_SENTINEL_TOL = 0.5
@@ -784,6 +789,17 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
       ``LabPulseDump.interferometry_phase_turns``. Legacy 7-row records (which
       predate the phase row) decode with a zero phase array, so old archived
       dumps keep working unchanged.
+    * Partial record (``per_field`` dedup on the producer side), first value
+      ``-3.0``::
+
+        [-3.0, num_pulses, n_rows, flag_0.., <changed rows..>]
+
+      Only the field rows that changed since the previous stored record are
+      present; ``flag_k`` is ``1.0`` if row ``k`` is present (and follows, in
+      order) or ``0.0`` if it should be reused from the previous record. This is
+      how a phase-only scan stays cheap: every shot after the first stores just
+      the single phase row. Decodes to a full :class:`LabPulseDump` exactly as if
+      the whole record had been stored.
 
     ``num_pulses`` and the sentinels are integer-valued floats and are handled
     defensively (rounded / compared with a tolerance).
@@ -801,8 +817,42 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
     if flat.ndim != 1 or offsets.ndim != 1:
         raise ValueError("pulse_record_flat and pulse_record_offsets must both be 1-D")
 
+    def _dump_from_rows(rows):
+        """Build a :class:`LabPulseDump` from reconstructed field rows.
+
+        ``rows`` is a sequence of 7 or 8 equal-length rows; the optional 8th is
+        the per-pulse interferometry phase in turns (zeroed if absent).
+        """
+        (
+            directions,
+            start_times_s,
+            durations_s,
+            opll_hz,
+            switch_hz,
+            delivery_hz,
+            delivery_setpoint,
+        ) = rows[:7]
+        phase_turns = (
+            np.asarray(rows[7]).copy()
+            if len(rows) == 8
+            else np.zeros(len(directions))
+        )
+        return LabPulseDump(
+            is_up=np.round(directions).astype(bool),
+            start_times_s=np.asarray(start_times_s).copy(),
+            durations_s=np.asarray(durations_s).copy(),
+            opll_hz=np.asarray(opll_hz).copy(),
+            switch_hz=np.asarray(switch_hz).copy(),
+            delivery_hz=np.asarray(delivery_hz).copy(),
+            delivery_setpoint=np.asarray(delivery_setpoint).copy(),
+            interferometry_phase_turns=phase_turns,
+        )
+
     decoded = []
     previous = None
+    # The reconstructed field rows of the last STORED record, kept so a partial
+    # record can reuse the rows it does not re-send. Parallels ``previous``.
+    previous_rows = None
     n_records = len(offsets)
     for i in range(n_records):
         start = int(offsets[i])
@@ -838,8 +888,54 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
                 f"{PULSE_RECORD_DISABLED_SENTINEL})"
             )
 
-        # Regular record: num_pulses followed by 7 (legacy) or 8 (current) rows
-        # of num_pulses values. The optional 8th row is the interferometry
+        # Partial record: only the field rows that changed since the previous
+        # stored record are present; the rest are reused. Layout:
+        # [PARTIAL, num_pulses, n_rows, flag_0..flag_{n_rows-1}, <present rows..>]
+        # where flag_k >= 0.5 means row k is present (changed) and the present
+        # rows follow in order. Rebuilt into a full row set, then decoded like a
+        # regular record.
+        if abs(float(record[0]) - PULSE_RECORD_PARTIAL_SENTINEL) < _PULSE_RECORD_SENTINEL_TOL:
+            if previous_rows is None:
+                raise ValueError(
+                    f"Pulse record {i} is a partial record but there is no "
+                    "previous record to reuse rows from."
+                )
+            num_pulses = int(round(float(record[1])))
+            n_rows = int(round(float(record[2])))
+            if num_pulses < 0 or n_rows < 0:
+                raise ValueError(
+                    f"Pulse record {i} has invalid partial header "
+                    f"(num_pulses={num_pulses}, n_rows={n_rows})"
+                )
+            if n_rows != len(previous_rows):
+                raise ValueError(
+                    f"Partial pulse record {i} has {n_rows} rows but the previous "
+                    f"record has {len(previous_rows)}; cannot reuse."
+                )
+            flags = record[3 : 3 + n_rows]
+            idx = 3 + n_rows
+            n_present = int(np.count_nonzero(flags >= 0.5))
+            expected_len = 3 + n_rows + n_present * num_pulses
+            if len(record) != expected_len:
+                raise ValueError(
+                    f"Partial pulse record {i} has length {len(record)} but its "
+                    f"header implies {expected_len}."
+                )
+            rows = []
+            for k in range(n_rows):
+                if flags[k] >= 0.5:
+                    rows.append(record[idx : idx + num_pulses].copy())
+                    idx += num_pulses
+                else:
+                    rows.append(np.asarray(previous_rows[k]).copy())
+            dump = _dump_from_rows(rows)
+            decoded.append(dump)
+            previous = dump
+            previous_rows = rows
+            continue
+
+        # Regular (full) record: num_pulses followed by 7 (legacy) or 8 (current)
+        # rows of num_pulses values. The optional 8th row is the interferometry
         # phase; a record that omits it is an older dump and decodes with a zero
         # phase array.
         num_pulses = int(round(float(record[0])))
@@ -858,34 +954,11 @@ def decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets):
                 f"{1 + 8 * num_pulses} (current 8-row with phase)"
             )
 
-        rows = record[1:].reshape(n_rows, num_pulses)
-        (
-            directions,
-            start_times_s,
-            durations_s,
-            opll_hz,
-            switch_hz,
-            delivery_hz,
-            delivery_setpoint,
-        ) = rows[:7]
-        # 8th row is the per-pulse interferometry phase in turns; absent in
-        # legacy dumps, in which case there is no imprinted phase.
-        interferometry_phase_turns = (
-            rows[7].copy() if n_rows == 8 else np.zeros(num_pulses)
-        )
-
-        dump = LabPulseDump(
-            is_up=np.round(directions).astype(bool),
-            start_times_s=start_times_s.copy(),
-            durations_s=durations_s.copy(),
-            opll_hz=opll_hz.copy(),
-            switch_hz=switch_hz.copy(),
-            delivery_hz=delivery_hz.copy(),
-            delivery_setpoint=delivery_setpoint.copy(),
-            interferometry_phase_turns=interferometry_phase_turns,
-        )
+        rows = list(record[1:].reshape(n_rows, num_pulses))
+        dump = _dump_from_rows(rows)
         decoded.append(dump)
         previous = dump
+        previous_rows = rows
 
     return decoded
 
