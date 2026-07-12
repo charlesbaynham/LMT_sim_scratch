@@ -18,6 +18,7 @@ from lmt_sim.lmt_sequence import (
     LabPulseDump,
     PULSE_RECORD_SAME_AS_LAST_SENTINEL,
     PULSE_RECORD_DISABLED_SENTINEL,
+    PULSE_RECORD_PARTIAL_SENTINEL,
 )
 from lmt_sim.lmt_simulation import (
     AtomState,
@@ -1170,8 +1171,13 @@ def _encode_regular_record(
     switch_hz,
     delivery_hz,
     delivery_setpoint,
+    interferometry_phase_turns=None,
 ):
-    """Encode one shot into a flat float64 record, mirroring the producer."""
+    """Encode one shot into a flat float64 record, mirroring the producer.
+
+    Passing ``interferometry_phase_turns`` appends the 8th (phase) row, giving
+    the current-format record; omitting it produces a legacy 7-row record.
+    """
     rows = [
         np.asarray(is_up, dtype=float),
         np.asarray(start_times_s, dtype=float),
@@ -1181,6 +1187,8 @@ def _encode_regular_record(
         np.asarray(delivery_hz, dtype=float),
         np.asarray(delivery_setpoint, dtype=float),
     ]
+    if interferometry_phase_turns is not None:
+        rows.append(np.asarray(interferometry_phase_turns, dtype=float))
     num_pulses = len(rows[0])
     return np.concatenate([[float(num_pulses)]] + rows)
 
@@ -1223,6 +1231,70 @@ def test_decode_pulse_record_flat_round_trips_si_values():
     np.testing.assert_allclose(dump.switch_hz, switch_hz)
     np.testing.assert_allclose(dump.delivery_hz, delivery_hz)
     np.testing.assert_allclose(dump.delivery_setpoint, delivery_setpoint)
+    # Legacy 7-row records have no phase row -> zero phase for every pulse.
+    np.testing.assert_array_equal(dump.interferometry_phase_turns, np.zeros(len(is_up)))
+
+
+def test_decode_pulse_record_flat_decodes_eighth_phase_row():
+    """A current-format 8-row record round-trips the interferometry phase
+    (in turns) into LabPulseDump, while the 7 documented rows are unaffected."""
+    is_up = [1.0, 0.0, 1.0]
+    start_times_s = [0.0, 1.5e-3, 4.2e-3]
+    durations_s = [380e-6, 68e-6, 55e-6]
+    opll_hz = [80e6, 79.9e6, 80.1e6]
+    switch_hz = [200e6, 200.005e6, 200.001e6]
+    delivery_hz = [99e6, 99e6, 99e6]
+    delivery_setpoint = [1.234, 2.718, 0.577]
+    phase_turns = [0.0, 0.25, 1.5]
+
+    record = _encode_regular_record(
+        is_up,
+        start_times_s,
+        durations_s,
+        opll_hz,
+        switch_hz,
+        delivery_hz,
+        delivery_setpoint,
+        interferometry_phase_turns=phase_turns,
+    )
+    # Sanity: this really is the 8-row layout (1 + 8 * num_pulses).
+    assert len(record) == 1 + 8 * len(is_up)
+
+    decoded = decode_pulse_record_flat(np.asarray(record, dtype=np.float64), [0])
+    dump = decoded[0]
+    assert isinstance(dump, LabPulseDump)
+    # The seven original rows still decode exactly as before.
+    np.testing.assert_allclose(dump.start_times_s, start_times_s)
+    np.testing.assert_allclose(dump.delivery_setpoint, delivery_setpoint)
+    # ...and the new 8th row is carried through verbatim (still in turns).
+    np.testing.assert_allclose(dump.interferometry_phase_turns, phase_turns)
+
+
+def test_decode_pulse_record_flat_rejects_ambiguous_row_count():
+    """A record whose length matches neither the 7- nor 8-row layout raises."""
+    # num_pulses=3 -> valid lengths are 22 (7-row) or 25 (8-row); make it 23.
+    bad = np.concatenate([[3.0], np.zeros(22)])
+    with pytest.raises(ValueError, match="7-row|8-row"):
+        decode_pulse_record_flat(bad, [0])
+
+
+def test_build_sequence_threads_interferometry_phase_turns_to_radians():
+    """The recorded phase (turns) reaches Pulse.phi as radians (x 2*pi)."""
+    dump = _minimal_lab_dump([True, False])
+    dump["interferometry_phase_turns"] = np.array([0.0, 0.25])
+    _, sequence = build_sequence_from_lab_pulse_dump(**dump)
+    phis = [event.phi for event in sequence if isinstance(event, Pulse)]
+    np.testing.assert_allclose(phis, [0.0, np.pi / 2])
+
+
+def test_build_sequence_defaults_phase_to_zero_when_omitted():
+    """Callers that don't supply the phase (legacy dumps / hand-built dicts)
+    get zero phase on every pulse, matching the old hard-coded behaviour."""
+    dump = _minimal_lab_dump([True, False])
+    assert "interferometry_phase_turns" not in dump
+    _, sequence = build_sequence_from_lab_pulse_dump(**dump)
+    phis = [event.phi for event in sequence if isinstance(event, Pulse)]
+    assert phis == [0.0, 0.0]
 
 
 def test_decode_pulse_record_flat_feeds_build_sequence():
@@ -1484,3 +1556,147 @@ def test_double_launch_stand_in_kicks_both_arms_simultaneously():
         # ...and the simultaneous pulse must not have advanced the clock:
         # the post-upper and post-lower timestamps coincide.
         assert cloud.times[4] == cloud.times[5]
+
+
+def _encode_partial_record(num_pulses, present_rows):
+    """Encode a partial record, mirroring the producer's per-field dedup layout.
+
+    ``present_rows`` maps row index -> the (length ``num_pulses``) values for the
+    rows that changed this shot; every other row is flagged for reuse.
+    ``n_rows`` is inferred as ``max(index) + 1`` but padded to at least 8 so the
+    common 8-row (with-phase) case round-trips.
+    """
+    n_rows = max(8, max(present_rows) + 1)
+    flat = [PULSE_RECORD_PARTIAL_SENTINEL, float(num_pulses), float(n_rows)]
+    flat.extend(1.0 if k in present_rows else 0.0 for k in range(n_rows))
+    for k in range(n_rows):
+        if k in present_rows:
+            flat.extend(float(x) for x in present_rows[k])
+    return np.asarray(flat, dtype=np.float64)
+
+
+def test_decode_partial_record_reuses_unchanged_rows_from_previous():
+    """A phase-only partial record rebuilds the full shot: only the phase row is
+    stored, every other field is reused from the previous full record."""
+    is_up = [1.0, 0.0, 1.0]
+    start_times_s = [0.0, 1.5e-3, 4.2e-3]
+    durations_s = [380e-6, 68e-6, 55e-6]
+    opll_hz = [80e6, 79.9e6, 80.1e6]
+    switch_hz = [200e6, 200.005e6, 200.001e6]
+    delivery_hz = [99e6, 99e6, 99e6]
+    delivery_setpoint = [1.234, 2.718, 0.577]
+    phase0 = [0.0, 0.0, 0.0]
+    phase1 = [0.1, 0.1, 0.1]
+
+    full = _encode_regular_record(
+        is_up,
+        start_times_s,
+        durations_s,
+        opll_hz,
+        switch_hz,
+        delivery_hz,
+        delivery_setpoint,
+        interferometry_phase_turns=phase0,
+    )
+    # Second shot changed only the phase row (index 7).
+    partial = _encode_partial_record(len(is_up), {7: phase1})
+
+    flat = np.concatenate([full, partial])
+    offsets = np.array([0, len(full)], dtype=np.int64)
+
+    decoded = decode_pulse_record_flat(flat, offsets)
+    assert len(decoded) == 2
+    a, b = decoded
+
+    # Reused rows are identical to the previous shot...
+    np.testing.assert_allclose(b.start_times_s, a.start_times_s)
+    np.testing.assert_allclose(b.opll_hz, a.opll_hz)
+    np.testing.assert_allclose(b.delivery_setpoint, a.delivery_setpoint)
+    np.testing.assert_array_equal(b.is_up, a.is_up)
+    # ...while the one stored row takes its new value.
+    np.testing.assert_allclose(b.interferometry_phase_turns, phase1)
+
+
+def test_decode_partial_record_chain_tracks_running_state():
+    """Successive partials each diff against the *reconstructed* previous shot,
+    not the last full record, so an evolving field accumulates correctly."""
+    base = dict(
+        is_up=[1.0, 0.0],
+        start_times_s=[0.0, 1e-3],
+        durations_s=[95e-6, 95e-6],
+        opll_hz=[80e6, 80e6],
+        switch_hz=[0.0, 0.0],
+        delivery_hz=[0.0, 0.0],
+        delivery_setpoint=[1.5, 2.5],
+        interferometry_phase_turns=[0.0, 0.0],
+    )
+    full = _encode_regular_record(**base)
+    p1 = _encode_partial_record(2, {7: [0.25, 0.25]})
+    # Second partial changes the setpoint row (index 6); phase must persist.
+    p2 = _encode_partial_record(2, {6: [3.0, 4.0]})
+
+    flat = np.concatenate([full, p1, p2])
+    offsets = np.array([0, len(full), len(full) + len(p1)], dtype=np.int64)
+    decoded = decode_pulse_record_flat(flat, offsets)
+
+    assert len(decoded) == 3
+    # Phase set by p1 persists through p2 (which only changed the setpoint).
+    np.testing.assert_allclose(decoded[2].interferometry_phase_turns, [0.25, 0.25])
+    np.testing.assert_allclose(decoded[2].delivery_setpoint, [3.0, 4.0])
+    # And the never-touched rows still hold their original values.
+    np.testing.assert_allclose(decoded[2].opll_hz, base["opll_hz"])
+
+
+def test_decode_partial_record_after_same_as_last_sentinel():
+    """A ``-1`` (same as last) between full and partial doesn't disturb the
+    reused-row baseline."""
+    base = dict(
+        is_up=[1.0],
+        start_times_s=[0.0],
+        durations_s=[380e-6],
+        opll_hz=[80e6],
+        switch_hz=[200e6],
+        delivery_hz=[99e6],
+        delivery_setpoint=[1.0],
+        interferometry_phase_turns=[0.0],
+    )
+    full = _encode_regular_record(**base)
+    flat = np.concatenate(
+        [
+            full,
+            [PULSE_RECORD_SAME_AS_LAST_SENTINEL],
+            _encode_partial_record(1, {7: [0.5]}),
+        ]
+    )
+    offsets = np.array([0, len(full), len(full) + 1], dtype=np.int64)
+    decoded = decode_pulse_record_flat(flat, offsets)
+    assert len(decoded) == 3
+    np.testing.assert_allclose(decoded[2].interferometry_phase_turns, [0.5])
+    np.testing.assert_allclose(decoded[2].opll_hz, base["opll_hz"])
+
+
+def test_decode_partial_record_first_raises():
+    """A partial record with no prior stored record is unrecoverable."""
+    partial = _encode_partial_record(2, {7: [0.1, 0.2]})
+    with pytest.raises(ValueError, match="no previous record"):
+        decode_pulse_record_flat(partial, [0])
+
+
+def test_decode_partial_record_wrong_length_raises():
+    """A partial whose body length disagrees with its flags is rejected."""
+    full = _encode_regular_record(
+        is_up=[1.0, 0.0],
+        start_times_s=[0.0, 1e-3],
+        durations_s=[95e-6, 95e-6],
+        opll_hz=[80e6, 80e6],
+        switch_hz=[0.0, 0.0],
+        delivery_hz=[0.0, 0.0],
+        delivery_setpoint=[1.5, 2.5],
+        interferometry_phase_turns=[0.0, 0.0],
+    )
+    partial = _encode_partial_record(2, {7: [0.1, 0.2]})
+    truncated = partial[:-1]  # drop a value so the body no longer matches flags
+    flat = np.concatenate([full, truncated])
+    offsets = np.array([0, len(full)], dtype=np.int64)
+    with pytest.raises(ValueError, match="length"):
+        decode_pulse_record_flat(flat, offsets)
