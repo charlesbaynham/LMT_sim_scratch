@@ -66,35 +66,171 @@ import lmt_sim.lmt_simulation as sim
 # 8th row (per-pulse interferometry phase) is all zeros at this scan point.
 
 # %%
-pulse_record_flat = np.array([
-    20.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-    0.0, 0.0, 0.0, 1.0, 1.0, 0.0,
-    1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-    1.0, 1.0, 0.0, 0.0011392000000000002, 0.002142592, 0.002231312,
-    0.0025090480000000003, 0.0026367680000000003, 0.0027254880000000003, 0.002864208, 0.0031529440000000004, 0.003291664,
-    0.003369384, 0.0034496320000000002, 0.0035383520000000003, 0.003816088, 0.003943808, 0.0040325280000000005,
-    0.004171248000000001, 0.004459984, 0.004598704, 0.004676424, 0.004756672, 0.000379999,
-    6.7e-05, 5.5999000000000004e-05, 5.5999000000000004e-05, 6.7e-05, 6.7e-05, 6.7e-05,
-    6.7e-05, 5.5999000000000004e-05, 5.5999000000000004e-05, 6.7e-05, 5.5999000000000004e-05, 5.5999000000000004e-05,
-    6.7e-05, 6.7e-05, 6.7e-05, 6.7e-05, 5.5999000000000004e-05, 5.5999000000000004e-05,
-    6.7e-05, 80014038.33602092, 79984442.05274647, 80009610.08426937, 80032313.77748647, 79996307.57957408,
-    79957453.70680287, 79993114.16819608, 79951451.93554893, 80024498.14328054, 80044393.47662166, 79966090.32742324,
-    80027961.8095926, 80050665.50280967, 79977955.85425085, 79939101.98147964, 79974762.44287285, 79933100.2102257,
-    80042849.86860377, 80062745.20194489, 79947738.60210001, 200000000.0, 200000000.0, 200000000.0,
-    200000000.0, 200000000.0, 200000000.0, 200000000.0, 200000000.0, 200000000.0,
-    200000000.0, 200000000.0, 200000000.0, 200000000.0, 200000000.0, 200000000.0,
-    200000000.0, 200000000.0, 200000000.0, 200000000.0, 200000000.0, 99426200.0,
-    99426200.0, 99426200.0, 99426200.0, 99426200.0, 99426200.0, 99426200.0,
-    99426200.0, 99426200.0, 99426200.0, 99426200.0, 99426200.0, 99426200.0,
-    99426200.0, 99426200.0, 99426200.0, 99426200.0, 99426200.0, 99426200.0,
-    99426200.0, 0.012, 2.0, 2.0, 2.0, 2.0,
-    2.0, 2.0, 2.0, 2.0, 2.0, 2.0,
-    2.0, 2.0, 2.0, 2.0, 2.0, 2.0,
-    2.0, 2.0, 2.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0, 0.0,
-])
+pulse_record_flat = np.array(
+    [
+        20.0,
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0011392000000000002,
+        0.002142592,
+        0.002231312,
+        0.0025090480000000003,
+        0.0026367680000000003,
+        0.0027254880000000003,
+        0.002864208,
+        0.0031529440000000004,
+        0.003291664,
+        0.003369384,
+        0.0034496320000000002,
+        0.0035383520000000003,
+        0.003816088,
+        0.003943808,
+        0.0040325280000000005,
+        0.004171248000000001,
+        0.004459984,
+        0.004598704,
+        0.004676424,
+        0.004756672,
+        0.000379999,
+        6.7e-05,
+        5.5999000000000004e-05,
+        5.5999000000000004e-05,
+        6.7e-05,
+        6.7e-05,
+        6.7e-05,
+        6.7e-05,
+        5.5999000000000004e-05,
+        5.5999000000000004e-05,
+        6.7e-05,
+        5.5999000000000004e-05,
+        5.5999000000000004e-05,
+        6.7e-05,
+        6.7e-05,
+        6.7e-05,
+        6.7e-05,
+        5.5999000000000004e-05,
+        5.5999000000000004e-05,
+        6.7e-05,
+        80014038.33602092,
+        79984442.05274647,
+        80009610.08426937,
+        80032313.77748647,
+        79996307.57957408,
+        79957453.70680287,
+        79993114.16819608,
+        79951451.93554893,
+        80024498.14328054,
+        80044393.47662166,
+        79966090.32742324,
+        80027961.8095926,
+        80050665.50280967,
+        79977955.85425085,
+        79939101.98147964,
+        79974762.44287285,
+        79933100.2102257,
+        80042849.86860377,
+        80062745.20194489,
+        79947738.60210001,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        0.012,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ]
+)
 pulse_record_offsets = np.array([0], dtype=np.int64)
 
 dump = seq.decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets)[0]
@@ -170,9 +306,7 @@ for i, event in enumerate(sequence):
 assert len(per_pulse_ground) == n_pulses
 
 # Assemble dense (n_pulses x n_m) probability matrices on a shared m-grid.
-all_m = sorted(
-    {m for d in (per_pulse_ground + per_pulse_excited) for m in d}
-)
+all_m = sorted({m for d in (per_pulse_ground + per_pulse_excited) for m in d})
 m_index = {m: j for j, m in enumerate(all_m)}
 ground_mat = np.zeros((n_pulses, len(all_m)))
 excited_mat = np.zeros((n_pulses, len(all_m)))
@@ -184,8 +318,10 @@ for p in range(n_pulses):
 
 total_per_pulse = ground_mat.sum(axis=1) + excited_mat.sum(axis=1)
 print(f"m classes populated across the sequence: {all_m[0]} .. {all_m[-1]}")
-print(f"total projected probability per pulse: min {total_per_pulse.min():.3f}, "
-      f"max {total_per_pulse.max():.3f} (coherent readout conserves probability)")
+print(
+    f"total projected probability per pulse: min {total_per_pulse.min():.3f}, "
+    f"max {total_per_pulse.max():.3f} (coherent readout conserves probability)"
+)
 
 # %% [markdown]
 # ## The leakage map -- populations by m, swept pulse by pulse
@@ -310,3 +446,184 @@ plt.show()
 # lands in one particular set of ports; sweeping the scan phase (pulses 10-18
 # get `φ`, pulse 19 gets `4φ`) redistributes population **only among the
 # recombining classes** and leaves this leakage picture otherwise unchanged.
+
+# %% [markdown]
+# ## Where the leakage comes from: per-pulse decomposition
+#
+# The dump answers this completely. Every recorded duration is a full **π**
+# pulse at its beam's nominal π time (56 us up = `CLOCK_PI_TIME`, 67 us down =
+# `CLOCK_DOWN_PI_TIME` in icl_experiments `constants.py`; the 380 us slice is
+# also π at its lower Rabi frequency). The recorded frequencies form **two
+# interleaved combs**: pulses tuned to the rungs of the occupied path
+# (`m_g ∈ {0, 2, 4}` as the path walks), and pulses tuned to the rungs of the
+# interferometer's *other* arm — which in this record never holds population,
+# because there is no π/2 anywhere in the dump, so the sim walks a single path.
+#
+# For each pulse we compare the rung it actually addresses (from its recorded
+# frequency) with the rung the population occupies, and evaluate the transfer
+# probability of the occupied rung with the sim's own 2x2 propagator
+# (`seq._transition_probability`). Alongside it: the closed-form generalised
+# Rabi formula for a square pulse of Rabi frequency $\Omega$ detuned by
+# $\delta$ from the occupied pair's resonance,
+#
+# $$P = \frac{\Omega^2}{\Omega^2+\delta^2}\,
+#       \sin^2\!\bigl(\pi\sqrt{\Omega^2+\delta^2}\;T\bigr).$$
+
+# %%
+rec = sim.RECOIL_FREQUENCY_HZ
+before_states = [
+    snapshots[i][0] for i, e in enumerate(sequence) if isinstance(e, seq.Pulse)
+]
+
+print(
+    f"{'p':>2} {'k':>2} {'addr m_g':>8} {'occupied':>9} {'P_occ':>10} "
+    f"{'delta/rec':>9} {'P_formula':>10} {'role':>10}"
+)
+survival = 1.0
+main = (0, "g")  # walk the occupied path by hand: (m, internal)
+for p, pulse in enumerate(pulse_events):
+    m_g_addr, _ = seq._addressed_momentum_classes(pulse)
+    m_main, s_main = main
+    is_ground = s_main == "g"
+    m_g_main = m_main if is_ground else m_main - pulse.k
+    P_occ = seq._transition_probability(m_main, is_ground, pulse)
+    delta_hz = (m_g_addr - m_g_main) * 2 * pulse.k * rec
+    W = np.sqrt(pulse.rabi_frequency**2 + delta_hz**2)
+    P_formula = (pulse.rabi_frequency**2 / W**2) * np.sin(
+        np.pi * W * pulse.duration
+    ) ** 2
+    resonant = abs(m_g_addr - m_g_main) < 0.5
+    print(
+        f"{p:>2} {pulse.k:>+2} {m_g_addr:>8.3f} {m_main:>+6d},{s_main} "
+        f"{P_occ:>10.6f} {delta_hz / rec:>9.2f} {P_formula:>10.6f} "
+        f"{'RESONANT' if resonant else 'other-arm':>10}"
+    )
+    if resonant:
+        survival *= P_occ
+        main = (m_g_main + pulse.k, "e") if is_ground else (m_g_main, "g")
+    else:
+        survival *= 1.0 - P_occ
+
+final_ground, final_excited = coherent_populations_by_m(snapshots[-1][0])
+final_main = (final_ground if main[1] == "g" else final_excited).get(main[0], 0.0)
+print(f"\nsurvival product along the occupied path: {survival:.4f}")
+print(f"sim final population in {main}:            {final_main:.4f}")
+
+# %% [markdown]
+# ### Conclusion
+#
+# * The 12 pulses tuned to the occupied rung transfer with infidelity
+#   **≤ 4e-5** (the few-tens-of-Hz residual detunings left by the anchoring /
+#   calibration fit are negligible). The resonant physics is essentially
+#   perfect, exactly as expected for a v = 0 atom with exact π areas.
+# * **All of the leakage comes from the 8 pulses tuned to the other arm's
+#   rungs.** Each is a square π pulse detuned by only 4 recoils (up beam,
+#   18.8 kHz) or 8 recoils (down beam, 37.7 kHz) from the occupied pair while
+#   carrying Ω = 8.9 / 7.5 kHz, so it off-resonantly drives the occupied rung
+#   with P ≈ 4.6% / 3.6% per pulse — the sim propagator matches the
+#   generalised-Rabi formula to all printed digits. Compounded over 8 pulses
+#   that predicts 28% total loss from the main path; the sim's 30% differs
+#   only because the leaked amplitudes are subsequently moved around (the
+#   other-arm pulses are *resonant* for them) and recombine coherently —
+#   that is why e.g. the `(+3, e)` parasite ends at 0.155, far more than one
+#   4% kick.
+# * So the leakage is **not** a tuning imperfection and no modelled-but-wrong
+#   shift is responsible: it is the inherent off-resonant response of square
+#   pulses whose Rabi frequency is comparable to the rung splitting
+#   (2·δ_rec = 9.4 kHz). The lab sequence model (`compile_sequence` in
+#   icl_experiments) book-keeps each pulse as acting only on its addressed
+#   pair, which is exactly the piece of physics this ignores.
+# * The sin² timing factor matters: the down-beam kick sits near its worst
+#   case (sin² = 0.95). A square π pulse also satisfies
+#   $\sqrt{\Omega^2+\delta^2}\,T = \text{integer}$ at "magic" durations that
+#   null the off-resonant kick entirely: for the 4-recoil spacing T = 46.0 or
+#   102.9 us (vs 56 us used), for the 8-recoil spacing T = 51.4 or 78.6 us
+#   (vs 67 us used). Detuning-selective durations — or shaped/ARP pulses —
+#   are the real fix.
+
+# %% [markdown]
+# ## Why there is no π/2 in the record — and how the lab still saw fringes
+#
+# The lab design *does* contain beamsplitters:
+# `symmetric_mach_zehnder_sequence` (icl_experiments `declarative-lmt` branch,
+# `repository/lib/lmt_sequence.py`) declares `bs1` and `bs2` as
+# `pi2(Beam.DOWN, ...)` events, and pulse 1 / pulse 19 of this dump are exactly
+# those events by their recorded frequencies. But this run used the
+# **global-parameter** mixin (`LMTGlobalParamsSymmetricMachZehnderMixin`), and
+# its duration binding, `lmt_global_duration_attr`, returns the shared
+# `lmt_up_duration` / `lmt_down_duration` handle for *every* full-intensity
+# pulse **regardless of `event.area`**. Neither the engine kernel nor
+# `_fire_pulse` scales duration (or DDS amplitude) by area — the π/2's
+# `EFFECT_SUPERPOSE` is recorded as intent metadata only. So bs1/bs2 were
+# physically fired for the full 67 us down-beam π time, exactly as the dump
+# records. (Per-pulse mode would have defaulted them to
+# `area / (2 rabi)` = half duration; global mode loses that.)
+#
+# With bs1 executing as a π, the ideal walk is single-path — yet the lab saw
+# fringes when scanning the phase. The sim reproduces that too: the parasitic
+# amplitudes split off by the off-resonant kicks **are coherent**, are
+# resonantly transported by the very arm-B pulses that were meant for the real
+# second arm, and recombine at the final pulses. Sweeping φ (pulses 10-18
+# carry φ, pulse 19 carries 4φ) modulates those recombinations:
+
+
+# %%
+def run_at_phase(phi_turns):
+    d = dataclasses.asdict(dump)
+    turns = np.zeros(n_pulses)
+    turns[10:19] = phi_turns
+    turns[19] = 4 * phi_turns
+    d["interferometry_phase_turns"] = turns
+    _, sequence_phi = seq.build_sequence_from_lab_pulse_dump(
+        **d,
+        probe_induced_alpha_up=alpha,
+        probe_induced_alpha_down=alpha,
+        initial_velocity_z=v0,
+    )
+    final, _, _ = seq.run_pulse_sequence_in_borde_representation(
+        sim.make_atom_states(c0=1, c1=0, initial_velocity_z=0.0),
+        sequence_phi,
+        initial_velocity_z=0.0,
+        discard_threshold=1e-12,
+    )
+    return coherent_populations_by_m(final)
+
+
+phis = np.linspace(0, 1, 41)
+excited_fraction = []
+port_g2 = []
+for phi in phis:
+    pg, pe = run_at_phase(phi)
+    excited_fraction.append(sum(pe.values()))
+    port_g2.append(pg.get(2, 0.0))
+
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.plot(phis, excited_fraction, "-o", label="total excited fraction", color="tab:red")
+ax.plot(phis, port_g2, "-o", label="main port $|g, +2\\rangle$", color="tab:blue")
+ax.set_xlabel("interferometry phase $\\varphi$ (turns)")
+ax.set_ylabel("projection probability")
+ax.grid(alpha=0.25)
+ax.legend()
+ax.set_title(
+    "Fringes with NO π/2 pulses: interference of the leakage paths "
+    "(RID 76695, all-π sequence)"
+)
+plt.show()
+
+exc = np.array(excited_fraction)
+print(
+    f"excited-fraction fringe: min {exc.min():.3f}, max {exc.max():.3f}, "
+    f"peak-to-peak {exc.max() - exc.min():.3f}"
+)
+
+# %% [markdown]
+# The total excited fraction swings by ≈ 0.2 peak-to-peak, and the individual
+# leaked ports fringe with near-unity contrast — despite every pulse being a
+# π pulse. So the experimentally observed interference is entirely consistent
+# with this record: **the "leakage" paths are the only interferometer this
+# sequence has**. The fringe is also visibly non-sinusoidal (the recombining
+# paths carry different multiples of φ), which is a testable signature in the
+# lab data. Restoring the intended π/2 areas for the `bs1`/`bs2` events in
+# global-parameter mode (e.g. scaling the shared duration by `event.area`, or
+# giving π/2 events their own duration handle) should multiply the contrast
+# several-fold and make the fringe sinusoidal.

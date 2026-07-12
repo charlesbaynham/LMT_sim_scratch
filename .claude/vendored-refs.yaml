@@ -1,5 +1,5 @@
 repos:
   - name: icl_experiments
     source: https://gitlab.com/aion-physics/code/artiq/experiment-repositories/icl_experiments.git
-    ref: master
+    ref: declarative-lmt
 destination: vendor
