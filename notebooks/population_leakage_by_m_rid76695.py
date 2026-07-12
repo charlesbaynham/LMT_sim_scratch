@@ -310,3 +310,89 @@ plt.show()
 # lands in one particular set of ports; sweeping the scan phase (pulses 10-18
 # get `φ`, pulse 19 gets `4φ`) redistributes population **only among the
 # recombining classes** and leaves this leakage picture otherwise unchanged.
+
+# %% [markdown]
+# ## Where the leakage comes from: per-pulse decomposition
+#
+# The dump answers this completely. Every recorded duration is a full **π**
+# pulse at its beam's nominal π time (56 us up = `CLOCK_PI_TIME`, 67 us down =
+# `CLOCK_DOWN_PI_TIME` in icl_experiments `constants.py`; the 380 us slice is
+# also π at its lower Rabi frequency). The recorded frequencies form **two
+# interleaved combs**: pulses tuned to the rungs of the occupied path
+# (`m_g ∈ {0, 2, 4}` as the path walks), and pulses tuned to the rungs of the
+# interferometer's *other* arm — which in this record never holds population,
+# because there is no π/2 anywhere in the dump, so the sim walks a single path.
+#
+# For each pulse we compare the rung it actually addresses (from its recorded
+# frequency) with the rung the population occupies, and evaluate the transfer
+# probability of the occupied rung with the sim's own 2x2 propagator
+# (`seq._transition_probability`). Alongside it: the closed-form generalised
+# Rabi formula for a square pulse of Rabi frequency $\Omega$ detuned by
+# $\delta$ from the occupied pair's resonance,
+#
+# $$P = \frac{\Omega^2}{\Omega^2+\delta^2}\,
+#       \sin^2\!\bigl(\pi\sqrt{\Omega^2+\delta^2}\;T\bigr).$$
+
+# %%
+rec = sim.RECOIL_FREQUENCY_HZ
+before_states = [snapshots[i][0] for i, e in enumerate(sequence) if isinstance(e, seq.Pulse)]
+
+print(f"{'p':>2} {'k':>2} {'addr m_g':>8} {'occupied':>9} {'P_occ':>10} "
+      f"{'delta/rec':>9} {'P_formula':>10} {'role':>10}")
+survival = 1.0
+main = (0, "g")  # walk the occupied path by hand: (m, internal)
+for p, pulse in enumerate(pulse_events):
+    m_g_addr, _ = seq._addressed_momentum_classes(pulse)
+    m_main, s_main = main
+    is_ground = s_main == "g"
+    m_g_main = m_main if is_ground else m_main - pulse.k
+    P_occ = seq._transition_probability(m_main, is_ground, pulse)
+    delta_hz = (m_g_addr - m_g_main) * 2 * pulse.k * rec
+    W = np.sqrt(pulse.rabi_frequency**2 + delta_hz**2)
+    P_formula = (pulse.rabi_frequency**2 / W**2) * np.sin(np.pi * W * pulse.duration) ** 2
+    resonant = abs(m_g_addr - m_g_main) < 0.5
+    print(f"{p:>2} {pulse.k:>+2} {m_g_addr:>8.3f} {m_main:>+6d},{s_main} "
+          f"{P_occ:>10.6f} {delta_hz / rec:>9.2f} {P_formula:>10.6f} "
+          f"{'RESONANT' if resonant else 'other-arm':>10}")
+    if resonant:
+        survival *= P_occ
+        main = (m_g_main + pulse.k, "e") if is_ground else (m_g_main, "g")
+    else:
+        survival *= 1.0 - P_occ
+
+final_ground, final_excited = coherent_populations_by_m(snapshots[-1][0])
+final_main = (final_ground if main[1] == "g" else final_excited).get(main[0], 0.0)
+print(f"\nsurvival product along the occupied path: {survival:.4f}")
+print(f"sim final population in {main}:            {final_main:.4f}")
+
+# %% [markdown]
+# ### Conclusion
+#
+# * The 12 pulses tuned to the occupied rung transfer with infidelity
+#   **≤ 4e-5** (the few-tens-of-Hz residual detunings left by the anchoring /
+#   calibration fit are negligible). The resonant physics is essentially
+#   perfect, exactly as expected for a v = 0 atom with exact π areas.
+# * **All of the leakage comes from the 8 pulses tuned to the other arm's
+#   rungs.** Each is a square π pulse detuned by only 4 recoils (up beam,
+#   18.8 kHz) or 8 recoils (down beam, 37.7 kHz) from the occupied pair while
+#   carrying Ω = 8.9 / 7.5 kHz, so it off-resonantly drives the occupied rung
+#   with P ≈ 4.6% / 3.6% per pulse — the sim propagator matches the
+#   generalised-Rabi formula to all printed digits. Compounded over 8 pulses
+#   that predicts 28% total loss from the main path; the sim's 30% differs
+#   only because the leaked amplitudes are subsequently moved around (the
+#   other-arm pulses are *resonant* for them) and recombine coherently —
+#   that is why e.g. the `(+3, e)` parasite ends at 0.155, far more than one
+#   4% kick.
+# * So the leakage is **not** a tuning imperfection and no modelled-but-wrong
+#   shift is responsible: it is the inherent off-resonant response of square
+#   pulses whose Rabi frequency is comparable to the rung splitting
+#   (2·δ_rec = 9.4 kHz). The lab sequence model (`compile_sequence` in
+#   icl_experiments) book-keeps each pulse as acting only on its addressed
+#   pair, which is exactly the piece of physics this ignores.
+# * The sin² timing factor matters: the down-beam kick sits near its worst
+#   case (sin² = 0.95). A square π pulse also satisfies
+#   $\sqrt{\Omega^2+\delta^2}\,T = \text{integer}$ at "magic" durations that
+#   null the off-resonant kick entirely: for the 4-recoil spacing T = 46.0 or
+#   102.9 us (vs 56 us used), for the 8-recoil spacing T = 51.4 or 78.6 us
+#   (vs 67 us used). Detuning-selective durations — or shaped/ARP pulses —
+#   are the real fix.
