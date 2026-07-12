@@ -566,6 +566,7 @@ print(f"sim final population in {main}:            {final_main:.4f}")
 # second arm, and recombine at the final pulses. Sweeping φ (pulses 10-18
 # carry φ, pulse 19 carries 4φ) modulates those recombinations:
 
+
 # %%
 def run_at_phase(phi_turns):
     d = dataclasses.asdict(dump)
@@ -610,8 +611,10 @@ ax.set_title(
 plt.show()
 
 exc = np.array(excited_fraction)
-print(f"excited-fraction fringe: min {exc.min():.3f}, max {exc.max():.3f}, "
-      f"peak-to-peak {exc.max() - exc.min():.3f}")
+print(
+    f"excited-fraction fringe: min {exc.min():.3f}, max {exc.max():.3f}, "
+    f"peak-to-peak {exc.max() - exc.min():.3f}"
+)
 
 # %% [markdown]
 # The total excited fraction swings by ≈ 0.2 peak-to-peak, and the individual
