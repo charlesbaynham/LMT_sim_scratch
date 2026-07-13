@@ -372,6 +372,125 @@ plt.show()
 # linear scale washes them out entirely. Probabilities below ``FLOOR`` (and the
 # exact zeros) are clipped to the darkest colour.
 
+# %% [markdown]
+# ## Intended interferometer path (overlaid to guide the eye)
+#
+# The next figure overlays the **intended** Mach-Zehnder arm trajectories on the
+# leakage heatmap. The intended path is found by walking an ideal on-axis atom
+# through the sequence, letting each pulse **flip**, **drift**, or **split** by
+# its Rabi area (the `compute_spacetime_trajectory` rule): a π pulse flips, a π/2
+# pulse splits.
+#
+# **The catch for this RID:** the two beamsplitters `bs1`/`bs2` were *designed*
+# as π/2 but the global-mode duration bug fired them as full **π** — so if we
+# walked the *recorded* sequence they would flip rather than split, and there
+# would be no interferometer to draw. To show what the sequence was *meant* to
+# do, we force those two pulses back to a π/2 duration
+# (`force_bs_pi2=True`) before tracing the intended path. The overlaid arms are
+# therefore the interferometer the lab intended; comparing them with the actual
+# (all-π) population underneath shows the damage: the recorded π at `bs1` drives
+# the whole cloud down **one** intended arm (that arm's rings sit on bright
+# cells), while the **other** intended arm's rings sit over dark cells —
+# population that a real π/2 split would have created but never did.
+
+
+# %%
+def intended_arm_trajectories(dump, force_bs_pi2, flip_threshold=0.75):
+    """Intended MZ arms: list of dicts {pulse_index: (m, is_ground)}.
+
+    Walks an ideal on-axis atom through the sequence, splitting at π/2 and
+    flipping at π (the `compute_spacetime_trajectory` rule). If ``force_bs_pi2``
+    the two beamsplitters (pulses 1 and n-1) are set to a down-π/2 duration
+    first, so the intended split is shown even for this record, in which they
+    fired as full π.
+    """
+    d = dump
+    n = len(d.is_up)
+    if force_bs_pi2:
+        dur = np.array(d.durations_s)
+        for b in (1, n - 1):
+            dur[b] = 33.5e-6  # down-π/2 = half the 67 µs down-π
+        d = dataclasses.replace(d, durations_s=dur)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        alpha, v0 = seq.calibrate_probe_shift_and_velocity_from_dump(
+            **dataclasses.asdict(d)
+        )
+    _t, sequence = seq.build_sequence_from_lab_pulse_dump(
+        **dataclasses.asdict(d),
+        probe_induced_alpha_up=alpha,
+        probe_induced_alpha_down=alpha,
+        initial_velocity_z=v0,
+    )
+    pulses = [e for e in sequence if isinstance(e, seq.Pulse)]
+    arms = [{"m": 0, "g": True, "hist": {}, "cid": 0}]
+    first_split_done = False
+    for p, pl in enumerate(pulses):
+        nxt = []
+        for a in arms:
+            pr = seq._transition_probability(a["m"], a["g"], pl)
+            if pr >= flip_threshold:
+                a["m"] += pl.k if a["g"] else -pl.k
+                a["g"] = not a["g"]
+                a["hist"][p] = (a["m"], a["g"])
+                nxt.append(a)
+            elif pr <= 1 - flip_threshold:
+                a["hist"][p] = (a["m"], a["g"])
+                nxt.append(a)
+            else:  # π/2 → split into a drifter and a flipper
+                # The input splitter (bs1) creates the two interferometer arms
+                # (distinct colours); the recombiner's forks inherit their arm.
+                b_cid = 1 if not first_split_done else a["cid"]
+                first_split_done = True
+                b = {"m": a["m"], "g": a["g"], "hist": dict(a["hist"]), "cid": b_cid}
+                a["hist"][p] = (a["m"], a["g"])
+                b["m"] += pl.k if b["g"] else -pl.k
+                b["g"] = not b["g"]
+                b["hist"][p] = (b["m"], b["g"])
+                nxt.extend([a, b])
+        arms = nxt
+    return [(a["hist"], a["cid"]) for a in arms]
+
+
+def overlay_intended_path(ax_ground, ax_excited, arms):
+    """Draw the intended arm momentum trajectories on the two heatmap panels.
+
+    Each arm's ``m(pulse)`` line is drawn on both panels; a bold hollow ring
+    marks each pulse where the arm occupies THAT panel's internal state, a faint
+    dot where it is in the other. A ring on a bright cell = the sequence did what
+    it intended; a ring over a dark cell = intended population that never arrived
+    (the signature of the buggy all-π run whose beamsplitters failed to split).
+    """
+    from matplotlib.lines import Line2D
+
+    arm_colors = ["#00e5ff", "#7CFC00"]
+    for hist, cid in arms:
+        ps = np.array(sorted(hist))
+        m = np.array([hist[p][0] for p in ps])
+        g = np.array([hist[p][1] for p in ps])
+        c = arm_colors[cid % len(arm_colors)]
+        for ax, want_ground in ((ax_ground, True), (ax_excited, False)):
+            ax.plot(m, ps, color=c, lw=1.5, alpha=0.85, zorder=5)
+            sel = g == want_ground
+            ax.scatter(m[sel], ps[sel], s=64, facecolors="none",
+                       edgecolors=c, linewidths=2.0, zorder=6)
+            ax.scatter(m[~sel], ps[~sel], s=12, c=c, alpha=0.30, zorder=6)
+    handles = [
+        Line2D([0], [0], color="#00e5ff", lw=1.5, marker="o", markerfacecolor="none",
+               markeredgecolor="#00e5ff", markersize=8, label="intended MZ arms (π/2)"),
+        Line2D([0], [0], marker="o", linestyle="none", markerfacecolor="none",
+               markeredgecolor="0.2", markersize=8, label="arm occupies this state here"),
+    ]
+    ax_ground.legend(handles=handles, loc="upper left", fontsize=8, framealpha=0.85)
+
+
+# The beamsplitters were RECORDED as π on this RID, so force them back to the
+# intended π/2 to trace the interferometer the sequence was designed to be.
+intended_arms = intended_arm_trajectories(dump, force_bs_pi2=True)
+print(f"intended MZ arms (bs forced to π/2): {len(intended_arms)} "
+      f"(2 between the beamsplitters; the recombiner splits them to 4 output ports)")
+
+
 # %%
 from matplotlib.colors import LogNorm  # noqa: E402
 import matplotlib as mpl  # noqa: E402
@@ -400,9 +519,15 @@ for ax, mat, title in (
     ax.set_xticks(m_arr)
 axes[0].set_ylabel("pulse index")
 axes[0].set_yticks(range(n_pulses))
+overlay_intended_path(axes[0], axes[1], intended_arms)
 cbar = fig.colorbar(im, ax=axes, fraction=0.035, pad=0.02)
 cbar.set_label("projection probability $P(m)$  (log scale)")
-fig.suptitle("Leakage map (heatmap view, log colour scale)", fontsize=13)
+fig.suptitle(
+    "RID 76695 (buggy): actual all-π population + the INTENDED π/2 two-arm MZ "
+    "path it should have produced (bs recorded as π) — at the splitters one "
+    "intended arm has no population underneath",
+    fontsize=11,
+)
 plt.show()
 
 # %% [markdown]
