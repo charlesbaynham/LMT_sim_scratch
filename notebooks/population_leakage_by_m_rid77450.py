@@ -85,35 +85,171 @@ import lmt_sim.lmt_simulation as sim
 # 8th row (per-pulse interferometry phase) is all zeros at this scan point.
 
 # %%
-pulse_record_flat = np.array([
-    20.0, 1.0, 0.0, 1.0, 1.0, 0.0,
-    0.0, 0.0, 0.0, 1.0, 1.0, 0.0,
-    1.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-    1.0, 1.0, 0.0, 0.0011392000000000002, 0.002142592, 0.002197812,
-    0.002475548, 0.002603268, 0.002691988, 0.0028307080000000004, 0.0031194440000000003, 0.003258164,
-    0.0033358840000000003, 0.003416128, 0.003504848, 0.0037825840000000003, 0.003910304, 0.003999024,
-    0.0041377440000000005, 0.00442648, 0.0045652, 0.00464292, 0.004723168000000001, 0.000379999,
-    3.35e-05, 5.5999000000000004e-05, 5.5999000000000004e-05, 6.7e-05, 6.7e-05, 6.7e-05,
-    6.7e-05, 5.5999000000000004e-05, 5.5999000000000004e-05, 6.7e-05, 5.5999000000000004e-05, 5.5999000000000004e-05,
-    6.7e-05, 6.7e-05, 6.7e-05, 6.7e-05, 5.5999000000000004e-05, 5.5999000000000004e-05,
-    3.35e-05, 80014038.33602092, 79984677.23407157, 80009139.72161916, 80031843.41483626, 79996777.9422243,
-    79957924.06945309, 79993584.53084627, 79951922.29819915, 80024027.78063032, 80043923.11397147, 79966560.74623615,
-    80027491.3907797, 80050195.08399677, 79978426.27306378, 79939572.40029258, 79975232.86168575, 79933570.6290386,
-    80042379.44979084, 80062274.78313199, 79948444.20223802, 200000000.0, 200000000.0, 200000000.0,
-    200000000.0, 200000000.0, 200000000.0, 200000000.0, 200000000.0, 200000000.0,
-    200000000.0, 200000000.0, 200000000.0, 200000000.0, 200000000.0, 200000000.0,
-    200000000.0, 200000000.0, 200000000.0, 200000000.0, 200000000.0, 99426200.0,
-    99426200.0, 99426200.0, 99426200.0, 99426200.0, 99426200.0, 99426200.0,
-    99426200.0, 99426200.0, 99426200.0, 99426200.0, 99426200.0, 99426200.0,
-    99426200.0, 99426200.0, 99426200.0, 99426200.0, 99426200.0, 99426200.0,
-    99426200.0, 0.012, 2.0, 2.0, 2.0, 2.0,
-    2.0, 2.0, 2.0, 2.0, 2.0, 2.0,
-    2.0, 2.0, 2.0, 2.0, 2.0, 2.0,
-    2.0, 2.0, 2.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0, 0.0,
-])
+pulse_record_flat = np.array(
+    [
+        20.0,
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0011392000000000002,
+        0.002142592,
+        0.002197812,
+        0.002475548,
+        0.002603268,
+        0.002691988,
+        0.0028307080000000004,
+        0.0031194440000000003,
+        0.003258164,
+        0.0033358840000000003,
+        0.003416128,
+        0.003504848,
+        0.0037825840000000003,
+        0.003910304,
+        0.003999024,
+        0.0041377440000000005,
+        0.00442648,
+        0.0045652,
+        0.00464292,
+        0.004723168000000001,
+        0.000379999,
+        3.35e-05,
+        5.5999000000000004e-05,
+        5.5999000000000004e-05,
+        6.7e-05,
+        6.7e-05,
+        6.7e-05,
+        6.7e-05,
+        5.5999000000000004e-05,
+        5.5999000000000004e-05,
+        6.7e-05,
+        5.5999000000000004e-05,
+        5.5999000000000004e-05,
+        6.7e-05,
+        6.7e-05,
+        6.7e-05,
+        6.7e-05,
+        5.5999000000000004e-05,
+        5.5999000000000004e-05,
+        3.35e-05,
+        80014038.33602092,
+        79984677.23407157,
+        80009139.72161916,
+        80031843.41483626,
+        79996777.9422243,
+        79957924.06945309,
+        79993584.53084627,
+        79951922.29819915,
+        80024027.78063032,
+        80043923.11397147,
+        79966560.74623615,
+        80027491.3907797,
+        80050195.08399677,
+        79978426.27306378,
+        79939572.40029258,
+        79975232.86168575,
+        79933570.6290386,
+        80042379.44979084,
+        80062274.78313199,
+        79948444.20223802,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        200000000.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        99426200.0,
+        0.012,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ]
+)
 pulse_record_offsets = np.array([0], dtype=np.int64)
 
 dump = seq.decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets)[0]
@@ -126,9 +262,13 @@ print(f"decoded {n_pulses} pulses; up/down = {dump.is_up.sum()}/{(~dump.is_up).s
 _durs_us = np.round(np.asarray(dump.durations_s) * 1e6, 2)
 print("pulse durations (µs):", _durs_us)
 _bs = np.where(np.isclose(_durs_us, 33.5, atol=1.0))[0]
-print(f"beamsplitter (π/2, 33.5 µs) pulses at indices {_bs.tolist()} "
-      f"-- down-beam: {(~dump.is_up[_bs]).all()}")
-assert _bs.tolist() == [1, n_pulses - 1], "expected the two beamsplitters at pulses 1 and 19"
+print(
+    f"beamsplitter (π/2, 33.5 µs) pulses at indices {_bs.tolist()} "
+    f"-- down-beam: {(~dump.is_up[_bs]).all()}"
+)
+assert _bs.tolist() == [1, n_pulses - 1], (
+    "expected the two beamsplitters at pulses 1 and 19"
+)
 
 # %% [markdown]
 # ## Build the sequence (calibrated, phase = 0, no clearouts)
@@ -199,9 +339,7 @@ for i, event in enumerate(sequence):
 assert len(per_pulse_ground) == n_pulses
 
 # Assemble dense (n_pulses x n_m) probability matrices on a shared m-grid.
-all_m = sorted(
-    {m for d in (per_pulse_ground + per_pulse_excited) for m in d}
-)
+all_m = sorted({m for d in (per_pulse_ground + per_pulse_excited) for m in d})
 m_index = {m: j for j, m in enumerate(all_m)}
 ground_mat = np.zeros((n_pulses, len(all_m)))
 excited_mat = np.zeros((n_pulses, len(all_m)))
@@ -213,8 +351,10 @@ for p in range(n_pulses):
 
 total_per_pulse = ground_mat.sum(axis=1) + excited_mat.sum(axis=1)
 print(f"m classes populated across the sequence: {all_m[0]} .. {all_m[-1]}")
-print(f"total projected probability per pulse: min {total_per_pulse.min():.3f}, "
-      f"max {total_per_pulse.max():.3f} (coherent readout conserves probability)")
+print(
+    f"total projected probability per pulse: min {total_per_pulse.min():.3f}, "
+    f"max {total_per_pulse.max():.3f} (coherent readout conserves probability)"
+)
 
 # %% [markdown]
 # ## The leakage map -- populations by m, swept pulse by pulse
@@ -357,21 +497,47 @@ def overlay_intended_path(ax_ground, ax_excited, arms):
         for ax, want_ground in ((ax_ground, True), (ax_excited, False)):
             ax.plot(m, ps, color=c, lw=1.5, alpha=0.85, zorder=5)
             sel = g == want_ground
-            ax.scatter(m[sel], ps[sel], s=64, facecolors="none",
-                       edgecolors=c, linewidths=2.0, zorder=6)
+            ax.scatter(
+                m[sel],
+                ps[sel],
+                s=64,
+                facecolors="none",
+                edgecolors=c,
+                linewidths=2.0,
+                zorder=6,
+            )
             ax.scatter(m[~sel], ps[~sel], s=12, c=c, alpha=0.30, zorder=6)
     handles = [
-        Line2D([0], [0], color="#00e5ff", lw=1.5, marker="o", markerfacecolor="none",
-               markeredgecolor="#00e5ff", markersize=8, label="intended MZ arms"),
-        Line2D([0], [0], marker="o", linestyle="none", markerfacecolor="none",
-               markeredgecolor="0.2", markersize=8, label="arm occupies this state here"),
+        Line2D(
+            [0],
+            [0],
+            color="#00e5ff",
+            lw=1.5,
+            marker="o",
+            markerfacecolor="none",
+            markeredgecolor="#00e5ff",
+            markersize=8,
+            label="intended MZ arms",
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            linestyle="none",
+            markerfacecolor="none",
+            markeredgecolor="0.2",
+            markersize=8,
+            label="arm occupies this state here",
+        ),
     ]
     ax_ground.legend(handles=handles, loc="upper left", fontsize=8, framealpha=0.85)
 
 
 intended_arms = intended_arm_trajectories(dump, force_bs_pi2=False)
-print(f"intended MZ arms: {len(intended_arms)} "
-      f"(2 between the beamsplitters; the recombiner splits them to 4 output ports)")
+print(
+    f"intended MZ arms: {len(intended_arms)} "
+    f"(2 between the beamsplitters; the recombiner splits them to 4 output ports)"
+)
 
 
 # %%

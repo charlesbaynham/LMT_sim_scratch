@@ -472,14 +472,38 @@ def overlay_intended_path(ax_ground, ax_excited, arms):
         for ax, want_ground in ((ax_ground, True), (ax_excited, False)):
             ax.plot(m, ps, color=c, lw=1.5, alpha=0.85, zorder=5)
             sel = g == want_ground
-            ax.scatter(m[sel], ps[sel], s=64, facecolors="none",
-                       edgecolors=c, linewidths=2.0, zorder=6)
+            ax.scatter(
+                m[sel],
+                ps[sel],
+                s=64,
+                facecolors="none",
+                edgecolors=c,
+                linewidths=2.0,
+                zorder=6,
+            )
             ax.scatter(m[~sel], ps[~sel], s=12, c=c, alpha=0.30, zorder=6)
     handles = [
-        Line2D([0], [0], color="#00e5ff", lw=1.5, marker="o", markerfacecolor="none",
-               markeredgecolor="#00e5ff", markersize=8, label="intended MZ arms (π/2)"),
-        Line2D([0], [0], marker="o", linestyle="none", markerfacecolor="none",
-               markeredgecolor="0.2", markersize=8, label="arm occupies this state here"),
+        Line2D(
+            [0],
+            [0],
+            color="#00e5ff",
+            lw=1.5,
+            marker="o",
+            markerfacecolor="none",
+            markeredgecolor="#00e5ff",
+            markersize=8,
+            label="intended MZ arms (π/2)",
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            linestyle="none",
+            markerfacecolor="none",
+            markeredgecolor="0.2",
+            markersize=8,
+            label="arm occupies this state here",
+        ),
     ]
     ax_ground.legend(handles=handles, loc="upper left", fontsize=8, framealpha=0.85)
 
@@ -487,8 +511,10 @@ def overlay_intended_path(ax_ground, ax_excited, arms):
 # The beamsplitters were RECORDED as π on this RID, so force them back to the
 # intended π/2 to trace the interferometer the sequence was designed to be.
 intended_arms = intended_arm_trajectories(dump, force_bs_pi2=True)
-print(f"intended MZ arms (bs forced to π/2): {len(intended_arms)} "
-      f"(2 between the beamsplitters; the recombiner splits them to 4 output ports)")
+print(
+    f"intended MZ arms (bs forced to π/2): {len(intended_arms)} "
+    f"(2 between the beamsplitters; the recombiner splits them to 4 output ports)"
+)
 
 
 # %%
