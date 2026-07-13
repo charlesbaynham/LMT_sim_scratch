@@ -393,6 +393,55 @@ fig.suptitle(
 plt.show()
 
 # %% [markdown]
+# ## The same map, flattened into a 1-D stack (ridgeline view)
+#
+# Exactly the same per-pulse momentum spectra as above, but instead of colouring
+# the lines by pulse and overlaying two panels, each pulse's spectrum is drawn as
+# its own little 1-D plot with its **baseline offset vertically by the pulse
+# index**. The x-axis is still momentum class `m`; one vertical unit equals a
+# projection probability of 1, so every trace rises from its own `y = pulse`
+# baseline (the grey line). Because ground and excited no longer need separate
+# panels, both are drawn on the same axes in different colours -- so you can read
+# the ground/excited balance in each `m` class, pulse by pulse, at a glance. The
+# real π/2 beamsplitter at pulse 1 shows up cleanly here as the trace that splits
+# into a 50/50 ground+excited pair.
+
+# %%
+from matplotlib.lines import Line2D  # noqa: E402
+
+GROUND_C = "tab:blue"
+EXCITED_C = "tab:red"
+OFFSET = 1.0  # one pulse per vertical unit; a full trace (P = 1) spans one unit
+
+fig, ax = plt.subplots(figsize=(10, 11))
+for p in range(n_pulses):
+    base = p * OFFSET
+    ax.axhline(base, color="0.85", lw=0.8, zorder=1)
+    for mat, color in ((ground_mat, GROUND_C), (excited_mat, EXCITED_C)):
+        ax.fill_between(m_arr, base, base + mat[p], color=color, alpha=0.20, zorder=2)
+        ax.plot(m_arr, base + mat[p], color=color, lw=1.3, marker="o", ms=2.5, zorder=3)
+
+ax.set_xlabel("momentum class $m$  ($\\hbar k$ recoils)")
+ax.set_ylabel("pulse index  (each baseline is $P = 0$; one unit $= P = 1$)")
+ax.set_yticks(range(n_pulses))
+ax.set_xticks(m_arr)
+ax.set_ylim(-0.5, n_pulses + 0.5)
+ax.grid(axis="x", alpha=0.2)
+ax.legend(
+    handles=[
+        Line2D([0], [0], color=GROUND_C, lw=1.3, marker="o", ms=4, label="ground"),
+        Line2D([0], [0], color=EXCITED_C, lw=1.3, marker="o", ms=4, label="excited"),
+    ],
+    loc="upper right",
+    framealpha=0.9,
+)
+ax.set_title(
+    "RID 77450 symmetric MZ: per-pulse momentum spectra stacked by pulse index "
+    "(ground vs excited)"
+)
+plt.show()
+
+# %% [markdown]
 # ## Same data as heatmaps
 #
 # A complementary view: pulse index on the vertical axis, momentum on the
