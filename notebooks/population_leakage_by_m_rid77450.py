@@ -473,8 +473,12 @@ def plot_ridgeline_stack(transform, ylabel, title, decade_probs=None):
         ax.axhline(base, color="0.85", lw=0.8, zorder=1)
         for mat, color in ((ground_mat, GROUND_C), (excited_mat, EXCITED_C)):
             h = transform(mat[p])
-            ax.fill_between(m_arr, base, base + h, color=color, alpha=0.20, zorder=2)
-            ax.plot(m_arr, base + h, color=color, lw=1.3, marker="o", ms=2.5, zorder=3)
+            # step="mid" / where="mid": each momentum class is a unit-wide box
+            # centred on its m, so populations read as square boxes not triangles
+            ax.fill_between(
+                m_arr, base, base + h, color=color, alpha=0.20, step="mid", zorder=2
+            )
+            ax.step(m_arr, base + h, color=color, lw=1.3, where="mid", zorder=3)
     ax.set_xlabel("momentum class $m$  ($\\hbar k$ recoils)")
     ax.set_ylabel(ylabel)
     ax.set_yticks(range(n_pulses))
@@ -483,8 +487,8 @@ def plot_ridgeline_stack(transform, ylabel, title, decade_probs=None):
     ax.grid(axis="x", alpha=0.2)
     ax.legend(
         handles=[
-            Line2D([0], [0], color=GROUND_C, lw=1.3, marker="o", ms=4, label="ground"),
-            Line2D([0], [0], color=EXCITED_C, lw=1.3, marker="o", ms=4, label="excited"),
+            Line2D([0], [0], color=GROUND_C, lw=3, label="ground"),
+            Line2D([0], [0], color=EXCITED_C, lw=3, label="excited"),
         ],
         loc="upper right",
         framealpha=0.9,
