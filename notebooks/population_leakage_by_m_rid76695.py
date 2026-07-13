@@ -377,32 +377,124 @@ from matplotlib.lines import Line2D  # noqa: E402
 GROUND_C = "tab:blue"
 EXCITED_C = "tab:red"
 OFFSET = 1.0  # one pulse per vertical unit; a full trace (P = 1) spans one unit
+RIDGE_FLOOR = 1e-5  # bottom of the log band: P <= this sits on the baseline
 
-fig, ax = plt.subplots(figsize=(10, 11))
-for p in range(n_pulses):
-    base = p * OFFSET
-    ax.axhline(base, color="0.85", lw=0.8, zorder=1)
-    for mat, color in ((ground_mat, GROUND_C), (excited_mat, EXCITED_C)):
-        ax.fill_between(m_arr, base, base + mat[p], color=color, alpha=0.20, zorder=2)
-        ax.plot(m_arr, base + mat[p], color=color, lw=1.3, marker="o", ms=2.5, zorder=3)
 
-ax.set_xlabel("momentum class $m$  ($\\hbar k$ recoils)")
-ax.set_ylabel("pulse index  (each baseline is $P = 0$; one unit $= P = 1$)")
-ax.set_yticks(range(n_pulses))
-ax.set_xticks(m_arr)
-ax.set_ylim(-0.5, n_pulses + 0.5)
-ax.grid(axis="x", alpha=0.2)
-ax.legend(
-    handles=[
-        Line2D([0], [0], color=GROUND_C, lw=1.3, marker="o", ms=4, label="ground"),
-        Line2D([0], [0], color=EXCITED_C, lw=1.3, marker="o", ms=4, label="excited"),
-    ],
-    loc="upper right",
-    framealpha=0.9,
+def _log_band_offset(prob, floor=RIDGE_FLOOR):
+    """Map probabilities in (0, 1] onto a [0, 1] height that is *logarithmic*
+    within each pulse's unit-tall band: ``floor`` -> 0 (the pulse's baseline)
+    and 1.0 -> 1 (the next baseline), spanning the ``-log10(floor)`` decades in
+    between. Values <= ``floor`` (and exact zeros) clip to 0, so weak parasitic
+    populations lift off the baseline instead of vanishing as they do on a linear
+    axis. The scaling deliberately keeps the log *inside* each band -- pulse p
+    plots as ``p + log10(P/floor)/(-log10(floor))``, NOT ``log10(p + P)`` (which
+    would crush every pulse into a hair above its index)."""
+    prob = np.asarray(prob, dtype=float)
+    decades = -np.log10(floor)
+    with np.errstate(divide="ignore"):
+        logp = np.log10(np.where(prob > 0.0, prob, floor))
+    return np.clip((logp - np.log10(floor)) / decades, 0.0, 1.0)
+
+
+DECADE_PROBS = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0]  # log-band decade guide levels
+
+
+def _fmt_prob(prob):
+    """Label a decade probability as ``$10^{-n}$`` (or ``1`` for P = 1)."""
+    exp = int(round(np.log10(prob)))
+    return "1" if exp == 0 else r"$10^{%d}$" % exp
+
+
+def plot_ridgeline_stack(transform, ylabel, title, decade_probs=None):
+    """Draw the per-pulse momentum spectra stacked by pulse index. ``transform``
+    maps a probability row onto its plotted height above that pulse's baseline --
+    the identity for the linear view, ``_log_band_offset`` for the log view. When
+    ``decade_probs`` is given (the log view), faint dotted decade guide-lines are
+    drawn across every band and the decade probabilities are labelled on the
+    bottom band only -- enough to show the logarithmic spacing within each band
+    without cluttering all 20 rows with tick labels."""
+    fig, ax = plt.subplots(figsize=(11, 16))
+    if decade_probs is not None:
+        offs = _log_band_offset(np.asarray(decade_probs, dtype=float))
+        for p in range(n_pulses):
+            for off in offs:
+                if 0.0 < off < 1.0:  # the 0 and 1 baselines are drawn below
+                    ax.axhline(p + off, color="0.82", lw=0.6, ls=":", zorder=0)
+        for prob, off in zip(decade_probs, offs):
+            ax.text(
+                0.006,
+                off,
+                _fmt_prob(prob),
+                transform=ax.get_yaxis_transform(),
+                ha="left",
+                va="center",
+                fontsize=8,
+                color="0.35",
+                zorder=4,
+            )
+    for p in range(n_pulses):
+        base = p * OFFSET
+        ax.axhline(base, color="0.85", lw=0.8, zorder=1)
+        for mat, color in ((ground_mat, GROUND_C), (excited_mat, EXCITED_C)):
+            h = transform(mat[p])
+            ax.fill_between(m_arr, base, base + h, color=color, alpha=0.20, zorder=2)
+            ax.plot(m_arr, base + h, color=color, lw=1.3, marker="o", ms=2.5, zorder=3)
+    ax.set_xlabel("momentum class $m$  ($\\hbar k$ recoils)")
+    ax.set_ylabel(ylabel)
+    ax.set_yticks(range(n_pulses))
+    ax.set_xticks(m_arr)
+    ax.set_ylim(-0.5, n_pulses + 0.5)
+    ax.grid(axis="x", alpha=0.2)
+    ax.legend(
+        handles=[
+            Line2D([0], [0], color=GROUND_C, lw=1.3, marker="o", ms=4, label="ground"),
+            Line2D([0], [0], color=EXCITED_C, lw=1.3, marker="o", ms=4, label="excited"),
+        ],
+        loc="upper right",
+        framealpha=0.9,
+    )
+    ax.set_title(title)
+    return fig, ax
+
+
+plot_ridgeline_stack(
+    transform=lambda prob: prob,
+    ylabel="pulse index  (each baseline is $P = 0$; one unit $= P = 1$)",
+    title=(
+        "RID 76695 symmetric MZ: per-pulse momentum spectra stacked by pulse index "
+        "(ground vs excited)"
+    ),
 )
-ax.set_title(
-    "RID 76695 symmetric MZ: per-pulse momentum spectra stacked by pulse index "
-    "(ground vs excited)"
+plt.show()
+
+# %% [markdown]
+# ## The same ridgeline, but logarithmic within each band
+#
+# Identical data and layout to the linear ridgeline above, but each pulse's band
+# is now a **logarithmic** height. Within the unit-tall strip for pulse `p`, the
+# baseline (`y = p`) corresponds to a projection probability of `1e-5` and the top
+# (`y = p + 1`) to `P = 1`, spanning the five decades in between. Crucially this is
+# *not* `log(p + P)` -- that would compress every pulse into a hair above its own
+# index; it is `p + log10(P / 1e-5) / 5`, so the log scale lives entirely inside
+# the pulse's own band. Populations at or below `1e-5` sit flat on the baseline.
+# This lets the faint parasitic leakage -- the `1e-3`-`1e-4` streaks the linear
+# view flattens to nothing -- stand up clearly next to the near-unity main peaks.
+# Faint dotted decade guide-lines are drawn across every band, with the decades
+# (`1e-5 ... 1`) labelled on the bottom band only so you can read off the log
+# spacing without cluttering all 20 rows.
+
+# %%
+plot_ridgeline_stack(
+    transform=_log_band_offset,
+    ylabel=(
+        "pulse index  (log within each band: baseline $P = 10^{-5}$, "
+        "one unit up $= P = 1$)"
+    ),
+    title=(
+        "RID 76695 symmetric MZ: per-pulse momentum spectra stacked by pulse index "
+        "(log scale within each band, ground vs excited)"
+    ),
+    decade_probs=DECADE_PROBS,
 )
 plt.show()
 
