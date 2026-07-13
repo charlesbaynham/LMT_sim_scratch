@@ -82,180 +82,19 @@ import lmt_sim.lmt_simulation as sim
 # %% [markdown]
 # ## The RID 77450 pulse dump (interferometer_phase = 0 point)
 #
-# Genuine float64 SI `pulse_record_flat` as emitted by `PulseDMARecording`. The
-# 8th row (per-pulse interferometry phase) is all zeros at this scan point.
+# The genuine float64 SI `pulse_record_flat` as emitted by `PulseDMARecording`
+# lives in the shared data module
+# [`rid77450_pulse_record`](./rid77450_pulse_record.py), so that every notebook
+# analysing this record uses the same single copy. The 8th row (per-pulse
+# interferometry phase) is all zeros at this scan point.
 
 # %%
-pulse_record_flat = np.array(
-    [
-        20.0,
-        1.0,
-        0.0,
-        1.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        1.0,
-        0.0,
-        1.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        1.0,
-        0.0,
-        0.0011392000000000002,
-        0.002142592,
-        0.002197812,
-        0.002475548,
-        0.002603268,
-        0.002691988,
-        0.0028307080000000004,
-        0.0031194440000000003,
-        0.003258164,
-        0.0033358840000000003,
-        0.003416128,
-        0.003504848,
-        0.0037825840000000003,
-        0.003910304,
-        0.003999024,
-        0.0041377440000000005,
-        0.00442648,
-        0.0045652,
-        0.00464292,
-        0.004723168000000001,
-        0.000379999,
-        3.35e-05,
-        5.5999000000000004e-05,
-        5.5999000000000004e-05,
-        6.7e-05,
-        6.7e-05,
-        6.7e-05,
-        6.7e-05,
-        5.5999000000000004e-05,
-        5.5999000000000004e-05,
-        6.7e-05,
-        5.5999000000000004e-05,
-        5.5999000000000004e-05,
-        6.7e-05,
-        6.7e-05,
-        6.7e-05,
-        6.7e-05,
-        5.5999000000000004e-05,
-        5.5999000000000004e-05,
-        3.35e-05,
-        80014038.33602092,
-        79984677.23407157,
-        80009139.72161916,
-        80031843.41483626,
-        79996777.9422243,
-        79957924.06945309,
-        79993584.53084627,
-        79951922.29819915,
-        80024027.78063032,
-        80043923.11397147,
-        79966560.74623615,
-        80027491.3907797,
-        80050195.08399677,
-        79978426.27306378,
-        79939572.40029258,
-        79975232.86168575,
-        79933570.6290386,
-        80042379.44979084,
-        80062274.78313199,
-        79948444.20223802,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        200000000.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        99426200.0,
-        0.012,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-    ]
-)
-pulse_record_offsets = np.array([0], dtype=np.int64)
+import rid77450_pulse_record as rid77450
 
-dump = seq.decode_pulse_record_flat(pulse_record_flat, pulse_record_offsets)[0]
+dump = rid77450.load_dump()
 n_pulses = len(dump.is_up)
 print(f"decoded {n_pulses} pulses; up/down = {dump.is_up.sum()}/{(~dump.is_up).sum()}")
+
 
 # The fix in one line: pulses 1 and 19 (the down-beam beamsplitters) now carry a
 # down-π/2 = 33.5 µs duration; every launch/mirror pulse stays a full π (up 56 µs,
@@ -281,19 +120,9 @@ assert _bs.tolist() == [1, n_pulses - 1], (
 # recorded detunings, so the quantum run is done at v = 0.
 
 # %%
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", UserWarning)
-    alpha, v0 = seq.calibrate_probe_shift_and_velocity_from_dump(
-        **dataclasses.asdict(dump)
-    )
+alpha, v0, _timestamps, sequence = rid77450.calibrate_and_build(dump)
 print(f"probe-shift alpha = {alpha:.4g} 1/Hz   initial velocity = {v0 * 1e3:+.3f} mm/s")
 
-_timestamps, sequence = seq.build_sequence_from_lab_pulse_dump(
-    **dataclasses.asdict(dump),
-    probe_induced_alpha_up=alpha,
-    probe_induced_alpha_down=alpha,
-    initial_velocity_z=v0,
-)
 pulse_events = [e for e in sequence if isinstance(e, seq.Pulse)]
 assert len(pulse_events) == n_pulses
 
