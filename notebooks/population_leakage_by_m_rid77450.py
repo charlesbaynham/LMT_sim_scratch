@@ -395,64 +395,6 @@ plt.show()
 
 
 # %%
-def intended_arm_trajectories(dump, force_bs_pi2, flip_threshold=0.75):
-    """Intended MZ arms: list of dicts {pulse_index: (m, is_ground)}.
-
-    Walks an ideal on-axis atom through the sequence, splitting at π/2 and
-    flipping at π (the `compute_spacetime_trajectory` rule). If ``force_bs_pi2``
-    the two beamsplitters (pulses 1 and n-1) are set to a down-π/2 duration
-    first, so the intended split is shown even for a record in which they fired
-    as full π (RID 76695); for a record that already holds π/2 beamsplitters
-    (RID 77450) pass ``force_bs_pi2=False``.
-    """
-    d = dump
-    n = len(d.is_up)
-    if force_bs_pi2:
-        dur = np.array(d.durations_s)
-        for b in (1, n - 1):
-            dur[b] = 33.5e-6  # down-π/2 = half the 67 µs down-π
-        d = dataclasses.replace(d, durations_s=dur)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        alpha, v0 = seq.calibrate_probe_shift_and_velocity_from_dump(
-            **dataclasses.asdict(d)
-        )
-    _t, sequence = seq.build_sequence_from_lab_pulse_dump(
-        **dataclasses.asdict(d),
-        probe_induced_alpha_up=alpha,
-        probe_induced_alpha_down=alpha,
-        initial_velocity_z=v0,
-    )
-    pulses = [e for e in sequence if isinstance(e, seq.Pulse)]
-    arms = [{"m": 0, "g": True, "hist": {}, "cid": 0}]
-    first_split_done = False
-    for p, pl in enumerate(pulses):
-        nxt = []
-        for a in arms:
-            pr = seq._transition_probability(a["m"], a["g"], pl)
-            if pr >= flip_threshold:
-                a["m"] += pl.k if a["g"] else -pl.k
-                a["g"] = not a["g"]
-                a["hist"][p] = (a["m"], a["g"])
-                nxt.append(a)
-            elif pr <= 1 - flip_threshold:
-                a["hist"][p] = (a["m"], a["g"])
-                nxt.append(a)
-            else:  # π/2 → split into a drifter and a flipper
-                # The input splitter (bs1) creates the two interferometer arms
-                # (distinct colours); the recombiner's forks inherit their arm.
-                b_cid = 1 if not first_split_done else a["cid"]
-                first_split_done = True
-                b = {"m": a["m"], "g": a["g"], "hist": dict(a["hist"]), "cid": b_cid}
-                a["hist"][p] = (a["m"], a["g"])
-                b["m"] += pl.k if b["g"] else -pl.k
-                b["g"] = not b["g"]
-                b["hist"][p] = (b["m"], b["g"])
-                nxt.extend([a, b])
-        arms = nxt
-    return [(a["hist"], a["cid"]) for a in arms]
-
-
 def overlay_intended_path(ax_ground, ax_excited, arms):
     """Draw the intended arm momentum trajectories on the two heatmap panels.
 
@@ -509,7 +451,7 @@ def overlay_intended_path(ax_ground, ax_excited, arms):
     ax_ground.legend(handles=handles, loc="upper left", fontsize=8, framealpha=0.85)
 
 
-intended_arms = intended_arm_trajectories(dump, force_bs_pi2=False)
+intended_arms = rid77450.intended_arm_trajectories(dump, force_bs_pi2=False)
 print(
     f"intended MZ arms: {len(intended_arms)} "
     f"(2 between the beamsplitters; the recombiner splits them to 4 output ports)"

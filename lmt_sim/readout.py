@@ -60,6 +60,8 @@ be applied directly to a final Bordé-frame state at any sweep detuning.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 
 import lmt_sim.lmt_simulation as sim
@@ -148,6 +150,115 @@ def merge_rows_by_momentum_class(state: sim.AtomState) -> sim.AtomState:
         detuning_ref_hz=state.detuning_ref_hz,
         accumulated_detuning_cycles=state.accumulated_detuning_cycles,
     )
+
+
+def run_sequence_with_ground_clearouts(
+    pulse_sequence,
+    clearout_after_pulses,
+    *,
+    initial_velocity_z=0.0,
+    discard_threshold=1e-9,
+    c0=1.0,
+    c1=0.0,
+    weight_floor=1e-12,
+):
+    """Run a pulse sequence with perfect, instantaneous ground clearouts.
+
+    ``clearout_after_pulses`` lists pulse indices (0-based, counting only
+    ``Pulse``/``CompositePulse`` events); immediately after each listed pulse
+    the entire ground manifold is removed, modelling an ideal 461 nm clearout
+    fired in a window where everything the sequence means to keep is shelved
+    in the excited state.
+
+    This is the deterministic, ensemble-averaged counterpart of
+    :func:`~lmt_sim.lmt_simulation.do_clearout` (which Monte-Carlo samples one
+    atom's fate and renormalises the survivor): here the ground rows are
+    dropped with their weight, the surviving amplitudes are renormalised so
+    the canonical sequence loop can continue, and the removed weight is
+    accumulated into a single ``weight`` factor. Quadratic quantities computed
+    from the returned state (readout signals, per-class populations) multiplied
+    by ``weight`` are exactly those of the projected state evolved through the
+    full sequence.
+
+    Exactness note: the sequence is run in segments through the canonical
+    ``run_pulse_sequence_in_borde_representation``, which restarts the Bordé
+    frame bookkeeping (and evaluates any free fall at the start of a segment
+    at that segment's first-pulse detuning). Both are harmless here: frame
+    bookkeeping never touches amplitudes, and because the post-clearout state
+    is entirely excited, the detuning-dependent part of the free-fall phase is
+    a global phase. Populations therefore match an unsegmented run exactly.
+
+    Parameters
+    ----------
+    pulse_sequence : sequence of events
+        As for ``run_pulse_sequence_in_borde_representation``. Must not
+        contain ``Clearout`` events (this function IS the clearout model).
+    clearout_after_pulses : iterable of int
+        Pulse indices after which to fire the clearout.
+    initial_velocity_z, discard_threshold, c0, c1 :
+        As for the canonical sequence runners.
+    weight_floor : float, optional
+        If the surviving weight falls below this, the atom is treated as fully
+        removed and ``(None, 0.0)`` is returned.
+
+    Returns
+    -------
+    (AtomState or None, float)
+        The final state (unit row norm, ready for
+        :func:`simulate_excited_state_readout`) and the surviving weight, i.e.
+        the fraction of the original atom number still present at detection.
+        ``(None, 0.0)`` if every clearout survivor fell below ``weight_floor``.
+    """
+    # Late import: lmt_sequence imports this package's sibling module chain via
+    # lmt_sim, so import locally to keep module import order flexible.
+    from lmt_sim import lmt_sequence as seq
+
+    clearout_after_pulses = set(clearout_after_pulses)
+
+    # Split into (segment, clearout_after_segment) pairs: a segment ends
+    # immediately after each clearout pulse, so the clearout fires between it
+    # and the following event (before any free fall).
+    segments = [([], False)]
+    pulse_index = -1
+    for event in pulse_sequence:
+        if isinstance(event, seq.Clearout):
+            raise ValueError(
+                "pulse_sequence must not contain Clearout events; pass the "
+                "clearout positions via clearout_after_pulses instead"
+            )
+        segments[-1][0].append(event)
+        if isinstance(event, (seq.Pulse, seq.CompositePulse)):
+            pulse_index += 1
+            if pulse_index in clearout_after_pulses:
+                segments[-1] = (segments[-1][0], True)
+                segments.append(([], False))
+    missing = {p for p in clearout_after_pulses if p > pulse_index}
+    if missing:
+        raise ValueError(
+            f"clearout_after_pulses {sorted(missing)} exceed the last pulse "
+            f"index {pulse_index}"
+        )
+    if not segments[-1][0]:
+        segments.pop()
+
+    state = sim.make_atom_states(c0=c0, c1=c1, initial_velocity_z=initial_velocity_z)
+    weight = 1.0
+    for segment, clearout_after in segments:
+        state, _detuning, _t = seq.run_pulse_sequence_in_borde_representation(
+            state,
+            segment,
+            initial_velocity_z=initial_velocity_z,
+            discard_threshold=discard_threshold,
+        )
+        if not clearout_after:
+            continue
+        state = remove_ground_rows(state)
+        survived = float(np.sum(np.abs(state.amplitudes) ** 2))
+        weight *= survived
+        if weight <= weight_floor:
+            return None, 0.0
+        state = replace(state, amplitudes=state.amplitudes / np.sqrt(survived))
+    return state, weight
 
 
 def readout_resonance_detuning_hz(m_excited, k_sign=+1, v0=0.0):

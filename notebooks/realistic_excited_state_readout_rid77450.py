@@ -77,7 +77,10 @@
 # * first for a **single atom at the slice centre** — the ideal limit in which
 #   the 461 nm clearouts after velocity selection have removed everything else;
 # * then for a **200 nK thermal cloud with no clearouts**, as the raw record
-#   was fired — showing what the unselected atoms do to the spectrum.
+#   was fired — showing what the unselected atoms do to the spectrum;
+# * finally the same cloud **with perfect, instantaneous clearouts** inserted
+#   in every window where the sequence allows one (all intended arms
+#   simultaneously excited), to quantify how much of the damage they undo.
 
 # %%
 import sys
@@ -103,7 +106,8 @@ import lmt_sim.readout as readout
 # and the same probe-shift coefficient — only its detuning is swept.
 
 # %%
-alpha, v0, _timestamps, sequence = rid77450.calibrate_and_build()
+dump = rid77450.load_dump()
+alpha, v0, _timestamps, sequence = rid77450.calibrate_and_build(dump)
 print(f"probe-shift alpha = {alpha:.4g} 1/Hz   initial velocity = {v0 * 1e3:+.3f} mm/s")
 
 slice_pulse = next(e for e in sequence if isinstance(e, seq.Pulse))
@@ -276,11 +280,13 @@ plt.show()
 # %% [markdown]
 # ### Reading the single-atom sweep
 #
-# * The two excited output ports of the Mach-Zehnder dominate: **m = +1 at
-#   +4.7 kHz and m = +3 at +23.5 kHz** (odd multiples of the recoil frequency).
-#   The swept peak heights land on the perfect projective populations (circles)
-#   to a few parts in $10^3$ — on resonance the π imaging pulse transfers the
-#   whole class.
+# * Two excited classes dominate: **m = +1 at +4.7 kHz (0.50) and m = +3 at
+#   +23.5 kHz (0.28)** (odd multiples of the recoil frequency). The swept peak
+#   heights land on the perfect projective populations (circles) to a few
+#   parts in $10^3$ — on resonance the π imaging pulse transfers the whole
+#   class. (Spoiler from the clearout section below: the intended φ = 0 output
+#   of this sequence is m = +1 excited plus m = +2 ground *only* — the large
+#   m = +3 peak is parasitic-path interference, not a second output port.)
 # * The linewidth (~1.8 kHz FWHM) is a fifth of the 9.4 kHz class spacing: the
 #   readout genuinely resolves individual recoil rungs, which is the point of
 #   matching the slicing-pulse duration.
@@ -431,12 +437,11 @@ plt.show()
 # ### What the real readout would show us
 #
 # * **The interferometer peaks survive, with reduced contrast.** The selected
-#   slice still produces its sharp sub-recoil peaks for the two excited output
-#   ports at +4.7 kHz (m = +1) and +23.5 kHz (m = +3), essentially at the
-#   single-atom positions (the maxima are pulled a few hundred Hz by the
-#   asymmetric pedestal underneath) — but scaled down by the small fraction of
-#   the cloud the 380 µs slice picked out, and now sitting on a comparable
-#   background.
+#   slice still produces its sharp sub-recoil peaks at +4.7 kHz (m = +1) and
+#   +23.5 kHz (m = +3), essentially at the single-atom positions (the maxima
+#   are pulled a few hundred Hz by the asymmetric pedestal underneath) — but
+#   scaled down by the small fraction of the cloud the 380 µs slice picked
+#   out, and now sitting on a comparable background.
 # * **The unselected cloud is far from spectator.** With no clearouts, half the
 #   *whole* cloud ends the sequence excited: the 56-67 µs π pulses (Rabi
 #   7-9 kHz) are broader than the thermal Doppler spread and shake every atom.
@@ -467,6 +472,172 @@ plt.show()
 #   simulation is telling us where to spend them.
 
 # %% [markdown]
+# ## Adding the clearouts
+#
+# A 461 nm clearout removes every ground-state atom, so it can only fire when
+# **everything the sequence means to keep is in the excited state** — for the
+# interferometer proper, when *both* arms are simultaneously excited (before
+# the first beamsplitter there is a single cloud, so the classic post-slice
+# window counts too). Walking the intended arm trajectories through the
+# recorded pulses finds every such window; per the sequence structure they
+# fall in the free-fall gaps after pulses **0, 2, 6, 11 and 15**. We insert a
+# clearout in *all* of them, assumed **instantaneous and perfect** (every
+# ground atom removed, the excited amplitudes untouched).
+#
+# The model (`readout.run_sequence_with_ground_clearouts`) is deterministic
+# and ensemble-averaged, unlike the Monte-Carlo `do_clearout`: at each window
+# the ground rows are dropped and their weight is accumulated into a single
+# per-atom survival factor, so the final readout stays in absolute
+# atoms-per-original-atom units. (The sequence machinery itself is untouched —
+# the run is split into segments at the clearout instants; because the
+# post-clearout state is entirely excited, the segment restart is provably a
+# global phase and the populations are exact. See the tests.)
+
+# %%
+clearout_windows = rid77450.both_arms_excited_after_pulses(dump)
+arms = rid77450.intended_arm_trajectories(dump, force_bs_pi2=False)
+print(f"clearout windows: after pulses {clearout_windows}")
+for p in clearout_windows:
+    states = sorted({hist[p] for hist, _cid in arms if p in hist})
+    labels = ", ".join(f"|e, m={m:+d}>" for m, _g in states)
+    print(f"  after pulse {p:2d}: intended arms in {labels}")
+
+# %% [markdown]
+# ### The single sliced atom with clearouts
+#
+# The ideal arm walk says these windows are clean — but the walk assumes
+# perfect π pulses. The genuine state carries imperfect-transfer residue in
+# the ground manifold at each window, and the clearouts remove it for good
+# (instead of letting later resonant pulses coherently re-absorb it into the
+# arms). The survival product tells us what that costs even the
+# perfectly-selected atom; the sweep shows what it does to the spectrum.
+
+# %%
+single_co_state, single_co_weight = readout.run_sequence_with_ground_clearouts(
+    sequence,
+    clearout_windows,
+    initial_velocity_z=0.0,
+    discard_threshold=1e-9,
+)
+print(f"sliced atom survives all clearouts with weight {single_co_weight:.4f}")
+
+single_co_perfect = {
+    m: single_co_weight * p
+    for m, p in perfect_excited_populations(single_co_state).items()
+}
+single_co_m, single_co_per_class = sweep_readout(single_co_state, vz=0.0)
+single_co_total = single_co_weight * single_co_per_class.sum(axis=1)
+print(
+    "absolute P_e(m) with clearouts:",
+    {m: round(p, 5) for m, p in sorted(single_co_perfect.items())},
+)
+
+# %% [markdown]
+# ### The whole cloud with clearouts
+
+# %%
+cloud_co_signal_by_class = {}
+cloud_co_perfect = {}
+cloud_co_survival = 0.0
+for v, w_v in tqdm(
+    list(zip(velocity_grid, velocity_weights)), desc="Cloud + clearouts"
+):
+    state, w_atom = readout.run_sequence_with_ground_clearouts(
+        sequence,
+        clearout_windows,
+        initial_velocity_z=v,
+        discard_threshold=1e-7,
+    )
+    if state is None:
+        continue
+    cloud_co_survival += w_v * w_atom
+    m_classes, per_class = sweep_readout(state, vz=v)
+    for j, m in enumerate(m_classes):
+        m = int(m)
+        cloud_co_signal_by_class[m] = (
+            cloud_co_signal_by_class.get(m, 0.0) + w_v * w_atom * per_class[:, j]
+        )
+    for m, p in perfect_excited_populations(state).items():
+        cloud_co_perfect[m] = cloud_co_perfect.get(m, 0.0) + w_v * w_atom * p
+
+cloud_co_total = np.sum(list(cloud_co_signal_by_class.values()), axis=0)
+print(
+    f"fraction of the original cloud surviving all clearouts: {cloud_co_survival:.4f}"
+)
+print("per-class absolute populations with clearouts:")
+for m in sorted(cloud_co_perfect, key=lambda m: -cloud_co_perfect[m]):
+    print(f"  m={m:+d}: {cloud_co_perfect[m]:.5f}")
+
+# %%
+plot_swept_readout(
+    [
+        (
+            cloud_total,
+            dict(color="0.6", lw=1.0, label="cloud, no clearouts"),
+        ),
+        (
+            single_co_total,
+            dict(
+                color="tab:blue",
+                lw=1.0,
+                ls="--",
+                label="selected atom only, with clearouts",
+            ),
+        ),
+        (
+            cloud_co_total,
+            dict(
+                color="tab:red",
+                lw=1.4,
+                label="full cloud, clearouts after pulses "
+                + ", ".join(str(p) for p in clearout_windows),
+            ),
+        ),
+    ],
+    cloud_co_perfect,
+    "Swept excited-state readout of the cloud with perfect clearouts in every "
+    "allowed window",
+)
+plt.show()
+
+# %% [markdown]
+# ### What the clearouts do — two distinct things
+#
+# (Numbers quoted from the printed summaries above.)
+#
+# **1. They remove the unselected cloud, as designed.** The post-slice
+# clearout (after pulse 0) kills any atom the 380 µs slice did not excite;
+# ~10% of the 200 nK cloud survives to detection. The Doppler pedestal
+# collapses — the m = −1 reservoir, which without clearouts held as much
+# population as the m = +1 port (~0.21 of the whole cloud), drops to
+# $8\times10^{-4}$, and the spectrum tightens onto a single sharp peak.
+#
+# **2. They *purify the interferometer itself* — at a price.** The ideal arm
+# walk says the clearout windows are clean (both arms excited, nothing in
+# ground), but the genuine quantum state disagrees: the imperfect square π
+# pulses leave 2-9% *coherent* ground population behind at each window
+# (compounding to ~20% by pulse 11 if never cleaned). Two consequences:
+#
+# * Even the perfectly sliced atom only survives all five windows with weight
+#   ~0.77 — the clearouts post-select away 23% of the *good* atoms, because
+#   that amplitude genuinely was in the ground manifold when the light fired.
+# * The removed amplitude was not inert junk: the arms revisit those ground
+#   rungs, so later resonant pulses coherently re-absorb the residue into the
+#   recombination. Removing it changes the output dramatically — and **towards
+#   the ideal interferometer**: renormalised, ~95% of the surviving atom exits
+#   in m = +1, the intended single φ = 0 output port, while the m = +3 class
+#   collapses from 0.28 (no clearouts, cf. the single-atom figure above) to
+#   ~0.01. The prominent "m = +3 port" of the no-clearout spectra is thus
+#   revealed as parasitic multi-path interference that clearouts largely
+#   remove. Readout-wise: with clearouts, the φ = 0 spectrum is essentially
+#   one peak at +4.7 kHz.
+#
+# **What remains is the instrument.** Clearouts fix the *sample*, not the
+# readout: the oscillatory 10⁻³–10⁻⁴ sinc-sidelobe floor of the square imaging
+# pulse is untouched and now sets the background everywhere. The next
+# improvement would have to come from shaping the imaging pulse.
+
+# %% [markdown]
 # ### Model caveats
 #
 # * The readout is ensemble-averaged: no quantum projection noise, detection
@@ -479,6 +650,9 @@ plt.show()
 #   grid spacing (0.94 kHz in Doppler units) is finer than the imaging
 #   linewidth, so the pedestals are smooth, but structure much narrower than
 #   the spacing would not be resolved.
-# * No clearouts are simulated because the record contains none; the grey
-#   reference curve stands in for the ideal-clearout limit rather than a
-#   Monte-Carlo clearout model.
+# * The record itself contains no clearout events, so the clearout timings
+#   are idealised: instantaneous, perfect (every ground atom removed, excited
+#   amplitudes untouched), fired immediately after the qualifying pulses. Real
+#   461 nm flashes have finite duration and sit somewhere inside the free-fall
+#   gaps; neither changes the populations here (free fall does not mix the
+#   manifolds), but photon scattering into the excited state is not modelled.

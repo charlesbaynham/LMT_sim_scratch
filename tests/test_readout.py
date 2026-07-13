@@ -189,3 +189,131 @@ def test_merge_is_coherent():
     merged = readout.merge_rows_by_momentum_class(state)
     assert len(merged.amplitudes) == 1
     assert merged.amplitudes[0] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# run_sequence_with_ground_clearouts
+# ---------------------------------------------------------------------------
+
+RES_G0_UP = sim.RECOIL_FREQUENCY_HZ  # resonance of |g,0> <-> |e,+1> on the up beam
+
+
+def _pulse(area, detuning_hz, k=+1, rabi=READOUT_RABI):
+    import lmt_sim.lmt_sequence as seq
+
+    return seq.Pulse(
+        k=k,
+        detuning_hz=detuning_hz,
+        phi=0.0,
+        label="test",
+        rabi_frequency=rabi,
+        duration=area / (2 * rabi),  # area in units of pi: duration = area/(2*rabi)
+    )
+
+
+def _coherent_ground_total(state):
+    ground_prob, _ = sim.calculate_ground_and_excited_probabilities(state)
+    return ground_prob
+
+
+def test_clearout_analytic_pi2_clearout_pi2():
+    """pi/2 -> perfect ground clearout -> pi/2 leaves 0.25 absolute in ground."""
+    sequence = [_pulse(0.5, RES_G0_UP), _pulse(0.5, RES_G0_UP)]
+    state, weight = readout.run_sequence_with_ground_clearouts(
+        sequence, [0], discard_threshold=1e-15
+    )
+    assert weight == pytest.approx(0.5, rel=1e-6)
+    # Surviving (renormalised) state splits 50/50 on the second pi/2.
+    assert _coherent_ground_total(state) == pytest.approx(0.5, rel=1e-6)
+    # Absolute ground population = 0.25.
+    assert weight * _coherent_ground_total(state) == pytest.approx(0.25, rel=1e-6)
+
+
+def test_no_clearouts_matches_plain_run():
+    import lmt_sim.lmt_sequence as seq
+
+    sequence = [
+        _pulse(1.0, RES_G0_UP),
+        seq.Freefall(duration=200e-6),
+        _pulse(0.5, RES_G0_UP + 3e3, k=-1),
+    ]
+    state, weight = readout.run_sequence_with_ground_clearouts(
+        sequence, [], discard_threshold=1e-12
+    )
+    assert weight == 1.0
+    initial = sim.make_atom_states(c0=1, c1=0)
+    reference, _, _ = seq.run_pulse_sequence_in_borde_representation(
+        initial, sequence, discard_threshold=1e-12
+    )
+    np.testing.assert_allclose(
+        np.sort(np.abs(state.amplitudes)), np.sort(np.abs(reference.amplitudes))
+    )
+
+
+def test_clearout_removes_unexcited_atom():
+    """An atom the pulse barely touches is (almost) fully removed."""
+    sequence = [_pulse(1.0, 1e6), _pulse(1.0, RES_G0_UP)]  # 1 MHz off-resonant slice
+    state, weight = readout.run_sequence_with_ground_clearouts(
+        sequence, [0], weight_floor=1e-3
+    )
+    assert state is None
+    assert weight == 0.0
+
+
+def test_segmented_run_matches_inline_reference():
+    """Segment restart after a clearout must not change populations.
+
+    The segmented runner evaluates the post-clearout free fall at the NEXT
+    pulse's detuning; the faithful inline evolution uses the PREVIOUS pulse's.
+    Because the post-clearout state is entirely excited the difference is a
+    global phase -- verify populations match an inline low-level reference.
+    """
+    import lmt_sim.lmt_sequence as seq
+    from dataclasses import replace
+
+    d1, d2 = RES_G0_UP, RES_G0_UP - 7e3
+    tau = 300e-6
+    p1 = _pulse(1.0, d1)
+    p2 = _pulse(0.7, d2, k=-1)
+    sequence = [p1, seq.Freefall(duration=tau), p2]
+
+    state, weight = readout.run_sequence_with_ground_clearouts(
+        sequence, [0], discard_threshold=1e-15
+    )
+
+    # Inline reference: run p1 canonically, strip ground, free-fall at the OLD
+    # detuning d1, then apply p2 directly.
+    initial = sim.make_atom_states(c0=1, c1=0)
+    ref, _, _ = seq.run_pulse_sequence_in_borde_representation(
+        initial, [p1], discard_threshold=1e-15
+    )
+    ref = readout.remove_ground_rows(ref)
+    survived = float(np.sum(np.abs(ref.amplitudes) ** 2))
+    ref = replace(ref, amplitudes=ref.amplitudes / np.sqrt(survived))
+    ref = sim.propagate_states_in_borde_representation(
+        ref, time_of_propegation=tau, detuning_hz=d1, vz=0.0
+    )
+    ref = sim.pulse_interaction_in_borde_representation(
+        ref,
+        pulse_detuning=d2,
+        t_pulse=p2.duration,
+        pulse_rabi_freq=p2.rabi_frequency,
+        k_sign=p2.k,
+        vz=0.0,
+    )
+
+    assert weight == pytest.approx(survived, rel=1e-9)
+
+    def populations(s):
+        merged = readout.merge_rows_by_momentum_class(s)
+        return {
+            (int(m), bool(g)): float(np.abs(a) ** 2)
+            for m, g, a in zip(
+                merged.m_values, merged.internal_is_ground, merged.amplitudes
+            )
+        }
+
+    pop, pop_ref = populations(state), populations(ref)
+    assert set(pop) == set(pop_ref)
+    for key in pop:
+        assert pop[key] == pytest.approx(pop_ref[key], rel=1e-9, abs=1e-12)
