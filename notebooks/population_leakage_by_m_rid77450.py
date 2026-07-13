@@ -417,7 +417,7 @@ RIDGE_FLOOR = 1e-5  # bottom of the log band: P <= this sits on the baseline
 
 
 def _log_band_offset(prob, floor=RIDGE_FLOOR):
-    """Map probabilities in (0, 1] onto a [0, 1] height that is *logarithmic*
+    """Map probabilities in (0, 1] onto a [0, 0.9] height that is *logarithmic*
     within each pulse's unit-tall band: ``floor`` -> 0 (the pulse's baseline)
     and 1.0 -> 1 (the next baseline), spanning the ``-log10(floor)`` decades in
     between. Values <= ``floor`` (and exact zeros) clip to 0, so weak parasitic
@@ -429,7 +429,7 @@ def _log_band_offset(prob, floor=RIDGE_FLOOR):
     decades = -np.log10(floor)
     with np.errstate(divide="ignore"):
         logp = np.log10(np.where(prob > 0.0, prob, floor))
-    return np.clip((logp - np.log10(floor)) / decades, 0.0, 1.0)
+    return np.clip((logp - np.log10(floor)) / decades, 0.0, 0.9)
 
 
 DECADE_PROBS = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0]  # log-band decade guide levels
@@ -449,7 +449,7 @@ def plot_ridgeline_stack(transform, ylabel, title, decade_probs=None):
     drawn across every band and the decade probabilities are labelled on the
     bottom band only -- enough to show the logarithmic spacing within each band
     without cluttering all 20 rows with tick labels."""
-    fig, ax = plt.subplots(figsize=(11, 16))
+    fig, ax = plt.subplots(figsize=(11, 20))
     if decade_probs is not None:
         offs = _log_band_offset(np.asarray(decade_probs, dtype=float))
         for p in range(n_pulses):
