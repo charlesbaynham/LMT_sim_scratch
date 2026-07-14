@@ -78,9 +78,13 @@
 #   the 461 nm clearouts after velocity selection have removed everything else;
 # * then for a **200 nK thermal cloud with no clearouts**, as the raw record
 #   was fired — showing what the unselected atoms do to the spectrum;
-# * finally the same cloud **with perfect, instantaneous clearouts** inserted
-#   in every window where the sequence allows one (all intended arms
-#   simultaneously excited), to quantify how much of the damage they undo.
+# * finally — and this is the **main result**, because the real experiment
+#   always clears out — the same cloud **with perfect, instantaneous clearouts**
+#   inserted in every window where the sequence allows one (all intended arms
+#   simultaneously excited). This spectrum is normalised to the detected atom
+#   number surviving the clearouts, so it reads as a probability distribution
+#   over velocity classes (the class populations add to 1), and it is
+#   decomposed by excited momentum class exactly as the no-clearout cloud is.
 
 # %%
 import sys
@@ -561,22 +565,48 @@ for v, w_v in tqdm(
         cloud_co_perfect[m] = cloud_co_perfect.get(m, 0.0) + w_v * w_atom * p
 
 cloud_co_total = np.sum(list(cloud_co_signal_by_class.values()), axis=0)
+
+# Normalisation for the plots below. The velocity-resolved readout only ever
+# detects EXCITED atoms, so the atom number it can account for after the
+# clearouts is the total excited population, Sum_m P_e(m). Dividing every
+# detected quantity by this makes the readout a probability distribution over
+# velocity classes: the per-class populations (and hence the sweep it renders)
+# add to 1. This detected total is ~94% of `cloud_co_survival`; the ~6%
+# shortfall is residual GROUND population that the post-clearout beamsplitters
+# put back and the excited readout cannot see.
+cloud_co_detected = sum(cloud_co_perfect.values())
+single_co_detected = sum(single_co_perfect.values())
+cloud_detected = sum(cloud_perfect.values())  # no-clearout excited total
+
 print(
     f"fraction of the original cloud surviving all clearouts: {cloud_co_survival:.4f}"
 )
-print("per-class absolute populations with clearouts:")
+print(
+    f"detected (excited) atom number after clearouts: {cloud_co_detected:.4f} "
+    f"({cloud_co_detected / cloud_co_survival * 100:.1f}% of the survivors; the "
+    f"rest is residual ground)"
+)
+print("per-class populations with clearouts (absolute, and normalised to Sum=1):")
 for m in sorted(cloud_co_perfect, key=lambda m: -cloud_co_perfect[m]):
-    print(f"  m={m:+d}: {cloud_co_perfect[m]:.5f}")
+    print(
+        f"  m={m:+d}: {cloud_co_perfect[m]:.5f}  "
+        f"(normalised {cloud_co_perfect[m] / cloud_co_detected:.4f})"
+    )
 
 # %%
-plot_swept_readout(
+# Every curve is normalised to its OWN detected (excited) atom number, so each
+# is a probability distribution over velocity classes that integrates to 1 --
+# a shape comparison. The stems are the clearout cloud's per-class populations
+# on the same (clearout) normalisation, so they add to 1 and the red curve
+# rides up to them.
+_, (ax_lin, ax_log) = plot_swept_readout(
     [
         (
-            cloud_total,
+            cloud_total / cloud_detected,
             dict(color="0.6", lw=1.0, label="cloud, no clearouts"),
         ),
         (
-            single_co_total,
+            single_co_total / single_co_detected,
             dict(
                 color="tab:blue",
                 lw=1.0,
@@ -585,7 +615,7 @@ plot_swept_readout(
             ),
         ),
         (
-            cloud_co_total,
+            cloud_co_total / cloud_co_detected,
             dict(
                 color="tab:red",
                 lw=1.4,
@@ -594,10 +624,83 @@ plot_swept_readout(
             ),
         ),
     ],
-    cloud_co_perfect,
-    "Swept excited-state readout of the cloud with perfect clearouts in every "
-    "allowed window",
+    {m: p / cloud_co_detected for m, p in cloud_co_perfect.items()},
+    "Swept excited-state readout with perfect clearouts, normalised to the "
+    "detected atom number (each curve integrates to 1)",
 )
+for ax in (ax_lin, ax_log):
+    ax.set_ylabel("detected fraction per shot (normalised, $\\Sigma = 1$)")
+plt.show()
+
+# %% [markdown]
+# ### Which class produces which feature — with clearouts
+#
+# The same decomposition as the no-clearout plot above, but for the sequence
+# **as it is really run**: 461 nm clearouts in every window the geometry allows
+# (after pulses 0, 2, 6, 11, 15). This is the main result — our experiments do
+# clear out, so this is the spectrum we actually expect to sweep.
+#
+# Everything is normalised to the detected (excited) atom number after the
+# clearouts, so the curves form a probability distribution over velocity
+# classes: the class populations add to 1 and the black total is that unit
+# distribution as the imaging pulse renders it. The grey line repeats the
+# no-clearout total from above (on its own normalisation) as a comparison — the
+# purification is the collapse of that broad, m = −1-heavy pedestal onto the
+# single sharp m = +1 port.
+
+# %%
+co_class_list = sorted(cloud_co_signal_by_class)
+co_class_colors = {
+    m: plt.get_cmap("tab10")(j % 10) for j, m in enumerate(co_class_list)
+}
+
+fig, ax = plt.subplots(figsize=(12, 6), constrained_layout=True)
+x = sweep_detunings_hz / 1e3
+LOG_FLOOR = 1e-6
+for m in co_class_list:
+    ax.semilogy(
+        x,
+        np.maximum(cloud_co_signal_by_class[m] / cloud_co_detected, LOG_FLOOR),
+        color=co_class_colors[m],
+        lw=1.1,
+    )
+    i_peak = int(np.argmax(cloud_co_signal_by_class[m]))
+    ax.annotate(
+        f"$m={m:+d}$",
+        (x[i_peak], cloud_co_signal_by_class[m][i_peak] / cloud_co_detected * 1.4),
+        ha="center",
+        fontsize=9,
+        color=co_class_colors[m],
+    )
+# The no-clearout total (own normalisation) as an "interesting comparison": the
+# broad Doppler pedestal the clearouts collapse.
+ax.semilogy(
+    x,
+    np.maximum(cloud_total / cloud_detected, LOG_FLOOR),
+    color="0.6",
+    lw=1.1,
+    ls="--",
+    label="total, no clearouts (normalised)",
+)
+# The clearout total: the unit distribution these classes add up to.
+ax.semilogy(
+    x,
+    np.maximum(cloud_co_total / cloud_co_detected, LOG_FLOOR),
+    color="k",
+    lw=1.6,
+    alpha=0.75,
+    label="total, with clearouts (normalised)",
+)
+ax.set_ylim(LOG_FLOOR, 2.0)
+ax.set_xlabel("imaging-pulse detuning (kHz, Doppler-adjusted)")
+ax.set_ylabel("detected fraction per shot (normalised, $\\Sigma = 1$)")
+ax.grid(alpha=0.25)
+ax.legend(loc="upper right")
+ax.set_title(
+    "Cloud readout decomposed by excited momentum class, with clearouts "
+    "(normalised to the detected atom number)"
+)
+vs.tag_plot(ax=ax, small=True)
 plt.show()
 
 # %% [markdown]
