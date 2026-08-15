@@ -40,7 +40,8 @@ stored outputs to keep in sync — the script *is* the source of truth.
   this way under a headless matplotlib backend.
 - Edit the `.py` directly. If you want the interactive cell experience, open it
   with the Jupytext-aware Jupyter (`uv run jupytext --to notebook <name>.py` for
-  a throwaway `.ipynb`), but **do not commit `.ipynb` files** — only the scripts.
+  a throwaway `.ipynb`), but **do not commit `.ipynb` files unless explicitly
+  asked** — only the scripts.
 - A script that must not be run as-is (e.g. it depends on data we don't have)
   should be parked: put a `# --- PARKED: ...` comment explaining why immediately
   after the imports, followed by `raise NotImplementedError(...)`. A parked
