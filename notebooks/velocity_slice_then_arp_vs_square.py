@@ -46,9 +46,9 @@ import sys
 
 sys.path.insert(0, "..")
 
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy import constants
-import matplotlib.pyplot as plt
 
 from lmt_sim import arp
 from lmt_sim import lmt_simulation as sim

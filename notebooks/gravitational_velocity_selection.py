@@ -26,15 +26,15 @@ import sys
 sys.path.insert(0, "..")
 
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import version_info as vs
 from scipy import constants
 from tqdm import tqdm
 
-import version_info as vs
 from lmt_sim.lmt_sequence import (
-    Pulse,
     Freefall,
+    Pulse,
     calculate_excited_fraction_for_pulse_sequence,
 )
 from lmt_sim.lmt_simulation import K_WAVEVECTOR, MASS_ATOM

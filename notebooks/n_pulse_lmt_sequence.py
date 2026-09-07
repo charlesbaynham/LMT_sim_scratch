@@ -32,10 +32,11 @@ from pathlib import Path
 sys.path.insert(0, "..")
 
 import matplotlib.pyplot as plt
-import lmt_sim.lmt_simulation as sim
-import lmt_sim.lmt_sequence as seq
-import version_info as vs
 import numpy as np
+import version_info as vs
+
+import lmt_sim.lmt_sequence as seq
+import lmt_sim.lmt_simulation as sim
 
 # %%
 N = 4

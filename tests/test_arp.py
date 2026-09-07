@@ -9,13 +9,13 @@ import numpy as np
 
 from lmt_sim import arp
 from lmt_sim import lmt_simulation as sim
+from lmt_sim.lmt_sequence import Pulse, run_pulse_sequence_in_borde_representation
 from lmt_sim.lmt_simulation import (
-    AtomState,
     RABI_FREQ,
     RECOIL_FREQUENCY_HZ,
     T_PI,
+    AtomState,
 )
-from lmt_sim.lmt_sequence import Pulse, run_pulse_sequence_in_borde_representation
 
 
 def _single_ground_state():

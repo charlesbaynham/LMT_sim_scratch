@@ -24,8 +24,8 @@ Usage
 
 from __future__ import annotations
 
-import numpy as np
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -33,14 +33,14 @@ from scipy import constants
 from tqdm import tqdm
 
 import lmt_sim.lmt_simulation as sim
-from lmt_sim.lmt_simulation import make_atom_states
-from lmt_sim.lmt_sequence import Freefall, iter_pulse_sequence_in_borde_representation
 from lmt_sim.imaging import (
     collect_branches,
-    stack_atoms,
-    render,
     pixel_grid,
+    render,
+    stack_atoms,
 )
+from lmt_sim.lmt_sequence import Freefall, iter_pulse_sequence_in_borde_representation
+from lmt_sim.lmt_simulation import make_atom_states
 
 # ---------------------------------------------------------------------------
 # Shared sequence: 10 × 1 ms freefalls
