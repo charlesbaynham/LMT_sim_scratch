@@ -1,19 +1,18 @@
 import numpy as np
 
-from lmt_sim.lmt_simulation import (
-    RABI_FREQ,
-    RECOIL_FREQUENCY_HZ,
-    T_PI,
-    K_WAVEVECTOR,
-    make_atom_states,
-    pulse_interaction_in_borde_representation,
-    transform_state_vector,
-)
 from lmt_sim.lmt_sequence import (
     Pulse,
     calculate_excited_fraction_for_pulse_sequence,
 )
-
+from lmt_sim.lmt_simulation import (
+    K_WAVEVECTOR,
+    RABI_FREQ,
+    RECOIL_FREQUENCY_HZ,
+    T_PI,
+    make_atom_states,
+    pulse_interaction_in_borde_representation,
+    transform_state_vector,
+)
 
 # Coefficient (1/Hz) such that a 45 us pi pulse (Rabi = RABI_FREQ) produces a
 # 1 kHz probe shift: shift_Hz = coefficient * Rabi_Hz**2.

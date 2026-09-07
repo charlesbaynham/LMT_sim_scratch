@@ -22,29 +22,28 @@
 # %%
 import sys
 
-import sys
-
 sys.path.insert(0, "..")
 
 # %%
-import numpy as np
+# from tqdm.notebook import tqdm
+import sys
+
 import matplotlib.pyplot as plt
+import numpy as np
 from scipy import constants
 from tqdm import tqdm
-# from tqdm.notebook import tqdm
-
-import sys
 
 sys.path.insert(0, "..")
 
 import version_info as vs
+
 from lmt_sim.lmt_simulation import (
-    make_atom_states,
-    transform_state_vector,
-    pulse_interaction_in_borde_representation,
-    calculate_ground_and_excited_probabilities,
     K_WAVEVECTOR,
     TRANSITION_FREQUENCY,
+    calculate_ground_and_excited_probabilities,
+    make_atom_states,
+    pulse_interaction_in_borde_representation,
+    transform_state_vector,
 )
 
 # %matplotlib inline

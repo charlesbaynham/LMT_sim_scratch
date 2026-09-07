@@ -40,15 +40,14 @@ TODO (BIG ONE -- the whole point of the position/velocity tracking):
 
 from __future__ import annotations
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from scipy.ndimage import gaussian_filter
 from tqdm import tqdm
 
 import lmt_sim.lmt_simulation as sim
-from lmt_sim.lmt_simulation import make_atom_states
 from lmt_sim.lmt_sequence import iter_pulse_sequence_in_borde_representation
-
+from lmt_sim.lmt_simulation import make_atom_states
 
 # Rough single-atom wave-packet size to blur each image by, standing in for the
 # real (untracked) spatial extent of an atom's wave packet at readout.

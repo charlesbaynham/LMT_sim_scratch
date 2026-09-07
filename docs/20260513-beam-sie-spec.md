@@ -56,13 +56,14 @@ def make_atom_states(
 ):
     ...
     positions = np.array(
-        [[position_x, position_y, position_z],
-         [position_x, position_y, position_z]],
+        [[position_x, position_y, position_z], [position_x, position_y, position_z]],
         dtype=np.float64,
     )  # shape (2, 3)
     velocities = np.array(
-        [[velocity_x, velocity_y, initial_velocity_z],
-         [velocity_x, velocity_y, initial_velocity_z]],
+        [
+            [velocity_x, velocity_y, initial_velocity_z],
+            [velocity_x, velocity_y, initial_velocity_z],
+        ],
         dtype=np.float64,
     )  # shape (2, 3)
     return m_values, positions, velocities, internal_amplitude, internal_is_ground
@@ -84,13 +85,15 @@ Velocities remain unchanged (returned as-is).
 
 **New helper: `gaussian_rabi`** (pure-physics primitive)
 ```python
-def gaussian_rabi(positions: np.ndarray, on_axis_rabi: float, beam_waist: float) -> np.ndarray:
+def gaussian_rabi(
+    positions: np.ndarray, on_axis_rabi: float, beam_waist: float
+) -> np.ndarray:
     """Per-row Rabi frequency from TEM00 transverse intensity profile.
 
     Omega(x, y) = Omega_0 * exp(-(x^2 + y^2) / w^2)
     """
     r2 = positions[:, 0] ** 2 + positions[:, 1] ** 2
-    return on_axis_rabi * np.exp(-r2 / beam_waist ** 2)
+    return on_axis_rabi * np.exp(-r2 / beam_waist**2)
 ```
 
 **New helper: `do_gaussian_pulse`** (the wrap-with-helper user-facing entry point)
@@ -99,12 +102,12 @@ def do_gaussian_pulse(
     m_values,
     squiggly_amplitudes,
     internal_is_ground,
-    positions,                       # (N, 3)
-    velocities,                      # (N, 3)
+    positions,  # (N, 3)
+    velocities,  # (N, 3)
     pulse_detuning,
     t_pulse,
     on_axis_rabi_freq,
-    beam_waist,                      # required, no default
+    beam_waist,  # required, no default
     pulse_phase=0.0,
     k_sign=+1,
     k_wavevector=K_WAVEVECTOR,
@@ -114,7 +117,11 @@ def do_gaussian_pulse(
     positions_mid = positions + velocities * t_pulse / 2
     rabi_per_row = gaussian_rabi(positions_mid, on_axis_rabi_freq, beam_waist)
     return pulse_interaction_in_borde_representation(
-        m_values, squiggly_amplitudes, internal_is_ground, positions, velocities,
+        m_values,
+        squiggly_amplitudes,
+        internal_is_ground,
+        positions,
+        velocities,
         pulse_detuning=pulse_detuning,
         t_pulse=t_pulse,
         pulse_rabi_freq=rabi_per_row,

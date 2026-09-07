@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import lmt_sim.lmt_simulation as sim
-import lmt_sim.readout as readout
+from lmt_sim import readout
 
 READOUT_DURATION = 380e-6
 READOUT_RABI = 1 / (2 * READOUT_DURATION)  # pi pulse
@@ -268,8 +268,9 @@ def test_segmented_run_matches_inline_reference():
     Because the post-clearout state is entirely excited the difference is a
     global phase -- verify populations match an inline low-level reference.
     """
-    import lmt_sim.lmt_sequence as seq
     from dataclasses import replace
+
+    import lmt_sim.lmt_sequence as seq
 
     d1, d2 = RES_G0_UP, RES_G0_UP - 7e3
     tau = 300e-6

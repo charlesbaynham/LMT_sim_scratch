@@ -16,8 +16,11 @@ Location: `lmt_sim/lmt_simulation.py`, near `pulse_interaction_in_borde_represen
 
 ```python
 def do_clearout(
-    m_values, squiggly_amplitudes, internal_is_ground,
-    positions, velocities,
+    m_values,
+    squiggly_amplitudes,
+    internal_is_ground,
+    positions,
+    velocities,
     rng=None,
 ):
     """Projective measurement in the {ground, excited} basis.

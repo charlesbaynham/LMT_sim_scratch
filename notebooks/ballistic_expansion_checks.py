@@ -32,22 +32,22 @@ import sys
 
 sys.path.insert(0, "..")
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import version_info as vs
 from scipy import constants
 from tqdm import tqdm
 
 import lmt_sim.lmt_simulation as sim
-import version_info as vs
-from lmt_sim.lmt_simulation import make_atom_states
-from lmt_sim.lmt_sequence import Freefall, iter_pulse_sequence_in_borde_representation
 from lmt_sim.imaging import (
-    collect_branches,
-    stack_atoms,
-    render,
-    pixel_grid,
     SINGLE_ATOM_WAVEPACKET_SIGMA_M,
+    collect_branches,
+    pixel_grid,
+    render,
+    stack_atoms,
 )
+from lmt_sim.lmt_sequence import Freefall, iter_pulse_sequence_in_borde_representation
+from lmt_sim.lmt_simulation import make_atom_states
 
 print(f"Wavepacket blur: {SINGLE_ATOM_WAVEPACKET_SIGMA_M * 1e6:.0f} µm")
 print(f"Recoil velocity: {sim.RECOIL_VELOCITY * 1e3:.4f} mm/s")

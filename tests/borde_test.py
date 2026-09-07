@@ -1,8 +1,7 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from scipy import constants
 from scipy.linalg import expm
-
 
 # # Borde's Optical Ramsey Fringes
 #
