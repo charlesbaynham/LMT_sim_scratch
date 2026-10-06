@@ -23,27 +23,25 @@
 # %%
 import sys
 
-import sys
-
 sys.path.insert(0, "..")
 
 # %%
-import numpy as np
-import matplotlib.pyplot as plt
 import sys
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 sys.path.insert(0, "..")
 
 import version_info as vs
 
+# %%
+from scipy import constants
+
 from lmt_sim.lmt_sequence import (
     build_mach_zehnder_pulse_sequence,
     calculate_excited_fraction_for_pulse_sequence,
 )
-
-
-# %%
-from scipy import constants
 
 T_FREE = 200e-6  # Free evolution time between pulses
 

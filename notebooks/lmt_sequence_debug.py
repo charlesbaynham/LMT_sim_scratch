@@ -18,13 +18,12 @@ from pathlib import Path
 
 sys.path.insert(0, "..")
 
-import numpy as np
-import lmt_sim.lmt_simulation as sim
-import numpy as np
 import matplotlib.pyplot as plt
-import lmt_sim.lmt_simulation as sim
-import lmt_sim.lmt_sequence as seq
+import numpy as np
 import version_info as vs
+
+import lmt_sim.lmt_sequence as seq
+import lmt_sim.lmt_simulation as sim
 
 i_lmt = 4
 atom_radius = 0.0
@@ -68,7 +67,7 @@ for detuning_offset_hz in detunings_hz:
         k=laser_direction,
         detuning_hz=detuning_hz,
         phi=0.0,
-        label="$\pi$ pulse",
+        label=r"$\pi$ pulse",
         rabi_frequency=sim.RABI_FREQ,
         duration=sim.T_PI,
     )
@@ -88,7 +87,7 @@ for detuning_offset_hz in detunings_hz:
     )
     excited_scan.append(excited_prob / (ground_prob + excited_prob))
 
-plt.plot(detunings_hz, excited_scan, label="Single $\pi$ pulse")
+plt.plot(detunings_hz, excited_scan, label=r"Single $\pi$ pulse")
 
 
 plt.xlabel("Final pulse detuning offset (Hz)")
@@ -135,7 +134,7 @@ for detuning_offset_hz in detunings_hz:
         k=+1,
         detuning_hz=sim.RECOIL_FREQUENCY_HZ,
         phi=0.0,
-        label="$\pi$ pulse",
+        label=r"$\pi$ pulse",
         rabi_frequency=sim.RABI_FREQ,
         duration=sim.T_PI,
     )
@@ -143,7 +142,7 @@ for detuning_offset_hz in detunings_hz:
         k=-1,
         detuning_hz=detuning_hz,
         phi=0.0,
-        label="$\pi$ pulse",
+        label=r"$\pi$ pulse",
         rabi_frequency=sim.RABI_FREQ,
         duration=sim.T_PI,
     )
@@ -163,7 +162,7 @@ for detuning_offset_hz in detunings_hz:
     )
     excited_scan.append(excited_prob / (ground_prob + excited_prob))
 
-plt.plot(detunings_hz, excited_scan, label="Two $\pi$ pulses")
+plt.plot(detunings_hz, excited_scan, label=r"Two $\pi$ pulses")
 
 
 plt.xlabel("Final pulse detuning offset (Hz)")
@@ -216,7 +215,7 @@ for detuning_offset_hz in detunings_hz:
         k=+1,
         detuning_hz=sim.RECOIL_FREQUENCY_HZ,
         phi=0.0,
-        label="$\pi$ up",
+        label=r"$\pi$ up",
         rabi_frequency=sim.RABI_FREQ,
         duration=sim.T_PI,
     )
@@ -224,7 +223,7 @@ for detuning_offset_hz in detunings_hz:
         k=-1,
         detuning_hz=-3 * sim.RECOIL_FREQUENCY_HZ,
         phi=0.0,
-        label="$\pi$ down",
+        label=r"$\pi$ down",
         rabi_frequency=sim.RABI_FREQ,
         duration=sim.T_PI,
     )
@@ -232,7 +231,7 @@ for detuning_offset_hz in detunings_hz:
         k=+1,
         detuning_hz=detuning_hz,
         phi=0.0,
-        label="$\pi$ up scanned",
+        label=r"$\pi$ up scanned",
         rabi_frequency=sim.RABI_FREQ,
         duration=sim.T_PI,
     )
@@ -253,7 +252,7 @@ for detuning_offset_hz in detunings_hz:
     )
     excited_scan.append(excited_prob / (ground_prob + excited_prob))
 
-plt.plot(detunings_hz, excited_scan, label="Three $\pi$ pulses")
+plt.plot(detunings_hz, excited_scan, label=r"Three $\pi$ pulses")
 
 
 plt.xlabel("Final pulse detuning offset (Hz)")

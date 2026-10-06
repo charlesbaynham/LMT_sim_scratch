@@ -45,18 +45,18 @@
 # 8 clouds whose 4+4 outputs overlap.
 
 # %%
-import sys
 import dataclasses
+import sys
 
 sys.path.insert(0, "..")
 
-import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
+import numpy as np
 import version_info as vs
+from matplotlib.patches import Patch
 
-import lmt_sim.lmt_simulation as sim
 import lmt_sim.lmt_sequence as seq
+import lmt_sim.lmt_simulation as sim
 
 REC = sim.RECOIL_FREQUENCY_HZ
 

@@ -12,7 +12,6 @@ import numpy as np
 
 from lmt_sim import arp
 from lmt_sim import lmt_simulation as sim
-from lmt_sim.lmt_simulation import AtomState, RABI_FREQ, RECOIL_VELOCITY
 from lmt_sim.lmt_sequence import (
     Clearout,
     CompositePulse,
@@ -22,6 +21,7 @@ from lmt_sim.lmt_sequence import (
     run_pulse_sequence_in_borde_representation,
     run_pulse_sequence_in_lab_frame,
 )
+from lmt_sim.lmt_simulation import RABI_FREQ, RECOIL_VELOCITY, AtomState
 
 
 def _single_ground_state():

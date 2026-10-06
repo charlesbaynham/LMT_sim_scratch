@@ -50,24 +50,24 @@ import sys
 
 sys.path.insert(0, "..")
 
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy import constants
 from scipy.integrate import solve_ivp
 from scipy.linalg import expm
-import matplotlib.pyplot as plt
 
 from lmt_sim import arp
 from lmt_sim import lmt_simulation as sim
+from lmt_sim.lmt_sequence import Pulse, run_pulse_sequence_in_borde_representation
 from lmt_sim.lmt_simulation import (
-    AtomState,
     K_WAVEVECTOR,
     MASS_ATOM,
     RABI_FREQ,
     RECOIL_FREQUENCY_HZ,
     T_PI,
     TRANSITION_WAVELENGTH,
+    AtomState,
 )
-from lmt_sim.lmt_sequence import Pulse, run_pulse_sequence_in_borde_representation
 
 np.set_printoptions(precision=6, suppress=False, linewidth=100)
 

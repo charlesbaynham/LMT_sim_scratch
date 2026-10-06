@@ -29,8 +29,8 @@ import numpy as np
 from scipy import constants
 
 import lmt_sim.lmt_sequence as seq
-from lmt_sim.lmt_simulation import RABI_FREQ, T_PI, RECOIL_FREQUENCY_HZ
 from lmt_sim.imaging import plot_filmstrip
+from lmt_sim.lmt_simulation import RABI_FREQ, RECOIL_FREQUENCY_HZ, T_PI
 
 # %matplotlib inline
 

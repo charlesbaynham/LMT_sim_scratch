@@ -91,16 +91,16 @@ import sys
 
 sys.path.insert(0, "..")
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import rid77450_pulse_record as rid77450
+import version_info as vs
 from scipy import constants
 from tqdm import tqdm
-import version_info as vs
 
-import rid77450_pulse_record as rid77450
 import lmt_sim.lmt_sequence as seq
 import lmt_sim.lmt_simulation as sim
-import lmt_sim.readout as readout
+from lmt_sim import readout
 
 # %% [markdown]
 # ## Build the sequence and define the imaging pulse

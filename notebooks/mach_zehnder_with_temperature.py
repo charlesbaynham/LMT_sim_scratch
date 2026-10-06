@@ -32,19 +32,18 @@ import sys
 sys.path.insert(0, "..")
 
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
-from scipy import constants
-
+import numpy as np
 import version_info as vs
+from scipy import constants
 
 from lmt_sim.lmt_sequence import (
     build_mach_zehnder_pulse_sequence,
     calculate_excited_fraction_for_pulse_sequence,
 )
 from lmt_sim.lmt_simulation import (
-    RECOIL_FREQUENCY_HZ,
     RABI_FREQ,
+    RECOIL_FREQUENCY_HZ,
 )
 
 # %matplotlib inline
@@ -178,21 +177,21 @@ fig.tight_layout()
 import numpy as np
 from tqdm import tqdm
 
+from lmt_sim.imaging import (
+    collect_branches,
+    pixel_grid,
+    plot_camera_shot,
+    render,
+    stack_atoms,
+)
 from lmt_sim.lmt_sequence import (
     build_mach_zehnder_pulse_sequence,
     run_pulse_sequence_in_lab_frame,
 )
 from lmt_sim.lmt_simulation import (
-    RECOIL_FREQUENCY_HZ,
     RABI_FREQ,
+    RECOIL_FREQUENCY_HZ,
     make_atom_states,
-)
-from lmt_sim.imaging import (
-    collect_branches,
-    plot_camera_shot,
-    pixel_grid,
-    render,
-    stack_atoms,
 )
 
 CAMERA_PHASE = 1.1 * np.pi
