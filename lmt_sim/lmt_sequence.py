@@ -1,8 +1,9 @@
-from dataclasses import dataclass, replace
 import logging
 import warnings
+from dataclasses import dataclass, replace
 
 import numpy as np
+
 import lmt_sim.lmt_simulation as sim
 from lmt_sim import arp
 from lmt_sim.lmt_simulation import RABI_FREQ, T_PI

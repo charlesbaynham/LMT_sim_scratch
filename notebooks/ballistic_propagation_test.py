@@ -23,11 +23,12 @@
 # 4. Same but also with an initial position distribution (~100 µm)
 
 # %%
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-from scipy import constants
 import sys
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import cm
+from scipy import constants
 
 sys.path.insert(0, "..")
 
@@ -35,16 +36,16 @@ import version_info as vs
 
 import lmt_sim.lmt_simulation as sim
 from lmt_sim.lmt_simulation import (
-    make_atom_states,
-    transform_state_vector,
-    propagate_states_in_borde_representation,
-    pulse_interaction_in_borde_representation,
-    TRANSITION_FREQUENCY,
     K_WAVEVECTOR,
+    MASS_ATOM,
+    RABI_FREQ,
     RECOIL_VELOCITY,
     T_PI,
-    RABI_FREQ,
-    MASS_ATOM,
+    TRANSITION_FREQUENCY,
+    make_atom_states,
+    propagate_states_in_borde_representation,
+    pulse_interaction_in_borde_representation,
+    transform_state_vector,
 )
 
 # %%

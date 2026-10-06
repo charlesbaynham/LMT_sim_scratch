@@ -1,10 +1,10 @@
 import numpy as np
 
 from lmt_sim.lmt_simulation import (
+    K_WAVEVECTOR,
     RABI_FREQ,
     RECOIL_FREQUENCY_HZ,
     T_PI,
-    K_WAVEVECTOR,
     calculate_ground_and_excited_probabilities,
     make_atom_states,
     pulse_interaction_in_borde_representation,

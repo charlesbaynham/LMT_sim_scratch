@@ -40,16 +40,16 @@
 # the plot for `N = 1, 2, 3, 4, 5`.
 
 # %%
-import sys
 import dataclasses
+import sys
 
 sys.path.insert(0, "..")
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
-import lmt_sim.lmt_simulation as sim
 import lmt_sim.lmt_sequence as seq
+import lmt_sim.lmt_simulation as sim
 
 # %%
 # --- PARKED: do not run this script as-is -------------------------------

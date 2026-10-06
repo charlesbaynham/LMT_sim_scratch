@@ -25,8 +25,8 @@ import numpy as np
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
-import lmt_sim.lmt_simulation as sim
 import lmt_sim.lmt_sequence as seq
+import lmt_sim.lmt_simulation as sim
 
 N_LMTs = 4
 REC = sim.RECOIL_FREQUENCY_HZ

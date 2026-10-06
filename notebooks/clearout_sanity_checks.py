@@ -13,14 +13,15 @@
 # ---
 
 # %%
-import numpy as np
-import matplotlib.pyplot as plt
 import sys
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 sys.path.insert(0, "..")
 
-import lmt_sim.lmt_simulation as sim
 import lmt_sim.lmt_sequence as seq
+import lmt_sim.lmt_simulation as sim
 from tests.test_states_vector import run_clearout_trials
 
 plt.rcParams["figure.figsize"] = (10, 6)

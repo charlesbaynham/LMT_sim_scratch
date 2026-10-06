@@ -69,15 +69,11 @@ import sys
 
 sys.path.insert(0, "..")
 
-import warnings
 import dataclasses
+import warnings
 
-import numpy as np
 import matplotlib.pyplot as plt
-import version_info as vs
-
-import lmt_sim.lmt_sequence as seq
-import lmt_sim.lmt_simulation as sim
+import numpy as np
 
 # %% [markdown]
 # ## The RID 77450 pulse dump (interferometer_phase = 0 point)
@@ -87,9 +83,12 @@ import lmt_sim.lmt_simulation as sim
 # [`rid77450_pulse_record`](./rid77450_pulse_record.py), so that every notebook
 # analysing this record uses the same single copy. The 8th row (per-pulse
 # interferometry phase) is all zeros at this scan point.
-
 # %%
 import rid77450_pulse_record as rid77450
+import version_info as vs
+
+import lmt_sim.lmt_sequence as seq
+import lmt_sim.lmt_simulation as sim
 
 dump = rid77450.load_dump()
 n_pulses = len(dump.is_up)
@@ -237,7 +236,7 @@ plt.show()
 # into a 50/50 ground+excited pair.
 
 # %%
-from matplotlib.lines import Line2D  # noqa: E402
+from matplotlib.lines import Line2D
 
 GROUND_C = "tab:blue"
 EXCITED_C = "tab:red"
@@ -459,8 +458,8 @@ print(
 
 
 # %%
-from matplotlib.colors import LogNorm  # noqa: E402
-import matplotlib as mpl  # noqa: E402
+import matplotlib as mpl
+from matplotlib.colors import LogNorm
 
 FLOOR = 1e-5  # lower end of the log colour scale (5 decades down from ~1)
 log_cmap = mpl.colormaps["magma"].copy()

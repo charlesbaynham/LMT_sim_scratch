@@ -28,16 +28,16 @@ from pathlib import Path
 
 sys.path.insert(0, "..")
 
-import numpy as np
 import matplotlib.pyplot as plt
-import lmt_sim.lmt_simulation as sim
-import lmt_sim.lmt_sequence as seq
-from scipy import constants as scipy_constants
+import numpy as np
 import version_info as vs
-
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from matplotlib.ticker import FixedLocator
+from scipy import constants as scipy_constants
+
+import lmt_sim.lmt_sequence as seq
+import lmt_sim.lmt_simulation as sim
 
 # %
 # Genuine new-format pulse dump from ARTIQ run RID 74397

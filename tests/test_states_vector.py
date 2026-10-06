@@ -272,7 +272,7 @@ def test_array_rabi_matches_scalar():
         pulse_detuning=sim.RECOIL_FREQUENCY_HZ,
         t_pulse=sim.T_PI,
         pulse_phase=0.0,
-        k_sign=int(+1),
+        k_sign=(+1),
         k_wavevector=sim.K_WAVEVECTOR,
         vz=0.0,
     )
@@ -286,7 +286,7 @@ def test_array_rabi_matches_scalar():
         pulse_detuning=sim.RECOIL_FREQUENCY_HZ,
         t_pulse=sim.T_PI,
         pulse_phase=0.0,
-        k_sign=int(+1),
+        k_sign=(+1),
         k_wavevector=sim.K_WAVEVECTOR,
         vz=0.0,
     )
